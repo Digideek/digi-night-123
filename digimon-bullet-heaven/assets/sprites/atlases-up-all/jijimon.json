@@ -1,0 +1,31 @@
+{
+  "id": "jijimon",
+  "image": "jijimon.png",
+  "frameWidth": 65,
+  "frameHeight": 69,
+  "idle": 1,
+  "walk": 1,
+  "fps": 16,
+  "cols": 2,
+  "rows": 1,
+  "atlasWidth": 131,
+  "atlasHeight": 69,
+  "frames": {
+    "idle": [
+      {
+        "x": 0,
+        "y": 0,
+        "w": 65,
+        "h": 69
+      }
+    ],
+    "walk": [
+      {
+        "x": 66,
+        "y": 0,
+        "w": 65,
+        "h": 69
+      }
+    ]
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "name": "digi-night",
+  "version": "2026.11.16",
+  "private": true,
+  "description": "Digi Night: the game's files and its room server for online play.",
+  "scripts": {
+    "start": "node host-game.js --no-open"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

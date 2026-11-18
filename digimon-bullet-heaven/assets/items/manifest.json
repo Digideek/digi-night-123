@@ -1,0 +1,297 @@
+{
+  "game": "Digimon World Championship (Nintendo DS, 2008); JP title Digimon Championship. There is no Pok\u00e9mon Championship DS.",
+  "note": "Verification pass: only visually confirmed crops are swapped. Transparency keyed; pixels not redrawn. Nearest-neighbor in-game. No item sprite sheet was found on The Spriters Resource or Sprite Database.",
+  "sprites": [
+    {
+      "id": "meat",
+      "file": "icons/meat.png",
+      "width": 12,
+      "height": 12,
+      "label": "Care menu Feed icon \u2014 classic yellow-orange meat, selected well on the Wikimon Feeding / Training screen",
+      "confidence": "high-identity, medium-high pixel quality",
+      "use": "swap",
+      "source_file": "raw/wikimon/Digimon_Feeding.png",
+      "source_url": "https://wikimon.net/images/e/e4/Digimon_Feeding.png",
+      "source_page": "https://wikimon.net/File:Digimon_Feeding.png",
+      "working_image": "left 512\u00d7768 of the 514\u00d7768 file (right 2 columns nearly black), exact 2\u00d7 of 256\u00d7384",
+      "crop_2x": [
+        118,
+        728,
+        142,
+        752
+      ],
+      "crop_native_equiv": [
+        59,
+        364,
+        71,
+        376
+      ],
+      "process": "Flood-key green selection glow + dark well from edges; drop remaining green fringe; keep main component; BOX downsample 2:1; trim. Pixels not redrawn.",
+      "screen": "English Training / Feeding, log '41 / 40 / 39 Food remaining.' Meat well is selected.",
+      "quality_notes": "Source is a 2\u00d7 official screenshot PNG, not a sprite-sheet rip. Slight softness and a tight crop to exclude the gold hex frame. Clearly recognizable as the Championship Feed meat (not the earlier flame/claw extract)."
+    },
+    {
+      "id": "protein_pill",
+      "file": "icons/protein_pill.png",
+      "width": 12,
+      "height": 9,
+      "label": "Care menu Protein icon \u2014 unselected gray/white capsule immediately right of the Feed meat",
+      "confidence": "high-identity, medium pixel quality",
+      "use": "swap",
+      "source_file": "raw/wikimon/Digimon_Feeding.png",
+      "source_url": "https://wikimon.net/images/e/e4/Digimon_Feeding.png",
+      "source_page": "https://wikimon.net/File:Digimon_Feeding.png",
+      "working_image": "left 512\u00d7768 of the 514\u00d7768 file, exact 2\u00d7 of 256\u00d7384",
+      "crop_2x": [
+        164,
+        738,
+        188,
+        756
+      ],
+      "crop_native_equiv": [
+        82,
+        369,
+        94,
+        378
+      ],
+      "process": "Flood-key gold frame + dark well (lum<75) + blue water from edges; keep main component; BOX downsample 2:1; trim. Pixels not redrawn.",
+      "screen": "Same Feeding toolbar. Slot cross-checked against Giant Bomb English Training 'Protein remaining' screen, where this well is the Protein capsule.",
+      "quality_notes": "Unselected; screenshot softness. Recognizable two-tone capsule with highlight. Earlier JPEG extract (grey wedge) was rejected."
+    },
+    {
+      "id": "hunt_food",
+      "file": "icons/hunt_food.png",
+      "width": 17,
+      "height": 14,
+      "label": "Hunt Food bait (striped bun) on the Pocket Gamer Hunt toolbar. Not care-menu meat. Unused \u2014 must not replace Feed meat.",
+      "confidence": "medium",
+      "use": "unverified_reference",
+      "source_file": "raw/pocketgamer/digimon_world_championship_010.jpg",
+      "crop": [
+        56,
+        368,
+        75,
+        383
+      ],
+      "screen": "Unused toolbar reference only; not a gameplay swap."
+    },
+    {
+      "id": "hunt_gun",
+      "file": "icons/hunt_gun.png",
+      "width": 16,
+      "height": 13,
+      "label": "Hunt toolbar icon, likely Gun; JPEG extract is soft/ambiguous. Unused.",
+      "confidence": "low",
+      "use": "unverified_reference",
+      "source_file": "raw/pocketgamer/digimon_world_championship_010.jpg",
+      "crop": [
+        82,
+        368,
+        101,
+        383
+      ],
+      "screen": "Unused toolbar reference only; not a gameplay swap."
+    },
+    {
+      "id": "hunt_fence",
+      "file": "icons/hunt_fence.png",
+      "width": 16,
+      "height": 9,
+      "label": "Hunt toolbar fragment, possible fence/trap. Visually poor. Unused.",
+      "confidence": "low",
+      "use": "unverified_reference",
+      "source_file": "raw/pocketgamer/digimon_world_championship_010.jpg",
+      "crop": [
+        109,
+        368,
+        127,
+        383
+      ],
+      "screen": "Unused toolbar reference only; not a gameplay swap."
+    },
+    {
+      "id": "hunt_bomb_dark",
+      "file": "icons/hunt_bomb_dark.png",
+      "width": 14,
+      "height": 12,
+      "label": "Hunt toolbar dark sphere, possible bomb/trap. Unused.",
+      "confidence": "low",
+      "use": "unverified_reference",
+      "source_file": "raw/pocketgamer/digimon_world_championship_010.jpg",
+      "crop": [
+        135,
+        368,
+        153,
+        383
+      ],
+      "screen": "Unused toolbar reference only; not a gameplay swap."
+    },
+    {
+      "id": "hunt_bomb_light",
+      "file": "icons/hunt_bomb_light.png",
+      "width": 12,
+      "height": 9,
+      "label": "Hunt toolbar light sphere, possible bomb/trap. Unused.",
+      "confidence": "low",
+      "use": "unverified_reference",
+      "source_file": "raw/pocketgamer/digimon_world_championship_010.jpg",
+      "crop": [
+        161,
+        368,
+        179,
+        383
+      ],
+      "screen": "Unused toolbar reference only; not a gameplay swap."
+    },
+    {
+      "id": "hunt_boot_or_tool",
+      "file": "icons/hunt_boot_or_tool.png",
+      "width": 14,
+      "height": 11,
+      "label": "Hunt toolbar fragment, boot or tool. Visually poor. Unused.",
+      "confidence": "low",
+      "use": "unverified_reference",
+      "source_file": "raw/pocketgamer/digimon_world_championship_010.jpg",
+      "crop": [
+        188,
+        368,
+        206,
+        383
+      ],
+      "screen": "Unused toolbar reference only; not a gameplay swap."
+    },
+    {
+      "id": "care_syringe_or_clean",
+      "file": "icons/care_syringe_or_clean.png",
+      "width": 13,
+      "height": 12,
+      "label": "Care toolbar well 4, syringe-like; may be Clean. Not labeled vaccine. Unused. Prefer the Wikimon toolbar in proof for shape; this file is a soft Giant Bomb JPEG extract.",
+      "confidence": "low",
+      "use": "unverified_reference",
+      "source_file": "raw/giantbomb/430551-digimon_world_championship_gp3.jpg",
+      "crop": [
+        81,
+        368,
+        99,
+        383
+      ],
+      "screen": "Unused toolbar reference only; not a gameplay swap."
+    },
+    {
+      "id": "care_tool_4",
+      "file": "icons/care_tool_4.png",
+      "width": 15,
+      "height": 14,
+      "label": "Care toolbar fragment. Unused, visually poor.",
+      "confidence": "low",
+      "use": "unverified_reference",
+      "source_file": "raw/giantbomb/430551-digimon_world_championship_gp3.jpg",
+      "crop": [
+        108,
+        368,
+        126,
+        383
+      ],
+      "screen": "Unused toolbar reference only; not a gameplay swap."
+    },
+    {
+      "id": "care_pack_or_bandage",
+      "file": "icons/care_pack_or_bandage.png",
+      "width": 12,
+      "height": 15,
+      "label": "Care toolbar possible Bandage/pack. Unconfirmed, JPEG quality poor. Unused.",
+      "confidence": "low",
+      "use": "unverified_reference",
+      "source_file": "raw/giantbomb/430551-digimon_world_championship_gp3.jpg",
+      "crop": [
+        133,
+        368,
+        151,
+        383
+      ],
+      "screen": "Unused toolbar reference only; not a gameplay swap."
+    },
+    {
+      "id": "care_bottle_toolbar",
+      "file": "icons/care_bottle_toolbar.png",
+      "width": 11,
+      "height": 8,
+      "label": "Care toolbar pointed tool (dropper or similar). Unused, not used as medicine.",
+      "confidence": "low",
+      "use": "unverified_reference",
+      "source_file": "raw/giantbomb/430551-digimon_world_championship_gp3.jpg",
+      "crop": [
+        159,
+        368,
+        177,
+        383
+      ],
+      "screen": "Unused toolbar reference only; not a gameplay swap."
+    }
+  ],
+  "swaps": {
+    "meat": "meat",
+    "meatPack": "meat",
+    "food": "meat",
+    "vitamin": "protein_pill"
+  },
+  "reverted": {
+    "medicine": "Championship brown white-card portrait looks like a drumstick/meat and is not visually unique to medicine despite \u30af\u30b9\u30ea screen text. Restore Disk remains on procedural fallback. Crop kept under unverified/."
+  },
+  "unmatched_existing_ids": [
+    "medicine",
+    "fish",
+    "berry",
+    "fishPack",
+    "berryPack",
+    "joyToy",
+    "eraser",
+    "atkBoost",
+    "dataChip",
+    "digimental",
+    "crest",
+    "heal",
+    "toy",
+    "bits",
+    "xp",
+    "hp"
+  ],
+  "unverified_references": [
+    {
+      "id": "gp3_meat_rejected",
+      "file": "unverified/gp3_meat_rejected.png",
+      "reason": "Giant Bomb JPEG Feed well; keyed result looked like yellow flames/claw with stray pixels. Well identity was correct; art quality was not.",
+      "crop": [
+        30,
+        368,
+        49,
+        383
+      ],
+      "source_file": "raw/giantbomb/430551-digimon_world_championship_gp3.jpg"
+    },
+    {
+      "id": "gp3_protein_pill_rejected",
+      "file": "unverified/gp3_protein_pill_rejected.png",
+      "reason": "Giant Bomb JPEG Protein well; keyed result looked like a grey wedge.",
+      "crop": [
+        56,
+        368,
+        74,
+        383
+      ],
+      "source_file": "raw/giantbomb/430551-digimon_world_championship_gp3.jpg"
+    },
+    {
+      "id": "medicine_portrait_jp_unverified",
+      "file": "unverified/medicine_portrait_jp_unverified.png",
+      "reason": "Japanese \u30af\u30b9\u30ea screen white-card portrait looks like a brown drumstick/meat. Not used to replace Restore Disk.",
+      "crop": [
+        27,
+        73,
+        48,
+        94
+      ],
+      "source_file": "raw/giantbomb/586753-gfs_97204_2_11.jpg"
+    }
+  ]
+}

@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#0b121c">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='7' fill='%23f0a030'/%3E%3Ccircle cx='10' cy='7' r='1.2' fill='%231a3a20'/%3E%3C/svg%3E">
+  <title>Digi Night</title>
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/title.css">
+  <link rel="stylesheet" href="css/hub.css">
+</head>
+<body>
+  <div id="app">
+    <canvas id="game"></canvas>
+    <canvas id="title-scene" aria-hidden="true"></canvas>
+    <div id="webgl-unsupported" hidden role="alert">
+      <div class="webgl-msg">
+        <h1>WebGL is required</h1>
+        <p>This game draws the world with WebGL. Your browser did not provide a WebGL context, so the mission, farm, and brawl views cannot start. Try a current desktop or mobile browser with hardware acceleration enabled. There is no Canvas 2D fallback for the main view.</p>
+        <p id="webgl-unsupported-reason"></p>
+      </div>
+    </div>
+    <div id="webgl-restore" hidden>Restoring graphics…</div>
+    <div id="vignette"></div>
+    <div id="secret-veil" aria-hidden="true"></div>
+
+    <div id="hud">
+      <div class="hud-top">
+        <div class="hud-left">
+          <div class="bars">
+            <div class="bar-row" id="bar-row-tamer" hidden style="display:none"><span class="bar-label" data-ico="hp" id="bar-label-tamer">You</span><div class="bar bar-tamer is-vital" id="bar-tamer"><i></i><span class="bar-num" id="bar-num-tamer">0/0</span></div></div>
+            <div class="bar-row" id="bar-row-hp" hidden style="display:none"><span class="bar-label" data-ico="hp" id="bar-label-hp">Pal</span><div class="bar bar-hp is-vital" id="bar-hp"><i></i><span class="bar-num" id="bar-num-hp">0/0</span></div></div>
+            <div class="bar-row"><span class="bar-label" data-ico="xp" id="bar-label-xp">XP</span><div class="bar bar-xp" id="bar-xp"><i></i></div></div>
+            <div class="bar-row"><span class="bar-label" data-ico="food" id="bar-label-food">Eat</span><div class="bar bar-full" id="bar-full"><i></i></div></div>
+            <div class="bar-row"><span class="bar-label" data-ico="joy" id="bar-label-joy">Joy</span><div class="bar bar-happy" id="bar-happy"><i></i></div></div>
+          </div>
+          <div class="carry-row" id="carry-row"></div>
+          <button type="button" id="skills-chip" hidden aria-label="Skill tree (K)"><span id="skills-chip-text">Job Lv 1</span><b id="skills-chip-badge" hidden></b></button>
+          <button type="button" id="stats-chip" hidden aria-label="Tamer stats (T)"><span id="stats-chip-text">Tamer Lv 1</span><b id="stats-chip-badge" hidden></b></button>
+          <button type="button" id="burst-chip" hidden title="Warp burst, or a Mega's ultimate (R)"><span id="burst-chip-text">Warp 0%</span></button>
+          <div id="ally-chip" hidden></div>
+          <div class="evo-strip" id="evo-strip"></div>
+          <div class="mood-strip" id="mood-strip"></div>
+        </div>
+        <div class="hud-right">
+          <div class="hud-buttons">
+            <button type="button" id="btn-shop" data-glyph-title="shop" data-glyph-label="Shop" title="Shop (Q)">Shop</button>
+            <button type="button" id="btn-capture" data-glyph-title="capture" data-glyph-label="Capture" title="Catch (E)" hidden>Capture</button>
+            <span class="hud-snd">
+              <button type="button" id="btn-music" title="Music is on">♫</button>
+              <button type="button" id="btn-mute" title="Sound is on">♪</button>
+            </span>
+            <button type="button" id="btn-pause" data-glyph-title="pause" data-glyph-label="Pause" title="Pause">❚❚</button>
+          </div>
+          <div class="minimap-wrap" id="minimap-wrap">
+            <canvas id="minimap" width="168" height="168" aria-label="Minimap"></canvas>
+          </div>
+          <div class="chip chip-season" id="hud-season" data-season="spring"><b id="hud-season-year">Year 1</b> · <span id="hud-season-name">Spring</span><i id="hud-season-bar"></i></div>
+          <div class="chip chip-bits" id="hud-bits">0 Bits</div>
+          <div class="chip" id="hud-timer">00:00</div>
+          <div class="chip" id="hud-farm" hidden>Farm in 03:00</div>
+          <div class="chip is-warn" id="hud-beat" hidden>Boss in 0:30</div>
+          <div class="chip" id="hud-weather" hidden></div>
+          <div class="chip" id="hud-level" hidden style="display:none">Lv 1</div>
+          <div class="chip" id="hud-kills">0 KOs</div>
+          <div class="chip" id="hud-capture">Capture 0 KOs: Baby 0/15</div>
+          <div class="chip" id="hud-form">Agumon</div>
+        </div>
+      </div>
+      <div class="hud-bottom">
+       <div class="hud-bottom-left">
+        <div class="bag-row" id="bag-row"></div>
+        <div id="prompt-bar" hidden data-source="keyboard">
+          <span data-glyph="move" data-glyph-label="Move"></span>
+          <span data-glyph="aim" data-glyph-label="Aim"></span>
+          <span data-glyph="interact" data-glyph-label="Interact"></span>
+          <span data-glyph="capture" data-glyph-label="Capture"></span>
+          <span data-glyph="shop" data-glyph-label="Shop"></span>
+          <span data-glyph="slots" data-glyph-label="Slots"></span>
+          <span data-glyph="pause" data-glyph-label="Pause"></span>
+          <span data-glyph="menu" data-glyph-label="Menu"></span>
+        </div>
+       </div>
+      </div>
+    </div>
+
+    <div id="desperation-banner">Desperation</div>
+    <div id="capture-toast"></div>
+
+    <div id="revive-prompt" hidden>
+      <div class="revive-label" id="revive-label">Hold to revive</div>
+      <div class="revive-bar"><i id="revive-bar-fill"></i></div>
+    </div>
+    <button type="button" id="btn-revive" hidden>Hold to Revive</button>
+    <div id="skills-panel" hidden>
+      <div class="stats-head"><b id="skills-title">Skills</b><button type="button" id="skills-close" aria-label="Close">&times;</button></div>
+      <div class="stats-points" id="skills-points">Skill points: 0</div>
+      <div id="skills-rows"></div>
+      <div class="stats-foot">Each job level gives one skill point and three cards. Take a card to learn or raise that skill, or skip and put the point into something you already know. New skills only come from cards. A bigger move needs the form that knows it and the smaller move at Lv 3; only the biggest move of each kind fires.</div>
+    </div>
+    <div id="stats-panel" hidden>
+      <div class="stats-head"><b id="stats-title">Tamer Lv 1</b><button type="button" id="stats-close" aria-label="Close">&times;</button></div>
+      <div class="stats-xp"><i id="stats-xp-fill"></i></div>
+      <div class="stats-points" id="stats-points">0 points to spend</div>
+      <div id="stats-rows"></div>
+      <div class="stats-foot">Base level is your tamer: it gives status points. Job level is your Digimon: it gives moves, and bonus stats (the green +) each time it digivolves. A stat costs more the higher it is. Everything resets when the run ends. T to close.</div>
+    </div>
+    <div id="evo-offer" hidden>
+      <div class="evo-offer-title" id="evo-offer-title">Ready to digivolve!</div>
+      <div class="evo-offer-sub" id="evo-offer-sub"></div>
+      <div class="evo-offer-row">
+        <button type="button" id="btn-evo-yes"><kbd>Y</kbd> Digivolve</button>
+        <button type="button" id="btn-evo-no"><kbd>N</kbd> Not yet</button>
+      </div>
+    </div>
+    <button type="button" id="dna-hint" hidden></button>
+    <div id="dna-box" hidden>
+      <div class="evo-offer-title" id="dna-title">DNA Digivolve</div>
+      <div class="evo-offer-sub" id="dna-sub"></div>
+      <div class="evo-offer-row" id="dna-row"></div>
+    </div>
+    <div id="feed-menu" hidden>
+      <div class="feed-title">Feed <span>pick a number or tap &middot; F to close</span></div>
+      <div id="feed-menu-list"></div>
+    </div>
+
+    <div id="joystick">
+      <div id="joy-base"></div>
+      <div id="joy-knob"></div>
+    </div>
+
+    <div id="title-screen" class="screen is-on">
+      <div id="title-panel" class="title-layout">
+        <header class="title-brand">
+          <canvas id="title-logo" width="352" height="120" aria-label="Digi Night"></canvas>
+          <h1 class="wordmark">DIGI NIGHT</h1>
+          <p class="title-tag">Raise it. Feed it. Outlast the seasons.</p>
+        </header>
+        <div class="title-sky" id="title-sky" aria-live="off"><span class="title-sky-dot"></span><span id="title-sky-name" data-px="CLEAR DAY"></span></div>
+        <nav class="title-menu" aria-label="Main menu">
+          <div class="title-invite" id="title-invite" hidden>
+            <span id="title-invite-text">You've been invited to a game.</span>
+          </div>
+          <button type="button" class="btn px-btn px-primary" id="btn-start" data-px="START RUN">Start Run</button>
+          <div class="title-row">
+            <button type="button" class="btn px-btn px-online" id="btn-online-host" data-px="HOST ONLINE">Host Online</button>
+            <button type="button" class="btn px-btn px-online" id="btn-online-join" data-px="JOIN GAME">Join Game</button>
+          </div>
+          <div class="title-row">
+            <button type="button" class="btn ghost px-btn" id="btn-bank" data-px="DIGIBANK">DigiBank</button>
+            <button type="button" class="btn ghost px-btn" id="btn-cabinet" data-px="CABINET">Cabinet</button>
+          </div>
+          <div class="title-row">
+            <button type="button" class="btn ghost px-btn" id="btn-log" data-px="EVO LOG" aria-label="Digivolution Log">Digivolution Log</button>
+            <button type="button" class="btn ghost px-btn" id="btn-help" data-px="HOW TO PLAY">How to Play</button>
+          </div>
+          <div class="party-option" id="party-cpu" data-count="0">
+            <div class="party-option-row">
+              <span class="party-option-label">CPU teammates</span>
+              <div class="party-stepper">
+                <button type="button" class="btn ghost party-step" id="btn-cpu-minus" aria-label="Fewer CPU teammates">−</button>
+                <strong id="cpu-count">0</strong>
+                <button type="button" class="btn ghost party-step" id="btn-cpu-plus" aria-label="More CPU teammates">+</button>
+              </div>
+            </div>
+            <p class="party-you" hidden><span id="party-you-name">You</span></p>
+          </div>
+          <div class="title-foot">
+            <span class="chip" id="title-digibits" data-digibits>DigiBits 0</span>
+            <span class="title-hint">Tap the egg</span>
+          </div>
+        </nav>
+        <p class="disclaimer">Unofficial, non-commercial fan project. Digimon and its sprites belong to Bandai Namco / Toei Animation. Nothing is for sale.</p>
+        <div class="starters" id="starter-row"></div>
+        <div class="how-to" id="help-box" hidden>
+          <button type="button" class="px-close" id="btn-help-close">Close</button>
+          <p><b>Move</b> with WASD or arrow keys, a left stick / D-pad, or the on-screen joystick.</p>
+          <p><b>Attacks fire on their own.</b> After you pick a tamer and a Digitama, the run starts with an egg. It hatches after 20 seconds, and the enemies arrive right before it does. Then your Digimon fights on its own. Click (or tap) an enemy to send your partner after it. Collect teal XP gems and food; food goes in your bag and you feed your partner at the Digi Farm.</p>
+          <p><b>Care:</b> hunger mainly drains during battle, and only a faint trickle on the <b>Digifarm</b> (tunable, default 0.05×). It does not drain in a brawl, and an empty belly has no combat penalties. Feeding is farm-only. Leaving the farm hungry without having fed (a refused meal does not count against you) is a care mistake. Shop food, vitamins, medicine, toys, and evolution items go to your farm bag. In battle, defeated foes drop instant ground heals — walk over the green cross to recover.</p>
+          <p><b>Evolution</b> needs a level plus feeding, happiness, and health thresholds (shown in the HUD). Neglect can branch into Numemon; good care can still recover.</p>
+          <p><b>High happiness</b> speeds up attacks and can add extra projectiles. Below 25% HP you enter <b>Desperation</b> — stronger, but you take more damage and drain joy.</p>
+          <p><b>Bits and shop:</b> defeated foes drop Bits. Jijimon opens a shop at intervals (or press Q / the Shop button while he is around). Prices of the same item go up each time you buy it in a run.</p>
+          <p><b>Capture:</b> KOs fill a charge on the HUD. A Data Chip only works on a weakened non-boss (25% HP or less) once that charge meets the target's stage (Baby 15, In-Training 25, Rookie and Mega 40, Champion 70, Armor 90, Ultimate 120). A try — success or fail — resets the charge to 0. Press C (gamepad X, or the Capture button) near a marked foe. Captures join as an ally and go to the DigiBank.</p>
+          <p><b>Survivor brawl:</b> after a level-up (every level by default, or every 3 — tunable), a short brawl can break out on the same top-down field for up to 6 fighters. CPU teammates are optional lone Digimon (0–5, default none) with no tamer. With fewer than two fighters the brawl is skipped (or a short solo bonus, if you turn that on). When two or more are in, survivors fight; if anyone is down, exactly one random downed fighter is revived; if everyone survived, no revive. Dead players (up to 5) bet on the winner. Odds show first. Wins and correct bets pay persistent DigiBits. It doesn't change your run's combat outcome.</p>
+          <p><b>Digifarm visits</b> are scheduled on battle time at 3, 6, and 10 minutes, then every 4 minutes after that (tunable, resets each run). A countdown and 15s / 5s warnings appear before each visit. You have a short stay cap (default 45s) before an auto-return. Feed, pet, and use the four training stations (punching bag, chalkboard, running track, and a cozy TV) to steer evolution and mood. Esc or Return leaves when you're ready. A brawl that comes due around a farm visit plays first, then the farm opens.</p>
+          <p><b>Battle clock:</b> counts up from 00:00. The seasons change every 6 minutes (Spring, Summer, Fall, Winter, then a new year), and every season that passes makes enemies tougher.</p>
+          <p><b>The Hatchery:</b> every enemy you defeat pays one piece of data of its element, and every minute survived pays a little plain data. On the title screen, feed that data to the egg in the Hatchery. It hatches, then digivolves as far as Champion. What it becomes depends on what you fed it and on the sky when you fed it, and is never certain. Raise one to Rookie and its egg line is yours to pick for any run: that is the only way to open a line. You can also take the Hatchery Digimon itself into one run in place of an egg; it starts at its stage, and it does not come back.</p>
+          <p><b>E interacts:</b> one key for everything you walk up to. Jijimon's shop, a spire or a cache, a Digimon you can catch (it wears a yellow ring), a DNA partner. <b>F</b> feeds.</p>
+          <p><b>R:</b> when the meter is full, your partner warp digivolves for a few seconds. A Mega has nothing to warp into, so R fires its <b>ultimate</b> instead: its signature move, once, across most of the screen. A Mega cannot use that move any other way.</p>
+          <p><b>Controls:</b> keyboard and a controller work at the same time. WASD or left stick to move. Mouse or right stick aims Data Chip throws and targets. E / F (or gamepad Y) interact. 1–9 or scroll / LB-RB pick farm bag slots. Esc pauses or backs out; Tab opens menus. On-screen prompts switch glyphs to the last device you used, including in battle, the farm, menus, the shop, and brawls. Hold E / F (gamepad Y, or the on-screen Revive button) to revive: in a solo run you get one self-revive per round after a fatal hit; in a CPU or multi-player party, hold near a downed teammate when at least two members are still standing. Rescue closes when a brawl starts. Battle weather can shift on its own after the egg hatches — Eclipse packs the field, Meteor Shower is a richer fight. The name shows on the HUD when a front is active. <b>Touch:</b> left joystick to move, tap cards and buttons, Punch button in a brawl. In a brawl, A / Confirm punches; dead players use the d-pad or tap to bet.</p>
+        </div>
+      </div>
+    </div>
+
+    <div id="tamer-screen" class="screen">
+      <div class="panel" id="tamer-panel">
+        <h2 class="px-head"><span data-px="CHOOSE YOUR TAMER"></span></h2>
+        <p class="sub">Pick your projection: how you appear in the Digital World.</p>
+        <div class="tamer-grid" id="tamer-row"></div>
+        <div class="row center">
+          <button type="button" class="btn px-btn px-primary" id="btn-tamer-start" data-px="NEXT">Next</button>
+          <button type="button" class="btn ghost px-btn" id="btn-tamer-back" data-px="BACK">Back</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="egg-screen" class="screen">
+      <div class="panel" id="egg-panel">
+        <h2 class="px-head"><span data-px="YOUR DIGI EGGS"></span></h2>
+        <p class="sub">Every egg line, opened or not. Swipe or use the arrows. Tap the egg to say hello.</p>
+        <div class="tamer-grid egg-grid" id="egg-row"></div>
+        <div class="row center">
+          <button type="button" class="btn px-btn px-primary" id="btn-egg-start" data-px="START" hidden>Start</button>
+          <button type="button" class="btn px-btn px-primary" id="btn-egg-back" data-px="DONE">Done</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="lobby-screen" class="screen">
+      <div class="panel px-panel" id="lobby-panel">
+        <h2 class="px-head"><span id="lobby-title" data-px="ONLINE LOBBY"></span></h2>
+        <p class="sub" id="lobby-sub">Send the invite link to your friends. They open it in a browser — nothing to download.</p>
+        <div class="lobby-invite" id="lobby-invite">
+          <div class="lobby-code-box">
+            <span class="lobby-code-label">Room code</span>
+            <span class="lobby-code" id="lobby-code" data-px="----"></span>
+          </div>
+          <div class="lobby-link-box">
+            <span class="lobby-code-label">Invite link</span>
+            <input type="text" id="lobby-link" readonly value="" aria-label="Invite link">
+            <div class="lobby-link-actions">
+              <button type="button" class="btn px-btn px-online" id="btn-lobby-copy" data-px="COPY LINK">Copy link</button>
+              <button type="button" class="btn ghost px-btn" id="btn-lobby-share" data-px="SHARE" hidden>Share</button>
+            </div>
+            <p class="lobby-note" id="lobby-note"></p>
+          </div>
+        </div>
+        <div class="lobby-players" id="lobby-players" aria-live="polite"></div>
+        <p class="lobby-status" id="lobby-status"></p>
+        <div class="row center">
+          <button type="button" class="btn px-btn px-primary" id="btn-lobby-start" data-px="START GAME">Start game</button>
+          <button type="button" class="btn ghost px-btn" id="btn-lobby-leave" data-px="LEAVE">Leave</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="join-screen" class="screen">
+      <div class="panel px-panel" id="join-panel">
+        <h2 class="px-head"><span data-px="JOIN A GAME"></span></h2>
+        <p class="sub" id="join-sub">Type the room code your friend sent, and the name they'll see.</p>
+        <label class="join-field"><span>Room code</span><input type="text" id="join-code" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABCD"></label>
+        <label class="join-field"><span>Your name</span><input type="text" id="join-name" maxlength="14" autocomplete="off" spellcheck="false" placeholder="Tamer"></label>
+        <p class="lobby-status" id="join-status"></p>
+        <div class="row center">
+          <button type="button" class="btn px-btn px-primary" id="btn-join-go" data-px="JOIN">Join</button>
+          <button type="button" class="btn ghost px-btn" id="btn-join-back" data-px="BACK">Back</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="online-banner" hidden></div>
+
+    <div id="levelup-screen" class="screen">
+      <div class="panel">
+        <h2>LEVEL UP</h2>
+        <p class="sub" id="levelup-sub">Choose an upgrade. A / Enter / tap to confirm.</p>
+        <div class="cards" id="levelup-cards"></div>
+      </div>
+    </div>
+
+    <div id="pause-screen" class="screen">
+      <div class="panel pause-panel">
+        <div class="pause-head">
+          <canvas id="pause-cv" class="pixelated" width="88" height="88"></canvas>
+          <div>
+            <h2>PAUSED</h2>
+            <p class="sub" id="pause-form">Agumon · Rookie</p>
+            <div class="pause-tags" id="pause-tags"></div>
+          </div>
+        </div>
+        <div class="pause-body">
+          <div class="pause-tiles" id="pause-tiles"></div>
+          <div class="care-list" id="pause-care"></div>
+          <div class="pause-extra" id="pause-extra"></div>
+        </div>
+        <div class="row center pause-actions">
+          <button type="button" class="btn" id="btn-resume">Resume</button>
+          <button type="button" class="btn ghost" id="btn-pause-log">Digivolution Log</button>
+          <button type="button" class="btn ghost" id="btn-fx">Effects: Full</button>
+          <button type="button" class="btn ghost" id="btn-quit">Quit to Title</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="evolution-screen" class="screen">
+      <div class="panel">
+        <div id="evo-flash">Evolution</div>
+        <div class="evo-pair">
+          <div class="evo-side" id="evo-from-side">
+            <canvas id="evo-from-cv" class="pixelated evo-cv" width="160" height="160"></canvas>
+            <div id="evo-from">Agumon</div>
+          </div>
+          <div class="evo-arrow" aria-hidden="true">▼</div>
+          <div class="evo-side" id="evo-to-side">
+            <canvas id="evo-to-cv" class="pixelated evo-cv" width="160" height="160"></canvas>
+            <div id="evo-to">Greymon</div>
+          </div>
+        </div>
+        <p class="sub" id="evo-note"></p>
+        <div id="evo-pop-flash"></div>
+      </div>
+    </div>
+
+    <div id="gameover-screen" class="screen">
+      <div class="panel">
+        <h2 id="go-title">RUN OVER</h2>
+        <p class="sub" id="go-sub">Your partner fell in the Digital Field.</p>
+        <p class="unlock-note" id="go-unlock" hidden></p>
+        <div class="summary" id="go-summary"></div>
+        <p class="go-loot" id="go-loot" hidden></p>
+        <p class="go-memory" id="go-memory" hidden></p>
+        <p class="go-memory go-data" id="go-data" hidden></p>
+        <div class="go-rank" id="go-rank" hidden></div>
+        <div class="row center">
+          <button type="button" class="btn" id="btn-retry">Run Again</button>
+          <button type="button" class="btn ghost" id="btn-title">Title</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="shop-screen" class="screen">
+      <div class="panel" id="shop-panel">
+        <div class="shop-head">
+          <canvas id="shop-jiji" class="shop-jiji pixelated" width="120" height="120" aria-hidden="true"></canvas>
+          <div class="shop-head-text">
+            <h2>JIJIMON'S SHOP</h2>
+            <p class="sub">Bits: <span id="shop-bits">0</span> · Prices rise after each buy of the same item. A / Enter / tap to buy, B or Esc to close.</p>
+          </div>
+        </div>
+        <div class="shop-tabs" id="shop-tabs" role="tablist"></div>
+        <div class="shop-list-wrap">
+          <div id="shop-rows" class="shop-rows"></div>
+          <div class="shop-scroll-hint" id="shop-scroll-hint" hidden>More below ↓</div>
+        </div>
+        <div class="row center">
+          <button type="button" class="btn" id="btn-shop-close">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="bank-screen" class="screen">
+      <div class="panel" id="bank-panel">
+        <h2>DIGIBANK</h2>
+        <p class="sub" id="bank-sub">Captured Digimon stay here between runs. Pick one to bring as an ally on your next run.</p>
+        <div class="bank-deploy-banner" id="bank-deploy-banner"></div>
+        <div id="bank-grid" class="bank-grid"></div>
+        <div id="bank-memories" class="bank-memories"></div>
+        <div class="bank-confirm" id="bank-confirm" hidden>
+          <p id="bank-confirm-msg">Release this Digimon from the DigiBank? This cannot be undone.</p>
+          <div class="row center">
+            <button type="button" class="btn danger" id="btn-bank-release-yes">Release</button>
+            <button type="button" class="btn ghost" id="btn-bank-release-no">Cancel</button>
+          </div>
+        </div>
+        <div class="row center bank-actions" id="bank-actions">
+          <button type="button" class="btn" id="btn-bank-deploy">Bring on next run</button>
+          <button type="button" class="btn ghost" id="btn-bank-release">Release</button>
+          <button type="button" class="btn ghost" id="btn-bank-clear">Don't bring anyone</button>
+          <button type="button" class="btn ghost" id="btn-bank-back">Back</button>
+        </div>
+      </div>
+    </div>
+
+
+    <div id="brawl-screen" class="screen" data-phase="">
+      <div id="brawl-hud" class="brawl-layer" hidden></div>
+      <div id="brawl-odds" class="brawl-layer brawl-overlay" hidden></div>
+      <div id="brawl-bet" class="brawl-layer brawl-bet-line" hidden></div>
+      <div id="brawl-revive" class="brawl-layer brawl-overlay" hidden></div>
+      <div id="brawl-result" class="brawl-layer brawl-overlay" hidden></div>
+      <div id="brawl-payout" class="brawl-layer brawl-overlay" hidden></div>
+      <button type="button" id="brawl-atk" class="brawl-atk" hidden>Punch</button>
+      <div id="brawl-pause" class="brawl-layer brawl-overlay" hidden>
+        <div class="brawl-panel-inner">
+          <h2>BRAWL PAUSED</h2>
+          <p class="sub">Doesn't affect your run. Resume or skip to the result.</p>
+          <div class="row center">
+            <button type="button" class="btn" id="btn-brawl-resume">Resume</button>
+            <button type="button" class="btn ghost" id="btn-brawl-skip">Skip brawl</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="farm-screen" class="screen">
+      <div class="farm-hud">
+        <div class="farm-title-row">
+          <div class="farm-title">DIGIFARM</div>
+          <div id="farm-hunger-icon" class="farm-hunger-icon" hidden title="" aria-hidden="true">●</div>
+        </div>
+        <div id="farm-stay">Auto-return 00:45</div>
+        <div id="farm-mood"></div>
+        <div id="farm-slots"></div>
+        <div class="farm-actions">
+          <button type="button" class="btn" id="btn-farm-pet" data-glyph="interact" data-glyph-label="Pet / Use">Pet / Use</button>
+          <button type="button" class="btn ghost" id="btn-farm-train">Train</button>
+          <button type="button" class="btn ghost" id="btn-farm-shop" data-glyph="shop" data-glyph-label="Stall">Stall</button>
+          <button type="button" class="btn" id="btn-farm-return" data-glyph="back" data-glyph-label="Return">Return to battle</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="lab-screen" class="screen">
+      <div class="lab">
+        <button type="button" class="btn hub-mini lab-back" id="btn-lab-back" data-px="BACK"></button>
+        <h2 class="lab-head" data-px="THE LAB"></h2>
+        <p class="lab-sub">Spend DigiBits on small boosts that stay with you in every run. <span class="hub-chip">DigiBits <b id="lab-bits">0</b></span></p>
+        <div class="lab-grid" id="lab-grid"></div>
+        <p class="lab-foot" id="lab-foot"></p>
+      </div>
+    </div>
+
+    <div id="hatchery-screen" class="screen">
+      <div class="lab hatch">
+        <button type="button" class="btn hub-mini lab-back" id="btn-hatch-back" data-px="BACK"></button>
+        <h2 class="lab-head hatch-head" data-px="THE HATCHERY"></h2>
+        <div class="hatch-body">
+          <div class="hatch-stand">
+            <canvas id="hatch-art" width="340" height="260"></canvas>
+            <b id="hatch-name">Mystery egg</b>
+            <span id="hatch-tag"></span>
+            <div class="hatch-bar"><i id="hatch-bar"></i><em id="hatch-bar-text"></em></div>
+            <p class="hatch-use" id="hatch-use" hidden></p>
+          </div>
+          <div class="hatch-side">
+            <p class="hatch-sub">Your data <span class="hub-chip">Total <b id="hatch-total">0</b></span></p>
+            <div class="hatch-data" id="hatch-data"></div>
+          </div>
+        </div>
+        <p class="lab-foot" id="hatch-foot"></p>
+      </div>
+    </div>
+
+    <div id="cosmetics-screen" class="screen">
+      <div class="panel" id="cosmetics-panel">
+        <h2>CABINET</h2>
+        <p class="sub" id="cosmetics-bits" data-digibits>DigiBits 0</p>
+        <p class="sub">Spend DigiBits on titles, Digivice frames, and farm backdrops. They stay equipped across runs. A few pieces aren't for sale — they only turn up after a mysterious brawl.</p>
+        <p class="sub" id="cosmetics-account">Playing as a local guest. Cloud accounts are not connected.</p>
+        <div id="cosmetics-grid" class="cosmetics-grid"></div>
+        <div class="row center">
+          <button type="button" class="btn" id="btn-cosmetics-back">Back</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="net-sim" hidden>
+      <div class="net-sim-title">Net sim</div>
+      <label>Latency <input type="range" id="net-lat" min="0" max="300" value="150"> <span id="net-lat-v">150ms</span></label>
+      <label>Jitter <input type="range" id="net-jit" min="0" max="80" value="20"> <span id="net-jit-v">20ms</span></label>
+      <label>Loss <input type="range" id="net-loss" min="0" max="30" value="10"> <span id="net-loss-v">10%</span></label>
+    </div>
+
+    <pre id="tier-debug" hidden aria-hidden="true"></pre>
+    <div id="debug-panel">
+      <button type="button" data-dbg="xp">+XP (level)</button>
+      <button type="button" data-dbg="food">+Bag food</button>
+      <button type="button" data-dbg="happy">Fill happiness</button>
+      <button type="button" data-dbg="hp">Fill both HP</button>
+      <button type="button" data-dbg="hurt">Tamer HP 20%</button>
+      <button type="button" data-dbg="hurtmon">Partner HP 20%</button>
+      <button type="button" data-dbg="feed">Fill belly</button>
+      <button type="button" data-dbg="evo">Meet evo reqs</button>
+      <button type="button" data-dbg="hatch">Hatch now (Y)</button>
+      <button type="button" data-dbg="baby">Force Baby (1)</button>
+      <button type="button" data-dbg="training">Force In-Training (2)</button>
+      <button type="button" data-dbg="rookie">Force Rookie (3)</button>
+      <button type="button" data-dbg="champion">Force Champion (4)</button>
+      <button type="button" data-dbg="cycle">Cycle form (])</button>
+      <button type="button" data-dbg="eval">Eval branches (B)</button>
+      <button type="button" data-dbg="bits">+100 Bits (=)</button>
+      <button type="button" data-dbg="shop">Open shop (O)</button>
+      <button type="button" data-dbg="capture">Force capture (V)</button>
+      <button type="button" data-dbg="charge">Fill capture charge (N)</button>
+      <button type="button" data-dbg="brawl">Start brawl (J)</button>
+      <button type="button" data-dbg="farm">Open farm (I)</button>
+      <button type="button" data-dbg="farmdue">Farm in 16s (Z)</button>
+      <button type="button" data-dbg="overtime">Force overtime (L)</button>
+      <button type="button" data-dbg="healorb">Spawn heal (T)</button>
+      <button type="button" data-dbg="weatherEclipse">Weather: Eclipse</button>
+      <button type="button" data-dbg="weatherMeteor">Weather: Meteor Shower</button>
+      <button type="button" data-dbg="weatherRain">Weather: Rain</button>
+      <button type="button" data-dbg="weatherStorm">Weather: Thunderstorm</button>
+      <button type="button" data-dbg="weatherClear">Weather: Clear</button>
+      <pre id="debug-evo-log" hidden></pre>
+      <button type="button" id="btn-hide-debug" title="Also ?debug=1&hud=clean or press U">Hide panel (U)</button>
+    </div>
+  </div>
+
+  <script src="js/tester.js"></script>
+  <script src="js/data.js"></script>
+  <script src="js/ro-stats.js"></script>
+  <script src="js/devlock.js"></script>
+  <script src="js/party-rules.js"></script>
+  <script src="js/day-clock.js"></script>
+  <script src="js/audio.js"></script>
+  <script src="js/weather.js"></script>
+  <script src="js/seasons.js"></script>
+  <script src="js/shop.js"></script>
+  <script src="js/storage.js"></script>
+  <script src="js/evolution-tree.js"></script>
+  <script src="js/up-atlas-index.js"></script>
+  <script src="js/species-catalog.js"></script>
+  <script src="js/moves.js"></script>
+  <script src="js/elements.js"></script>
+  <script src="js/dna.js"></script>
+  <script src="js/skill-tree.js"></script>
+  <script src="js/rarity.js"></script>
+  <script src="js/net/rarity-sim.js"></script>
+  <script src="js/evo-stat-gates.js"></script>
+  <script src="js/evo-hardmode.js"></script>
+  <script src="js/egg-lines.js"></script>
+  <script src="js/stage-waves.js"></script>
+  <script src="js/storage-provider.js"></script>
+  <script src="js/cosmetics.js"></script>
+  <script src="js/net/transport.js"></script>
+  <script src="js/net/rival-sim.js"></script>
+  <script src="js/net/virus-sim.js"></script>
+  <script src="js/net/mission-sim.js"></script>
+  <script src="js/net/brawl-sim.js"></script>
+  <script src="js/net/progression.js"></script>
+  <script src="js/net/authority.js"></script>
+  <script src="js/net/client.js"></script>
+  <script src="js/gl/renderer.js"></script>
+  <script src="js/sprites.js"></script>
+  <script src="js/attack-fx.js"></script>
+  <script src="js/hit-fx.js"></script>
+  <script src="js/lab.js"></script>
+  <script src="js/hatchery.js"></script>
+  <script src="js/items.js"></script>
+  <script src="js/hub.js"></script>
+  <script src="js/terrain-art.js"></script>
+  <script src="js/biomes.js"></script>
+  <script src="js/world.js"></script>
+  <script src="js/input.js"></script>
+  <script src="js/session.js"></script>
+  <script src="js/brawl.js"></script>
+  <script src="js/farm-art.js"></script>
+  <script src="js/pickup-art.js"></script>
+  <script src="js/move-icons.js"></script>
+  <script src="js/farm.js"></script>
+  <script src="js/evo-log.js"></script>
+  <script src="js/title-scene.js"></script>
+  <script src="js/net/online.js"></script>
+  <script src="js/game.js"></script>
+  <script src="js/badges.js"></script>
+  <script src="js/profile.js"></script>
+  <script src="js/online-ui.js"></script>
+  <!-- Championship item sprites disabled per Isaac (Nov 13): <script src="js/item-art.js"></script> -->
+</body>
+</html>
