@@ -40,6 +40,10 @@ var PORT = parseInt(opt("port", process.env.GAME_PORT || process.env.PORT || "80
 var HOST = opt("host", process.env.GAME_HOST || "0.0.0.0");
 var publicUrl = cleanUrl(opt("public", process.env.PUBLIC_URL || process.env.RENDER_EXTERNAL_URL || process.env.RAILWAY_PUBLIC_DOMAIN || ""));
 var publicFrom = publicUrl ? "option" : "";
+/* Player accounts (accounts-server.js): a username and password, and the save kept here. On for a
+ * web host; at home only with --accounts or ACCOUNTS=1, so start-online.bat plays as before. */
+var accounts = require("./accounts-server.js");
+var ACCOUNTS = process.env.ACCOUNTS === "0" ? false : (HOSTED || process.env.ACCOUNTS === "1" || flag("accounts"));
 var MAX_ROOMS = 40, MAX_MEMBERS = 6, MAX_MSG = 512 * 1024, GRACE_MS = 90 * 1000;
 
 function cleanUrl(u) {
@@ -143,13 +147,14 @@ function lanAddresses() {
 function info() {
   var n = 0, k;
   for (k in rooms) n += 1;
-  return { game: "digimon-bullet-heaven", online: true, port: PORT, lan: lanAddresses(), publicUrl: publicUrl || "", publicFrom: publicFrom, rooms: n };
+  return { game: "digimon-bullet-heaven", online: true, port: PORT, lan: lanAddresses(), publicUrl: publicUrl || "", publicFrom: publicFrom, rooms: n, accounts: !!ACCOUNTS, accountsKept: !!(ACCOUNTS && accounts.persistent) };
 }
 
 var server = http.createServer(function (req, res) {
   var url = (req.url || "/").split("?")[0];
   var rel;
   try { rel = decodeURIComponent(url).replace(/^\/+/, ""); } catch (e) { return send(res, 400, "Bad request"); }
+  if (ACCOUNTS && rel.indexOf("api/account/") === 0 && accounts.handle(req, res, rel)) return;
   if (req.method !== "GET" && req.method !== "HEAD") return send(res, 405, "Method not allowed");
   if (rel === "api/info") {
     return send(res, 200, JSON.stringify(info()), { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
@@ -514,6 +519,7 @@ server.on("error", function (e) {
 });
 server.on("listening", function () {
   var lan = lanAddresses();
+  if (ACCOUNTS) console.log(accounts.persistent ? "Accounts are kept in " + accounts.dir : "WARNING: accounts are on but there is no Volume (RAILWAY_VOLUME_MOUNT_PATH / DATA_DIR). They are kept in " + accounts.dir + " and will be wiped by the next deploy.");
   if (HOSTED) {
     console.log("Digi Night is up on port " + PORT + (publicUrl ? "  ->  " + publicUrl : "") + ". Open the address your host gave this service.");
     return;

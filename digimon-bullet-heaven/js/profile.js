@@ -376,7 +376,7 @@
     var mine = ACH.filter(function (b) { return have[b.id]; }).sort(function (x, y) { return (y.tier - x.tier); });
     for (i = 0; i < mine.length; i++) { a = mine[i]; html += "<span class='badge-chip is-t" + a.tier + "' title='" + esc(a.text) + "'>" + esc(a.name) + "</span>"; }
     if (!mine.length) html += "<span class='badge-none'>None yet.</span>";
-    html += "</div>" + (opt.me ? "<div class='profile-row'><button type='button' class='profile-btn' id='profile-badges-btn'>All badges</button><button type='button' class='profile-btn' id='profile-edit-btn'>Change name or picture</button></div>" : "") + "</div>";
+    html += "</div>" + (opt.me ? "<div class='profile-row'><button type='button' class='profile-btn' id='profile-badges-btn'>All badges</button><button type='button' class='profile-btn' id='profile-edit-btn'>Change name or picture</button>" + (D.account && D.account.on() ? "<button type='button' class='profile-btn' id='profile-logout-btn'>Log out (" + esc(D.account.name()) + ")</button>" : "") + "</div>" : "") + "</div>";
     box = el("div", "profile-overlay", html); box.id = "profile-panel";
     host().appendChild(box);
     paintPic($("profile-ghost-cv"), picOf(c));
@@ -385,6 +385,7 @@
     $("profile-x").addEventListener("click", close);
     box.addEventListener("click", function (e) { if (e.target === box) close(); });
     if ($("profile-edit-btn")) $("profile-edit-btn").addEventListener("click", function () { close(); openEdit(false); });
+    if ($("profile-logout-btn")) $("profile-logout-btn").addEventListener("click", function () { this.disabled = true; this.textContent = "Saving and logging out…"; D.account.logout(); });
     if ($("profile-badges-btn")) $("profile-badges-btn").addEventListener("click", function () { close(); openBadges(); });
   }
 
@@ -393,7 +394,7 @@
   function watch() {
     var st = D.getState ? D.getState() : null;
     if (st === "title") {
-      if (!load() && !$("profile-edit")) openEdit(true);
+      if (!load() && !$("profile-edit") && !$("acct-screen") && !(D.account && D.account.pending)) openEdit(true);   /* signing in comes first (js/account.js) */
       if (lastState !== "title") renderChip();
     }
     lastState = st;

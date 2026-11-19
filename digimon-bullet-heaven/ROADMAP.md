@@ -804,3 +804,18 @@ doing its own thing and drawn its own way.
 - **Planting asks which seed**: pressing E at an empty plot opens a small window listing the seeds
   you hold, with each one's grow time and count. Click one or press its number; Esc or walking away
   closes it. It asks again for every plot.
+
+## 2026-11-17q — Accounts
+
+- **A username and password** on the web address (`accounts-server.js` beside `host-game.js`,
+  `js/account.js`). The game asks you to log in or create an account before anything else; the
+  profile's name starts as the username.
+- **The save is kept on the server**: fetched at login, sent back every 15 s and when the tab closes.
+  It is everything the game keeps in the browser except device settings (music, low detail).
+- A new account takes the progress already in that browser. Two computers on one account: the
+  server counts saves, and the one that is out of date is told to reload rather than overwrite.
+- Passwords: salted scrypt hash only. Login tokens: only their SHA-256 is stored. Twelve tries per
+  five minutes per address. No recovery for a forgotten password.
+- **Needs a Railway Volume** mounted at `/data` (HOSTING.md); the login screen says so until there is
+  one. Off for `start-online.bat` unless `--accounts`. Tester mode never syncs.
+- Log out is in the profile panel. `node scripts/accounts-test.js`.

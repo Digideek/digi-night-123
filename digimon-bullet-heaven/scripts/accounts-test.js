@@ -1,0 +1,36 @@
+/* node scripts/accounts-test.js : player accounts on the room server (../accounts-server.js) */
+const path = require("path"), fs = require("fs"), os = require("os");
+const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dn-acc-"));
+process.env.DATA_DIR = dir;
+const acc = require(path.join(__dirname, "..", "..", "accounts-server.js"));
+fs.mkdirSync(acc.dir, { recursive: true });
+const H = acc._handlers;
+let failed = 0;
+function ok(c, m) { if (!c) { failed++; console.log("  FAIL " + m); } else console.log("  ok " + m); }
+const save1 = { dbh_profile_v1: '{"name":"Isaac"}', dbh_save_v1: "{}" };
+let r = H.signup({ name: "ab", pass: "secret1" }, "ip1"); ok(r[0] === 400, "a two-letter username is refused");
+r = H.signup({ name: "Isaac", pass: "123" }, "ip1"); ok(r[0] === 400, "a three-character password is refused");
+r = H.signup({ name: "Isaac", pass: "secret1", save: save1 }, "ip1"); ok(r[0] === 200 && r[1].token && r[1].rev === 1, "signing up works and takes the save the browser already had");
+const t1 = r[1].token;
+r = H.signup({ name: "ISAAC", pass: "another1" }, "ip2"); ok(r[0] === 409, "the same name in other capitals is taken");
+const raw = fs.readFileSync(path.join(acc.dir, "isaac.json"), "utf8");
+ok(raw.indexOf("secret1") < 0 && raw.indexOf(t1.split(".")[1]) < 0, "neither the password nor the login token is written to disk");
+r = H.login({ name: "isaac", pass: "wrong-one" }, "ip3"); ok(r[0] === 401, "a wrong password is refused");
+r = H.login({ name: "isaac", pass: "secret1" }, "ip3"); ok(r[0] === 200 && r[1].name === "Isaac" && r[1].save.dbh_profile_v1 === save1.dbh_profile_v1, "logging in from another computer returns the save");
+const t2 = r[1].token;
+r = H.save({ token: t2, rev: 1, save: Object.assign({}, save1, { dbh_save_v1: '{"a":1}' }) }); ok(r[0] === 200 && r[1].rev === 2, "saving moves the count on");
+r = H.save({ token: t2, rev: 2, save: Object.assign({}, save1, { dbh_save_v1: '{"a":1}' }) }); ok(r[0] === 200 && r[1].rev === 2, "saving the same thing again does not move it");
+r = H.save({ token: t1, rev: 1, save: save1 }); ok(r[0] === 409 && r[1].reason === "stale", "the first computer, now out of date, cannot overwrite it");
+r = H.load({ token: t1 }); ok(r[0] === 200 && r[1].rev === 2 && r[1].save.dbh_save_v1 === '{"a":1}', "and can load the newer save");
+r = H.save({ token: t1, rev: 2, save: { evil_key: "x" } }); ok(r[0] === 400, "a save with keys that are not the game's is refused");
+r = H.save({ token: "isaac.deadbeef", rev: 2, save: save1 }); ok(r[0] === 401, "a made-up token is refused");
+r = H.save({ token: "../isaac.x", rev: 2, save: save1 }); ok(r[0] === 401, "a token that tries to reach other files is refused");
+r = H.password({ token: t1, old: "secret1", pass: "newpass9" }, "ip1"); ok(r[0] === 200, "changing the password works");
+ok(H.me({ token: t2 })[0] === 401 && H.me({ token: t1 })[0] === 200, "and signs out the other computers");
+ok(H.login({ name: "Isaac", pass: "secret1" }, "ip4")[0] === 401 && H.login({ name: "Isaac", pass: "newpass9" }, "ip4")[0] === 200, "the old password no longer works; the new one does");
+H.logout({ token: t1 }); ok(H.me({ token: t1 })[0] === 401, "logging out ends the session");
+let last; for (let i = 0; i < 14; i++) last = H.login({ name: "Isaac", pass: "guess" + i }, "ip9");
+ok(last[0] === 429, "a run of wrong guesses from one address is slowed down");
+fs.rmSync(dir, { recursive: true, force: true });
+console.log(failed ? failed + " FAILED" : "accounts-test: all passed");
+process.exit(failed ? 1 : 0);

@@ -32,10 +32,33 @@ already uses the web address. Friends open it, pick a tamer and egg, and join.
 GitHub Desktop, type a few words in the Summary box, click **Commit to main**, then **Push origin**.
 Railway picks it up and redeploys in a minute or two.
 
+## Accounts: a username and password for every player
+
+On the web address, the game now asks everyone to **log in or create an account** first, and each
+account's save is kept on the server, so it is the same on any computer.
+
+**Do this once, or every update will erase the accounts.** Railway throws away a service's files each
+time it redeploys unless they are on a Volume:
+
+1. Open your project in Railway. **Right-click the empty canvas** (or press Ctrl+K and type "volume") and choose **Volume**.
+2. When it asks which service, pick your `digi-night` service.
+3. For the **mount path** type `/data` and confirm.
+4. Railway redeploys by itself. That is all: the game finds the Volume on its own.
+
+Until that is done the login screen says, in orange, that the server has no storage attached.
+
+- Usernames are 3 to 14 letters, numbers, spaces, `-` or `_`. Passwords are 6 characters or more.
+- **There is no "forgot my password".** No email is collected, so a lost password cannot be recovered.
+- Passwords are stored only as a scrambled hash; nobody, including you, can read them.
+- Log out is in your profile (click your name on the title screen).
+- A new account takes whatever progress is already in that browser, so nobody loses a profile they made before accounts existed.
+- Playing the same account on two computers at once: the second one to save wins, and the other is told to reload.
+- `start-online.bat` at home does **not** ask for accounts. To try them at home: `node host-game.js --accounts`.
+
 Things to know:
 
-- **Your saves do not move by themselves.** Profile, rank, Lab, eggs and trophies live in the browser,
-  per address. The web address starts fresh, on each device.
+- **Saves:** on the web address they belong to the account (see above). Opened from your own computer
+  without accounts, they live in that browser as before.
 - **Keep the repository private.** The game is an unofficial fan project using Digimon art; share the
   link with friends rather than publishing the files.
 - Anyone who has the link can play. The host does not turn off when you close your browser.
