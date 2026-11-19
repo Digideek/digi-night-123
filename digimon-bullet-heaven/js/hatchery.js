@@ -153,6 +153,9 @@
     for (k in (killsBy || {})) if (TYPES.indexOf(k) >= 0 && killsBy[k] > 0) { out[k] = Math.round(killsBy[k]); n += out[k]; }
     k = Math.floor(Math.max(0, seconds || 0) / 60 * CFG.plainPerMinute);
     if (k > 0) out.plain = (out.plain || 0) + k;
+    /* the Lab's Data Tap: a little more of every kind */
+    n = D.lab && D.lab.mods ? (D.lab.mods().data || 1) : 1;
+    if (n !== 1) for (k in out) out[k] = Math.round(out[k] * n);
     return out;
   }
   function earn(H, got) { var k; for (k in got) H.data[k] = (H.data[k] || 0) + got[k]; return H; }

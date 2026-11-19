@@ -749,3 +749,58 @@ doing its own thing and drawn its own way.
 - **Nothing from tester mode is kept**: going in copies everything the game has saved in the
   browser aside; leaving, reloading or closing the tab puts it back and throws away the rest.
 - The run tools work in solo runs only. `node scripts/tester-test.js`.
+
+## 2026-11-17l — Slower base levels, longer music
+
+- **Base levels come much slower** (`TAMER_LEVEL.xpMul` 3.5 to 7, `PACING.baseEarly` now makes the
+  first four levels cost more instead of less). Base level 2 takes 139 XP (was 19), level 4 takes
+  949 in all (was 243), level 10 takes 18,074 (was 8,734). Job levels are unchanged.
+- **Every music track is arranged as a song** (`js/audio.js` `FORM`): each has a second phrase and
+  chord progression, and plays as intro, verse, verse with a harmony line, second phrase twice, a
+  quiet break, then both phrases a step higher. Loops are 90 to 146 s (were 13 to 21 s).
+- **The two dubstep tracks** (boss, eclipse) have three sets of wobble bars instead of one, a
+  melodic break between drops, rebuilds with a riser, and drops a minor third higher: about two
+  minutes before they repeat (were 14 s).
+- `node scripts/music-test.js`.
+
+## 2026-11-17m — Two-hit Babies, the status arrow
+
+- **Baby enemies take two hits at the start** (`PACING.stageHp` Baby I 0.28 to 0.37: 7.6 health
+  against a fresh partner's 6 a hit). About a third more damage makes it one hit again: six points
+  in STR for claw moves, eight in INT for bubble and breath moves. Other stages are unchanged.
+- **The gold arrow over the hologram goes away once the status window has been opened**, even with
+  points left unspent, and returns when the next points arrive. It used to stay for as long as any
+  point was unspent.
+- **The arrow is a button**: clicking or tapping it opens the status window.
+
+## 2026-11-17n — Farm: walking, keys, training
+
+- **The hologram walks at the farm**: its walk animation plays while it moves and it turns to face
+  up and down as well as sideways. The farm was never told it was moving or which way it faced.
+- **Movement keys only move you at the farm**: WASD and the arrows no longer step through STALL,
+  RETURN, TRAIN, PET / USE and the food chips. Those are for the mouse.
+- **No wait between training sessions** (`FARM_CFG.trainCooldown` 8 s to 0).
+
+## 2026-11-17o — Champion sizes
+
+- **Undersized Champions raised** (`species-catalog.js` `SHOW_SIZE`). Sizes were set on the sprite
+  frame, which is taller than the Digimon drawn in it, so a size of 1.8 tamers was showing at 1.35.
+  Measured what is actually drawn for all 78 Champions and raised 38 of them: Dokugumon 1.35 to 1.9
+  tamers tall (2.7 wide), Garurumon 1.35 to 1.6, Monochromon 1.56 to 1.8, Devidramon 1.65 to 1.95,
+  Kyubimon 1.04 to 1.45, Woodmon 1.24 to 1.6, Bakemon 0.65 to 1.15, Numemon 0.61 to 0.95, and the
+  child-shaped ones (Sistermon, Petermon, Aegiomon) to about one tamer.
+- Left alone: the man-shaped ones (Angemon, Leomon, Meramon: a head or two over a tamer already), the
+  ones that were already about twice a tamer (Greymon, Kuwagamon, Birdramon), and the ones that are
+  small in the show (Gatomon, Gekomon, Vilemon).
+- **The cap that shrinks big sprites on small windows is looser** (24% to 32% of the window's
+  shorter side). It was shrinking Seadramon on a 720-high window.
+
+## 2026-11-17p — A bigger Lab, the seed window
+
+- **Six more Lab boosts** (`LAB.list`, five levels each, same prices): Warp Coil (the warp meter
+  fills by itself 4% faster a level), Swift Data (partner move speed +1%), Field Notes (base XP
+  +2%), Data Tap (Hatchery data from a run +4%), Green Thumb (crops grow 4% faster), Full Belly
+  (fullness lasts 3% longer). Twelve boosts and the Digivice Port; the page is three columns.
+- **Planting asks which seed**: pressing E at an empty plot opens a small window listing the seeds
+  you hold, with each one's grow time and count. Click one or press its number; Esc or walking away
+  closes it. It asks again for every plot.

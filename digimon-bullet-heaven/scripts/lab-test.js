@@ -29,7 +29,7 @@ ok(D.lab.level("farm") === 5 && D.lab.cost("farm") === null && D.lab.buy("farm")
 ok(D.lab.mods().farm === 30 && Math.abs(D.lab.mods().hp - 1.04) < 1e-9, "farm +30 s, health +4%");
 const total = L.cost.reduce((a, b) => a + b, 0);
 const whole = L.list.reduce((a, u) => a + (u.costs || L.cost).reduce((x, y) => x + y, 0), 0);
-ok(whole === 3330, "the whole Lab costs " + whole + " DigiBits (the six boosts and the Digivice Port)");
+ok(whole === 6360, "the whole Lab costs " + whole + " DigiBits (the twelve boosts and the Digivice Port)");
 
 /* a run pays DigiBits */
 D.SPECIES.t_rookie = { name: "R", stage: "Rookie" };

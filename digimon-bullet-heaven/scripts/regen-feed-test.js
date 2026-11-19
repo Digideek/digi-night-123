@@ -27,7 +27,7 @@ const r = a.act({ type: "field.feed", id: p.id, food: "meat" });
 ok(r.ok || !/closer/i.test(r.reason || ""), "feeding from far away is not refused for distance (" + (r.ok ? "fed" : r.reason) + ")");
 const T = D.TAMER_H, h = D.stageHeight;
 ok(h("agumon") / T >= 0.75 && h("agumon") / T <= 0.9, "a Rookie is about 80% of a tamer (Agumon " + (h("agumon") / T).toFixed(2) + ")");
-ok(h("greymon") / T >= 2 && h("tyrannomon") / T >= 2 && h("woodmon") / T < 2, "big Champions are at least twice a tamer (Greymon " + (h("greymon") / T).toFixed(1) + ")");
+ok(h("greymon") / T >= 2 && h("tyrannomon") / T >= 2 && h("gatomon") / T < 1 && h("dokugumon") / T >= 2.4, "big Champions are at least twice a tamer (Greymon " + (h("greymon") / T).toFixed(1) + ")");
 ok(h("gatomon") < h("agumon") && h("angemon") / T < h("greymon") / T, "known exceptions keep their size (Gatomon " + (h("gatomon") / T).toFixed(1) + ", Angemon " + (h("angemon") / T).toFixed(1) + ")");
 ok(h("botamon") < h("koromon") && h("koromon") < h("agumon") && h("metalgreymon") > h("greymon"), "sizes climb with the stages");
 console.log(failed ? "regen-feed-test: " + failed + " failed" : "regen-feed-test: all passed");

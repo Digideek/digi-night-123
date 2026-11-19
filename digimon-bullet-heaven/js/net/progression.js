@@ -933,7 +933,7 @@
     var c = this.data.CARE || {};
     var fc = this.data.FARM_CFG || {};
     var mult = fc.hungerDrainMult != null ? fc.hungerDrainMult : 0.05;
-    p.fullness = Math.max(0, (p.fullness || 0) - (c.fullnessDecayPerSec || 1.05) * mult * dt);
+    p.fullness = Math.max(0, (p.fullness || 0) - (c.fullnessDecayPerSec || 1.05) * mult / (sim._lab ? sim._lab(p).belly : 1) * dt);
     this._tickFarmYard(p, farm, dt, inp, fc);
     if (farm.activity) this._tickFarmActivity(p, farm, dt, inp);
     var R = rarityApi();
@@ -1021,7 +1021,7 @@
       p.happiness = clamp((p.happiness || 0) + ((this.data.FARM_CFG && this.data.FARM_CFG.trainJoy) || 6) * 0.5, 0, 100);
     }
     farm.trained = true;
-    farm.trainCd = (this.data.FARM_CFG && this.data.FARM_CFG.trainCooldown) || 8;
+    farm.trainCd = (this.data.FARM_CFG && this.data.FARM_CFG.trainCooldown) || 0;
     this.emit({ type: "farm.train", id: p.id, station: a.id, gain: gain, stat: st.stat, laps: a.laps || 0 });
     return { ok: true, gain: gain, stat: st.stat };
   };
@@ -1191,7 +1191,7 @@
     p.garden = p.garden || [];
     if (p.garden[idx] && p.garden[idx].crop) return { ok: false, reason: "occupied" };
     p.bag[seed] -= 1;
-    p.garden[idx] = { crop: crop, plantedAt: sim.time, readyAt: sim.time + (def.growSec || 180) };
+    p.garden[idx] = { crop: crop, plantedAt: sim.time, readyAt: sim.time + (def.growSec || 180) / (sim._lab ? sim._lab(p).crop : 1) };
     this.emit({ type: "farm.plant", id: p.id, plot: idx, crop: crop });
     return { ok: true, plot: idx, crop: crop };
   };
@@ -1582,6 +1582,8 @@
     farm.moving = Math.abs(inp.x || 0) + Math.abs(inp.y || 0) > 0.12;
     if (inp.x > 0.15) farm.facing = 1;
     else if (inp.x < -0.15) farm.facing = -1;
+    /* which way the hologram walks: up, down or sideways (the run uses the same rule) */
+    if (farm.moving) farm.tdir = Math.abs(inp.y || 0) > Math.abs(inp.x || 0) + 0.05 ? (inp.y > 0 ? "down" : "up") : "side";
     if (!farm.activity) {
       var tx = farm.x - (farm.facing || 1) * 36, ty = farm.y + 8;
       var dx = tx - (farm.mx || farm.x), dy = ty - (farm.my || farm.y);

@@ -14,7 +14,7 @@
   function cost(id) { var n = level(id), c = costs(id); return n >= c.length ? null : c[n]; }
   function bits() { return D.cosmetics && D.cosmetics.bits ? D.cosmetics.bits() : 0; }
   function mods() {
-    var m = { hp: 1, dmg: 1, magnet: 1, xp: 1, bits: 1, farm: 0 }, L = cfg().list, i, n;
+    var m = { hp: 1, dmg: 1, magnet: 1, xp: 1, bits: 1, farm: 0, burst: 1, speed: 1, bxp: 1, data: 1, crop: 1, belly: 1 }, L = cfg().list, i, n;
     for (i = 0; i < L.length; i++) { n = level(L[i].id); if (!n) continue; if (L[i].stat === "farm") m.farm += L[i].per * n; else if (m[L[i].stat] != null) m[L[i].stat] *= 1 + L[i].per * n; }
     return m;
   }
@@ -38,7 +38,13 @@
     scan: ["..ccccc..", ".c.....c.", "c..cCc..c", "c..CCC..c", "c..cCc..c", ".c.....c.", "..ccccc.."],
     study: ["bbbb.bbbb", "bBBBbBBBb", "bBBBbBBBb", "bBBBbBBBb", "bBBBbBBBb", "bbbbbbbbb", "....b...."],
     farm: ["....g....", "...gGg...", "..gGGGg..", ".gGGGGGg.", "..wWWWw..", "..wWdWw..", "..wWdWw.."],
-    bits: ["..ooooo..", ".oOOOOOo.", "oOOoOoOOo", "oOOoooOOo", "oOOoOoOOo", ".oOOOOOo.", "..ooooo.."]
+    bits: ["..ooooo..", ".oOOOOOo.", "oOOoOoOOo", "oOOoooOOo", "oOOoOoOOo", ".oOOOOOo.", "..ooooo.."],
+    warp: ["....yY...", "...yY....", "..yYYYY..", "....yY...", "...yY....", "..yY.....", ".y......."],
+    swift: ["cc...cCC.", "....cCCC.", "ccc.CCCC.", "...cCCCCC", "ccc.CCCC.", "....cCCC.", "cc...cCC."],
+    notes: [".bbbbbbb.", ".bBBBBBb.", ".bBbbbBb.", ".bBBBBBb.", ".bBbbBBb.", ".bBBBBBb.", ".bbbbbbb."],
+    tap: ["...cCc...", "..cCCCc..", ".cCCCCCc.", ".cCCoCCc.", ".cCCCCCc.", "..cCCCc..", "...ccc..."],
+    thumb: ["...gG....", "..gGGg.gG", "...gGGgGg", "....gGg..", "....wW...", "...wWWw..", "..wWWWWw."],
+    belly: ["..wwww...", ".wRRRRw..", "wRRRRRRw.", "wRRRRRRwW", ".wRRRRwWW", "..wwwwWW.", "......W.."]
   };
   var PAL = { r: "#b3243c", R: "#ff5a6e", y: "#c98a10", Y: "#ffd23a", c: "#2585ac", C: "#7cf0ff", b: "#3a4670", B: "#d9e4ff", g: "#2f8a3e", G: "#7be07a", w: "#8a5a2c", W: "#e0b070", d: "#3a2408", o: "#c98a10", O: "#ffd23a" };
   function icon(cv, id) {

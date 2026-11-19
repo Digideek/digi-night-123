@@ -116,7 +116,7 @@
     if (!src) return base;
     /* On phones, keep large forms (Kuwagamon, MetalGreymon) from swallowing the viewport. */
     if (Math.max(nativeW, nativeH) < 90) return base;
-    var cap = Math.max(72, Math.floor(Math.min(viewW, viewH) * 0.24));
+    var cap = Math.max(72, Math.floor(Math.min(viewW, viewH) * 0.32));
     var dw = nativeW * base;
     var dh = nativeH * base;
     if (dw <= cap && dh <= cap * 1.2) return base;

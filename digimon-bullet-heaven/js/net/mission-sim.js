@@ -601,7 +601,7 @@
   /* multipliers (and farm seconds) from a player's Lab levels */
   MissionSim.prototype._lab = function (p) {
     if (p && p._labMods) return p._labMods;
-    var L = this.data && this.data.LAB, m = { hp: 1, dmg: 1, magnet: 1, xp: 1, bits: 1, farm: 0 }, i, u, n;
+    var L = this.data && this.data.LAB, m = { hp: 1, dmg: 1, magnet: 1, xp: 1, bits: 1, farm: 0, burst: 1, speed: 1, bxp: 1, data: 1, crop: 1, belly: 1 }, i, u, n;
     if (L && p && p.lab) for (i = 0; i < L.list.length; i++) {
       u = L.list[i]; n = p.lab[u.id] || 0; if (!n) continue;
       if (u.stat === "farm") m.farm += u.per * n; else if (m[u.stat] != null) m[u.stat] *= 1 + u.per * n;
@@ -636,6 +636,7 @@
     s.damageMul *= PV.damage; s.cooldownMul *= PV.cooldown; s.monSpeedMul *= PV.monSpeed; s.magnetMul *= PV.magnet;
     var LB = this._lab(p), GR = this._gear(p);
     s.damageMul *= LB.dmg; s.magnetMul *= LB.magnet * GR.magnet;
+    s.monSpeedMul *= LB.speed;
     s.allyMaxHp = PV.maxHp * LB.hp * GR.hp; s.allyGuard = PV.guard; s.allyCrit = PV.crit; s.allyDodge = PV.dodge; s.allyRegen = PV.regen; s.allyBurst = PV.burst;
     /* status points (js/ro-stats.js): STR -> physical, INT -> special, AGI/DEX -> attack speed */
     s.physMul = dv ? dv.physMul : 1;
@@ -2290,7 +2291,7 @@
       p.hp = wantHp > hadHp ? Math.min(p.maxHp, p.hp * wantHp / hadHp) : Math.min(p.hp, p.maxHp);
       p._allyHpMul = wantHp;
     }
-    p.burst = Math.min(100, (p.burst || 0) + B.passive * dt * ((p.stats && p.stats.allyBurst) || 1) * (p.gear ? this._gear(p).burst : 1));
+    p.burst = Math.min(100, (p.burst || 0) + B.passive * dt * ((p.stats && p.stats.allyBurst) || 1) * (p.gear ? this._gear(p).burst : 1) * this._lab(p).burst);
     if (p.stats && p.stats.allyRegen && p.hp > 0 && p.hp < p.maxHp) p.hp = Math.min(p.maxHp, p.hp + p.maxHp * p.stats.allyRegen * dt);
     /* CPU partners and tamers who stepped away use it when there is something to use it on */
     if (p.burst >= 100 && (p.kind === "cpu" || p.away || p.hasTamer === false) && this._nearestInReach(p.mx, p.my, 200)) this.startBurst(p);
@@ -2947,11 +2948,11 @@
           xp2 = this.players[xi];
           xp2.xp = (xp2.xp || 0) + (o.value || 0) * this._lab(xp2).xp * (this.time < this._gear(xp2).earlyUntil ? this._gear(xp2).earlyXp : 1);
           this._tryLevel(xp2);
-          this._tamerXp(xp2, o.value || 0);
+          this._tamerXp(xp2, (o.value || 0) * this._lab(xp2).bxp);
         }
       } else {
         p.xp = (p.xp || 0) + (o.value || 0) * this._lab(p).xp * (this.time < this._gear(p).earlyUntil ? this._gear(p).earlyXp : 1);
-        this._tamerXp(p, o.value || 0);
+        this._tamerXp(p, (o.value || 0) * this._lab(p).bxp);
         this._tryLevel(p);
       }
     } else if (o.kind === "bits") {
@@ -3089,7 +3090,7 @@
   MissionSim.prototype._updateCare = function (p, dt) {
     var c = this._care();
     if (this.phase === "playing" && !this._isEgg(p.form)) {
-      p.fullness = Math.max(0, (p.fullness || 0) - (c.fullnessDecayPerSec || 1.05) * dt);
+      p.fullness = Math.max(0, (p.fullness || 0) - (c.fullnessDecayPerSec || 1.05) / this._lab(p).belly * dt);
     }
     if (p.streakTimer > 0) {
       p.streakTimer -= dt;

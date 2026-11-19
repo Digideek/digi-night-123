@@ -2074,7 +2074,9 @@
    * The tamer levels slowly off the same XP. Each level gives 10 points to
    * put into the partner's six stats. T (or the chip under the bars) opens
    * the panel; the game keeps running. Everything here resets with the run. */
-  var statsUi = { open: false, sig: "" };
+  var statsUi = { open: false, sig: "", seen: 0 }, statArrowOn = false;
+  /* points that arrived since the status window was last open */
+  function statsUnseen() { return !!run && (run.statPoints || 0) > (statsUi.seen || 0) && !statsUi.open; }
   function statsActive() { return !!(run && !run.ended && D.TAMER_LEVEL && D.RO && (state === "playing" || state === "farm" || state === "paused" || state === "levelup")); }
   function toggleStats(force) {
     statsUi.open = force != null ? !!force : !statsUi.open;
@@ -2113,6 +2115,8 @@
       statsUi.nagAt = run.time;
     }
     statsUi.lastPts = pts;
+    /* what the window has shown you is seen; spending brings the mark down with it */
+    if (statsUi.open || pts < (statsUi.seen || 0)) statsUi.seen = pts;
     panel.hidden = !statsUi.open;
     if (!statsUi.open) return;
     $("stats-title").textContent = "Base Lv " + lvl + "   \u00b7   Job Lv " + (run.level || 1);
@@ -3468,6 +3472,8 @@
     lastGroundClick = null;
     var i, e, r, d, best = null, bestD = 1e15;
     var slack = c.type === "touch" ? 26 : 16;
+    /* the gold arrow over the hologram is a button: clicking it opens the status window */
+    if (statArrowOn && Math.abs(w.x - run.x) <= 16 + slack * 0.5 && w.y >= run.y - 104 - slack * 0.5 && w.y <= run.y - 54 + slack * 0.5) { toggleStats(true); sfx("ui"); return null; }
     for (i = 0; i < enemies.length; i++) {
       e = enemies[i];
       if (!e || e.dead) continue;
@@ -5122,8 +5128,10 @@
         ctx.restore();
       }
     }
-    /* points waiting to be spent: a small gold arrow keeps bobbing over the hologram */
-    if (!hasEmote && run.statPoints > 0 && state !== "evolution" && !isEggForm(run.form)) {
+    /* Points you have not looked at yet: a small gold arrow keeps bobbing over the hologram. It goes
+     * once the status window has been opened, and comes back when the next points arrive. */
+    statArrowOn = statsUnseen() && state !== "evolution" && !isEggForm(run.form);
+    if (!hasEmote && statArrowOn) {
       ctx.save();
       ctx.globalAlpha = 0.75 + Math.sin(titleTime * 5) * 0.25;
       goldArrow(Math.round(run.x), Math.round(run.y - 70 + Math.sin(titleTime * 4) * 3), 2);
@@ -7453,7 +7461,7 @@
     });
     D.input.on("nav", function (dir) {
       if (state === "brawl" && D.brawl) { D.brawl.nav(dir); return; }
-      if (state !== "playing") focusMenu(dir);
+      if (state !== "playing" && state !== "farm") focusMenu(dir);   /* at the farm the keys only walk: the buttons are for the mouse */
     });
     D.input.on("shop", function () { if (state === "playing" || state === "farm") openShop(); });
     D.input.on("capture", function () { if (state === "playing") tryCapture(); });

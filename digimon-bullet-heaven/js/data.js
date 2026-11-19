@@ -395,6 +395,12 @@
       { id: "study",  name: "Study Data",  stat: "xp",     per: 0.02,  unit: "%", text: "Job XP gained" },
       { id: "farm",   name: "Farm Pass",   stat: "farm",   per: 6,     unit: "s", text: "Longer Digi Farm visits" },
       { id: "bits",   name: "Bit Finder",  stat: "bits",   per: 0.05,  unit: "%", text: "Bits found in a run" },
+      { id: "warp",   name: "Warp Coil",   stat: "burst",  per: 0.04,  unit: "%", text: "Warp meter fills by itself faster" },
+      { id: "swift",  name: "Swift Data",  stat: "speed",  per: 0.01,  unit: "%", text: "Partner move speed" },
+      { id: "notes",  name: "Field Notes", stat: "bxp",    per: 0.02,  unit: "%", text: "Base XP gained" },
+      { id: "tap",    name: "Data Tap",    stat: "data",   per: 0.04,  unit: "%", text: "Hatchery data from a run" },
+      { id: "thumb",  name: "Green Thumb", stat: "crop",   per: 0.04,  unit: "%", text: "Crops grow faster" },
+      { id: "belly",  name: "Full Belly",  stat: "belly",  per: 0.03,  unit: "%", text: "Fullness lasts longer" },
       /* one level only, its own price: a second Crest slot (see ITEMS) */
       { id: "port",   name: "Digivice Port", stat: "slot", per: 1,     unit: "slot", text: "A second Crest slot in your Digivice", max: 1, costs: [300] }
     ]
@@ -502,8 +508,10 @@
   var SKILL_CARDS = { count: 3, newWeight: 3, ownedWeight: 2, passiveWeight: 1 };
 
   /* Pacing (Nov 16): the opening was slow for what it paid.
-   *   jobEarly / baseEarly  the first levels cost this fraction of the curve,
-   *                         so the first points arrive within seconds
+   *   jobEarly              the first job levels cost this fraction of the curve,
+   *                         so the first skill points arrive within seconds
+   *   baseEarly             the first base levels cost this many times the curve
+   *                         (Nov 18: base level 4 was arriving 15 s into the fighting)
    *   openRate, openCap     more spawns and a higher limit for the first
    *                         `openUntil` seconds, easing back over `openFade`
    *   openHp                and those early enemies have this much health,
@@ -515,11 +523,11 @@
    *   beatBoss              a warning this many seconds before each boss */
   var PACING = {
     jobEarly: [0.55, 0.55, 0.65, 0.75, 0.85, 0.93],
-    baseEarly: [0.6, 0.7, 0.8, 0.9],
+    baseEarly: [2.2, 1.6, 1.3, 1.1],
     openRate: 1.45, openCap: 2, openHp: 1, openUntil: 180, openFade: 120,
     /* Health by stage, for the rank and file (bosses, lords and field Megas are untouched). Babies
-     * fall in a hit or two, In-Training in two or three, and each stage up asks for more. */
-    stageHp: { "Baby I": 0.28, "Baby II (In-Training)": 0.38, "Child (Rookie)": 0.5, "Adult (Champion)": 0.65, "Armor": 0.65, "Perfect (Ultimate)": 0.33, "Ultimate (Mega)": 0.7, "Ultimate (Mega+)": 0.7 },
+     * take two hits from a fresh partner (one once its damage is up by about a third), In-Training two or three, and each stage up asks for more. */
+    stageHp: { "Baby I": 0.37, "Baby II (In-Training)": 0.38, "Child (Rookie)": 0.5, "Adult (Champion)": 0.65, "Armor": 0.65, "Perfect (Ultimate)": 0.33, "Ultimate (Mega)": 0.7, "Ultimate (Mega+)": 0.7 },
     /* The field stays on Ultimates from minute 24 to 72 while the partner keeps growing, so
      * Ultimates toughen over that stretch (x1 at `from` minutes, + perMin a minute, up to max). */
     lateHp: { "Perfect (Ultimate)": { from: 24, perMin: 0.025, max: 2.5 } },
@@ -1422,9 +1430,9 @@
      * not count): attack, attack rate and partner speed, on top of the new
      * form's bigger health. */
     /* The tamer's (base) level: the same XP gems as the partner, `xpMul`
-     * times the requirement. Status points and what the six stats do follow
+     * times the requirement (7 since Nov 18; it was 3.5). Status points and what the six stats do follow
      * the Ragnarok Online rules in js/ro-stats.js. Wiped when the run ends. */
-    TAMER_LEVEL: { xpMul: 3.5, luckyEvoPer: 0.004, luckyEvoMax: 0.25 },
+    TAMER_LEVEL: { xpMul: 7, luckyEvoPer: 0.004, luckyEvoMax: 0.25 },
     /* Eggs beyond the five starters open by defeating that Baby in the wild:
      * `first` for the first egg won, `step` more for each one after. */
     EGG_UNLOCK: { first: 1000, step: 250, starters: ["agumon", "gabumon", "jyarimon", "chibomon", "poyomon"] },
@@ -1477,7 +1485,7 @@
       petRadius: 58,
       trainJoy: 6,
       trainBond: 10,
-      trainCooldown: 8,
+      trainCooldown: 0,   /* no wait between training sessions (Nov 18) */
       fullnessDecayPerSec: 0.85,
       hungerDrainMult: 0.05,
       careMistakeFullnessRatio: 0.30,

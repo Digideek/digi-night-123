@@ -109,6 +109,8 @@
       if (sim.farm.mx != null && !(sim.farm.activity && sim.farm.activity.id === "track")) visit.mx = sim.farm.mx;
       if (sim.farm.my != null && !(sim.farm.activity && sim.farm.activity.id === "track")) visit.my = sim.farm.my;
       if (sim.farm.facing != null) visit.facing = sim.farm.facing;
+      visit.moving = !!sim.farm.moving;
+      if (sim.farm.tdir) visit.tdir = sim.farm.tdir;
       if (sim.farm.mfacing != null) visit.mfacing = sim.farm.mfacing;
       visit.stayLeft = sim.farm.stayLeft;
       visit.trainCd = sim.farm.trainCd;
@@ -300,6 +302,7 @@
 
   function end(reason) {
     if (!visit || !visit.active) return;
+    closeSeedMenu();
     var run = host && host.getRun && host.getRun();
     var ret = null;
     if (hasAuth()) {
@@ -655,7 +658,7 @@
     }
     run.farmTraining = (run.farmTraining || 0) + 1;
     visit.trained = true;
-    visit.trainCd = cfg().trainCooldown || 4;
+    visit.trainCd = cfg().trainCooldown || 0;
     if (!silent && host.float) {
       var label = st.stat === "bond" ? ("Bond +" + gain) : (st.stat.charAt(0).toUpperCase() + st.stat.slice(1) + " +" + gain);
       host.float(visit.mx, visit.my - 36, label, "#ffe080");
@@ -738,6 +741,7 @@
     visit.time += dt;
     visit.stayLeft = Math.max(0, visit.stayLeft - dt);
     visit.trainCd = Math.max(0, visit.trainCd - dt);
+    tickSeedMenu();
 
     if (visit.activity) {
       /* Tamer can still wander a little; partner is in the activity. */
@@ -745,6 +749,7 @@
         var pA = clampInYard(visit.x + (inp.x || 0) * speed * dt, visit.y + (inp.y || 0) * speed * dt);
         visit.x = pA.x; visit.y = pA.y;
         visit.moving = Math.abs(inp.x) + Math.abs(inp.y) > 0.12;
+        if (visit.moving) visit.tdir = Math.abs(inp.y) > Math.abs(inp.x) + 0.05 ? (inp.y > 0 ? "down" : "up") : "side";
         if (inp.x > 0.15) visit.facing = 1;
         else if (inp.x < -0.15) visit.facing = -1;
       }
@@ -753,6 +758,7 @@
       var pB = clampInYard(visit.x + (inp.x || 0) * speed * dt, visit.y + (inp.y || 0) * speed * dt);
       visit.x = pB.x; visit.y = pB.y;
       visit.moving = Math.abs(inp.x) + Math.abs(inp.y) > 0.12;
+      if (visit.moving) visit.tdir = Math.abs(inp.y) > Math.abs(inp.x) + 0.05 ? (inp.y > 0 ? "down" : "up") : "side";
       if (inp.x > 0.15) visit.facing = 1;
       else if (inp.x < -0.15) visit.facing = -1;
       var tx = visit.x - visit.facing * 36, ty = visit.y + 8;
@@ -997,19 +1003,78 @@
     var m = Math.floor(sec / 60), s2 = sec % 60;
     return m ? (m + "m " + (s2 < 10 ? "0" : "") + s2 + "s") : (s2 + "s");
   }
-  function plotAction(plot) {
+  /* ---- the seed window: planting an empty plot asks which seed goes in it ---- */
+  var seedMenu = { open: false, plot: null, ids: [], sig: "" };
+  function seedBox() {
+    var box = document.getElementById("seed-menu"), feed;
+    if (box || typeof document === "undefined") return box;
+    box = document.createElement("div"); box.id = "seed-menu"; box.hidden = true;
+    box.innerHTML = "<div class='feed-title'>Plant which seed?<span>click one, or press its number · Esc to cancel</span></div><div id='seed-menu-list'></div>";
+    feed = document.getElementById("feed-menu");
+    if (feed && feed.parentNode) feed.parentNode.insertBefore(box, feed.nextSibling); else document.body.appendChild(box);
+    document.addEventListener("keydown", function (e) {
+      var n;
+      if (!seedMenu.open) return;
+      if (e.key === "Escape") { closeSeedMenu(); e.preventDefault(); e.stopPropagation(); return; }
+      n = parseInt(e.key, 10);
+      if (n >= 1 && n <= seedMenu.ids.length) { seedPick(n - 1); e.preventDefault(); e.stopPropagation(); }
+    }, true);
+    return box;
+  }
+  function closeSeedMenu() { var box = document.getElementById("seed-menu"); seedMenu.open = false; seedMenu.plot = null; seedMenu.sig = ""; if (box) box.hidden = true; }
+  function seedPick(i) {
+    var plot = seedMenu.plot, id = seedMenu.ids[i];
+    closeSeedMenu();
+    if (plot && id) plotAction(plot, id);
+  }
+  function openSeedMenu(plot) {
+    var run = host && host.getRun && host.getRun(), box = seedBox(), list, all = seedIds(), ids = [], i, html = "", def, btns, cv, g, ico, sig = "p" + plot.i;
+    if (!run || !box) return;
+    for (i = 0; i < all.length; i++) if (bagCount(run, all[i]) > 0) { ids.push(all[i]); sig += all[i] + bagCount(run, all[i]); }
+    if (!ids.length) { closeSeedMenu(); return; }
+    seedMenu.open = true; seedMenu.plot = plot; seedMenu.ids = ids; box.hidden = false;
+    if (sig === seedMenu.sig) return;
+    seedMenu.sig = sig;
+    for (i = 0; i < ids.length; i++) {
+      def = D.CROPS[D.cropOfSeed(ids[i])] || { name: ids[i], growSec: 0 };
+      html += "<button type='button' class='feed-chip' data-i='" + i + "'>" + (i < 9 ? "<kbd>" + (i + 1) + "</kbd>" : "") + "<canvas width='24' height='24'></canvas>" +
+        "<span class='feed-name'>" + def.name + "</span><span class='seed-time'>" + fmtLeft(def.growSec || 0) + "</span><span class='feed-n'>x" + bagCount(run, ids[i]) + "</span></button>";
+    }
+    list = document.getElementById("seed-menu-list"); list.innerHTML = html;
+    btns = list.querySelectorAll(".feed-chip");
+    for (i = 0; i < btns.length; i++) {
+      cv = btns[i].querySelector("canvas"); g = cv.getContext("2d"); g.imageSmoothingEnabled = false;
+      ico = D.farmArt && D.farmArt.itemIcon ? D.farmArt.itemIcon(ids[i]) : null;
+      if (ico) { try { g.drawImage(ico, 0, 0, 24, 24); } catch (e) {} } else { g.fillStyle = "#8fd06a"; g.fillRect(8, 8, 8, 8); }
+      btns[i].addEventListener("click", (function (n) { return function (ev) { ev.preventDefault(); ev.stopPropagation(); seedPick(n); }; })(i));
+    }
+  }
+  /* walking away from the plot, or the visit ending, puts the window away */
+  function tickSeedMenu() {
+    var pl = seedMenu.plot;
+    if (!seedMenu.open) return;
+    if (!visit || !visit.active || visit.activity || !pl || dist(visit.x, visit.y, pl.cx, pl.cy != null ? pl.cy : pl.y) > 150) closeSeedMenu();
+  }
+
+  function plotAction(plot, pickSeed) {
     var run = host && host.getRun && host.getRun();
     if (!run || !plot) return false;
     var st = plotState(run, plot.i);
     var now = gardenNow();
     var r;
     if (!st || !st.crop) {
-      var seed = firstSeed(run);
+      var seed = pickSeed || null;
       if (!seed) {
-        if (host.float) host.float(plot.cx, plot.y - 10, "No seeds — enemies drop them", "#ffd36a");
+        /* an empty plot asks which seed, every time (the seed window below) */
+        if (!firstSeed(run)) {
+          if (host.float) host.float(plot.cx, plot.y - 10, "No seeds — enemies drop them", "#ffd36a");
+          return false;
+        }
+        openSeedMenu(plot);
         return false;
       }
       var crop = D.cropOfSeed(seed), def = D.CROPS[crop];
+      if (!def || bagCount(run, seed) <= 0) return false;
       if (hasAuth()) {
         r = authAct({ type: "farm.plant", id: localId(), plot: plot.i, seed: seed });
         pullAuth();
@@ -2129,7 +2194,7 @@
 
     /* actors */
     if (run && D.sprites && D.sprites.drawTamer) {
-      add(visit.y, function () { D.sprites.drawTamer(ctx, sx(visit.x), sy(visit.y), visit.facing, t || 0, false, visit.moving, false, "side", run.tamerId || "junior"); });
+      add(visit.y, function () { D.sprites.drawTamer(ctx, sx(visit.x), sy(visit.y), visit.facing, t || 0, false, visit.moving, false, visit.tdir || "side", run.tamerId || "junior"); });
     }
     if (visit.activity && visit.activity.id === "bond") {
       var buddy = visit.activity.buddy || "patamon";

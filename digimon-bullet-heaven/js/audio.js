@@ -12,7 +12,7 @@
  * a part each for lead, arpeggio, bass and drums, in scale degrees. A
  * look-ahead scheduler turns that into notes: pulse and triangle voices for
  * the chiptune pieces, a filter-wobbled bass and half-time drums for the
- * 8-bit dubstep ones. Each season's night version is the same tune moved
+ * 8-bit dubstep ones. FORM arranges each into a song a couple of minutes long. Each season's night version is the same tune moved
  * into a darker scale with a driving bass, so it is recognisably the same
  * place after dark.
  */
@@ -245,27 +245,36 @@
   var TRACKS = {
     title: {
       bpm: 104, key: 62, scale: MINOR, prog: [0, 5, 6, 0, 3, 5, 6, 4],
+      progB: [3, 6, 0, 5, 3, 6, 4, 4],
       lead: { wave: "p25", oct: 0, vol: 0.05, vib: 5, bars: [
         "0 . 4 . 7 - 4 .", "5 . 7 . 9 - 7 .", "6 . 8 . 10 - 8 .", "9 8 7 4 7 - . .",
-        "10 . 7 . 5 7 10 .", "9 . 7 . 5 7 9 12", "13 - 10 - 8 10 13 -", "11 - 8 - 6 4 . ."] },
+        "10 . 7 . 5 7 10 .", "9 . 7 . 5 7 9 12", "13 - 10 - 8 10 13 -", "11 - 8 - 6 4 . ."],
+        b: ["7 - 5 - 3 5 7 -", "8 - 6 - 8 10 13 -", "11 - 9 7 4 - 7 -", "9 - 7 5 7 - . .",
+          "10 - 7 - 5 7 10 12", "13 - 10 - 8 - 6 -", "8 - 6 4 6 8 11 -", "8 - 6 - 4 - . ."] },
       arp: { wave: "p12", oct: 0, vol: 0.022, pat: [0, 1, 2, 3, 2, 1, 2, 1], div: 2 },
       bass: { wave: "triangle", oct: -2, vol: 0.085, bars: ["0 . . 0 . . 2 .", "0 . . 0 . 2 0 ."] },
       drums: { k: ["x.......x.x....."], s: ["....x.......x..."], h: ["..x...x...x...x."], vol: 0.6 }
     },
     farm: {
       bpm: 92, key: 65, scale: MAJOR, prog: [0, 5, 3, 4, 0, 5, 3, 4],
+      progB: [3, 4, 2, 5, 3, 4, 0, 4],
       lead: { wave: "triangle", oct: 0, vol: 0.085, vib: 5, bars: [
         "2 - 4 - 7 - 4 -", "7 - 5 - 9 - 7 -", "5 - 7 - 10 - 7 5", "6 - 4 - 8 - . .",
-        "9 - 7 - 4 - 2 -", "9 7 5 7 9 - 12 -", "10 - 7 5 3 5 7 -", "8 6 4 6 4 - . ."] },
+        "9 - 7 - 4 - 2 -", "9 7 5 7 9 - 12 -", "10 - 7 5 3 5 7 -", "8 6 4 6 4 - . ."],
+        b: ["5 - 7 - 10 - 7 -", "8 - 6 - 4 - 6 -", "4 - 6 - 9 - 6 4", "7 - 5 - 9 - . .",
+          "10 - 7 - 5 - 3 -", "6 4 6 8 11 - 8 -", "9 - 7 4 2 4 7 -", "8 - 6 - 4 - . ."] },
       arp: { wave: "p25", oct: -1, vol: 0.02, pat: [0, 2, 1, 2], div: 2 },
       bass: { wave: "triangle", oct: -2, vol: 0.08, bars: ["0 . . . 2 . . ."] },
       drums: { k: ["x.........x....."], s: ["........x......."], h: ["....x.......x..."], vol: 0.4 }
     },
     spring: {
       bpm: 132, key: 60, scale: MAJOR, prog: [0, 4, 5, 3, 0, 4, 3, 4],
+      progB: [5, 3, 0, 4, 5, 3, 4, 4],
       lead: { wave: "p25", oct: 0, vol: 0.055, vib: 6, bars: [
         "4 . 2 4 7 - 4 .", "6 . 4 6 8 - 6 4", "7 - 5 7 9 - 7 5", "7 5 3 5 7 - - .",
-        "4 . 2 4 7 - 9 .", "8 - 6 8 11 - 8 6", "10 9 7 5 7 - 5 3", "4 - 6 - 8 6 4 ."] },
+        "4 . 2 4 7 - 9 .", "8 - 6 8 11 - 8 6", "10 9 7 5 7 - 5 3", "4 - 6 - 8 6 4 ."],
+        b: ["7 . 5 7 9 - 12 .", "10 . 7 5 7 - 5 3", "9 - 7 4 2 4 7 -", "8 6 4 6 8 - - .",
+          "12 . 9 7 9 - 12 14", "10 - 7 10 12 - 10 7", "8 6 8 11 13 - 11 8", "8 - 6 - 4 6 8 ."] },
       arp: { wave: "p12", oct: 0, vol: 0.022, pat: [0, 1, 2, 1], div: 4 },
       bass: { wave: "triangle", oct: -2, vol: 0.09, bars: ["0 . 0 0 . 0 2 .", "0 . 0 0 . 2 3 2"] },
       drums: { k: ["x.....x.x......."], s: ["....x.......x..."], h: ["x.x.x.x.x.x.x.x."], vol: 0.55 },
@@ -273,9 +282,12 @@
     },
     summer: {
       bpm: 150, key: 62, scale: MAJOR, prog: [0, 3, 4, 3, 5, 3, 4, 4],
+      progB: [5, 4, 3, 0, 5, 4, 3, 4],
       lead: { wave: "p25", oct: 0, vol: 0.055, vib: 7, bars: [
         "2 4 7 . 9 7 4 .", "3 5 7 . 10 7 5 .", "4 6 8 . 11 8 6 .", "10 - 7 5 7 - 5 3",
-        "9 7 5 . 7 9 12 -", "10 - 7 10 12 10 7 5", "8 - 6 8 11 - 13 -", "11 8 6 4 8 - . ."] },
+        "9 7 5 . 7 9 12 -", "10 - 7 10 12 10 7 5", "8 - 6 8 11 - 13 -", "11 8 6 4 8 - . ."],
+        b: ["9 7 5 . 7 9 12 .", "8 6 4 . 6 8 11 .", "7 5 3 . 5 7 10 .", "9 - 7 4 7 - 4 2",
+          "12 9 7 . 9 12 14 -", "11 - 8 11 13 11 8 6", "10 - 7 5 7 10 12 -", "11 8 6 8 11 - . ."] },
       arp: { wave: "p12", oct: 0, vol: 0.022, pat: [0, 2, 1, 2, 3, 2, 1, 2], div: 4 },
       bass: { wave: "triangle", oct: -2, vol: 0.09, bars: ["0 0 . 0 0 . 2 0", "0 0 . 0 3 . 2 0"] },
       drums: { k: ["x...x...x...x..."], s: ["....x.......x.x."], h: ["..x...x...x...x."], vol: 0.6 },
@@ -283,9 +295,12 @@
     },
     fall: {
       bpm: 112, key: 57, scale: MINOR, prog: [0, 5, 2, 6, 0, 5, 3, 4],
+      progB: [3, 6, 2, 5, 3, 6, 4, 0],
       lead: { wave: "p25", oct: 1, vol: 0.048, vib: 5, bars: [
         "4 - 2 - 0 2 4 -", "5 - 7 - 9 7 5 -", "6 - 4 - 2 4 6 9", "8 - 6 - 8 - . .",
-        "7 - 9 7 4 - 2 -", "7 5 7 9 12 - 9 -", "10 - 7 - 5 7 10 -", "8 - 6 4 6 - . ."] },
+        "7 - 9 7 4 - 2 -", "7 5 7 9 12 - 9 -", "10 - 7 - 5 7 10 -", "8 - 6 4 6 - . ."],
+        b: ["7 - 5 - 3 5 7 -", "8 - 10 - 13 10 8 -", "6 - 4 - 2 4 6 9", "9 - 7 - 5 - . .",
+          "10 - 12 10 7 - 5 -", "10 8 10 13 15 - 13 -", "11 - 8 - 6 8 11 -", "9 - 7 4 7 - . ."] },
       arp: { wave: "p12", oct: 0, vol: 0.024, pat: [0, 1, 2, 3, 2, 1], div: 4 },
       bass: { wave: "triangle", oct: -1, vol: 0.085, bars: ["0 . . 0 2 . 0 .", "0 . . 0 2 . 3 ."] },
       drums: { k: ["x.......x.x....."], s: ["....x.......x..."], h: ["x...x.x.x...x.x."], vol: 0.5 },
@@ -293,28 +308,40 @@
     },
     winter: {
       bpm: 96, key: 64, scale: MINOR, prog: [0, 0, 5, 6, 0, 2, 3, 4],
+      progB: [5, 6, 0, 0, 3, 4, 5, 4],
       lead: { wave: "triangle", oct: 1, vol: 0.085, vib: 4, echo: true, bars: [
         "4 . . 7 . . 9 .", "8 . 7 . 4 . . .", "7 . . 9 . . 12 .", "10 . 8 . 6 . . .",
-        "11 . 9 . 7 . 4 .", "6 . 9 . 11 . 9 .", "10 . 7 . 5 . 3 .", "4 . 6 . 8 . . ."] },
+        "11 . 9 . 7 . 4 .", "6 . 9 . 11 . 9 .", "10 . 7 . 5 . 3 .", "4 . 6 . 8 . . ."],
+        b: ["7 . . 9 . . 12 .", "10 . 8 . 6 . . .", "9 . . 7 . . 4 .", "7 . 4 . 2 . . .",
+          "10 . 7 . 5 . 3 .", "8 . 6 . 4 . 6 .", "9 . 7 . 5 . 7 .", "8 . 6 . 4 . . ."] },
       arp: { wave: "p12", oct: 0, vol: 0.018, pat: [0, 2, 3, 2, 1, 2], div: 4 },
       bass: { wave: "triangle", oct: -2, vol: 0.085, bars: ["0 . . . . . 2 .", "0 . . . 0 . . ."] },
       drums: { k: ["x..............."], s: ["........x......."], h: ["....x.....x...x."], vol: 0.4 },
       night: { scale: HARM }
     },
-    /* 8-bit dubstep: four bars of build, then the drop loops */
+    /* 8-bit dubstep: a build, then drops, a melodic break and bigger drops (FORM.dub) */
     boss: {
       bpm: 140, key: 53, scale: MINOR, prog: [0, 0, 5, 6, 0, 0, 5, 6, 0, 0, 3, 4], loopFrom: 4, dub: true,
+      progB: [5, 5, 6, 6, 3, 3, 4, 4],
       lead: { wave: "p25", oct: 1, vol: 0.045, vib: 9, bars: [
         "0 . 0 . 0 . 0 . 2 . 2 . 2 . 2 .", "4 . 4 . 4 . 4 . 7 . 7 . 7 . 7 .", "5 . 7 . 9 . 12 . 5 . 7 . 9 . 12 .", "6 8 10 13 6 8 10 13 8 10 13 15 13 15 17 20",
         ". . . . . . . . . . . . 7 - 6 4", ". . . . . . . . 9 - 7 - . . . .", ". . . . 12 - 11 9 . . . . . . . .", ". . . . . . . . 13 - 10 - 8 6 4 -",
-        ". . . . . . . . . . . . 7 - 9 11", ". . . . . . . . 14 - 11 - . . . .", ". . . . 10 - 9 7 . . . . 10 9 7 5", "8 - . . 8 - . . 11 - 8 6 4 - . ."] },
+        ". . . . . . . . . . . . 7 - 9 11", ". . . . . . . . 14 - 11 - . . . .", ". . . . 10 - 9 7 . . . . 10 9 7 5", "8 - . . 8 - . . 11 - 8 6 4 - . ."],
+        b: ["7 - - 9 12 - 9 -", "12 - 14 - 12 9 7 -", "8 - - 10 13 - 10 -", "13 - 15 - 13 10 8 -",
+          "10 - 7 - 5 7 10 -", "12 - 10 7 10 - 7 5", "8 - 6 - 4 6 8 11", "13 - 11 - 8 - 6 4"] },
       arp: { wave: "p12", oct: 1, vol: 0.016, pat: [0, 3, 2, 3, 1, 3, 2, 3], div: 4, bars: [1, 1, 1, 1, 0, 0, 1, 0, 0, 0, 1, 1] },
       wob: { oct: -1, vol: 0.11, depth: 1000, bars: [
         null, null, null, null,
         [[0, 6, 2], [0, 2, 4], [0, 4, 3], [6, 4, 6]], [[0, 4, 4], [0, 4, 2], [2, 2, 8], [0, 2, 8], [1, 4, 3]],
         [[0, 6, 2], [0, 2, 6], [4, 4, 4], [2, 4, 3]], [[0, 4, 3], [0, 4, 6], [0, 2, 8], [2, 2, 8], [4, 4, 2]],
         [[0, 3, 4], [0, 3, 4], [0, 2, 8], [0, 4, 2], [6, 4, 6]], [[0, 4, 6], [3, 4, 3], [2, 4, 4], [0, 4, 8]],
-        [[0, 6, 2], [0, 2, 4], [2, 4, 6], [4, 4, 3]], [[0, 2, 8], [0, 2, 8], [0, 4, 4], [2, 4, 6], [4, 4, 12]]] },
+        [[0, 6, 2], [0, 2, 4], [2, 4, 6], [4, 4, 3]], [[0, 2, 8], [0, 2, 8], [0, 4, 4], [2, 4, 6], [4, 4, 12]]],
+        b: [[[0, 2, 8], [0, 2, 8], [0, 4, 2], [0, 4, 4], [3, 4, 6]], [[0, 8, 1], [0, 4, 8], [2, 4, 4]],
+          [[0, 2, 6], [0, 2, 6], [0, 2, 12], [0, 2, 12], [4, 4, 3], [2, 4, 6]], [[0, 4, 2], [6, 4, 4], [4, 4, 8], [2, 4, 16]],
+          [[0, 3, 6], [0, 3, 6], [0, 2, 3], [0, 4, 4], [4, 4, 2]], [[0, 6, 3], [0, 2, 12], [2, 2, 8], [2, 2, 8], [4, 4, 4]],
+          [[0, 4, 8], [0, 4, 4], [0, 4, 2], [6, 4, 6]], [[0, 2, 16], [0, 2, 16], [0, 4, 2], [2, 2, 8], [2, 2, 8], [4, 4, 12]]],
+        c: [[[0, 8, 2], [0, 8, 4]], [[0, 8, 1], [2, 4, 6], [0, 4, 8]], [[0, 8, 3], [4, 8, 2]], [[0, 4, 4], [0, 4, 8], [6, 8, 2]],
+          [[0, 8, 2], [0, 4, 6], [0, 4, 12]], [[0, 12, 1], [4, 4, 8]], [[0, 8, 4], [2, 8, 3]], [[0, 4, 2], [0, 4, 4], [0, 4, 8], [0, 4, 16]]] },
       bass: { wave: "triangle", oct: -1, vol: 0.09, bars: ["0 . . . 0 . . .", "0 . . . 0 . . .", "0 . 0 . 0 . 0 .", "0 0 0 0 0 0 0 0"], only: [0, 1, 2, 3] },
       drums: { vol: 0.8,
         k: ["x.......x.......", "x.......x.......", "x...x...x...x...", "x.x.x.x.xxxxxxxx", "x.........x.....", "x......x..x.....", "x.........x.....", "x..x......x...x."],
@@ -324,17 +351,26 @@
     },
     eclipse: {
       bpm: 150, key: 50, scale: PHRYG, prog: [0, 0, 1, 0, 0, 0, 1, 6, 0, 0, 5, 6], loopFrom: 4, dub: true,
+      progB: [1, 1, 0, 0, 5, 5, 6, 0],
       lead: { wave: "p12", oct: 1, vol: 0.04, vib: 10, bars: [
         "7 . . . 7 . . . 8 . . . 7 . . .", "7 . . 7 . . 7 . 8 . . 8 . . 7 .", "7 . 7 . 8 . 8 . 7 . 7 . 4 . 4 .", "0 2 4 7 2 4 7 9 4 7 9 11 7 9 11 14",
         "7 - . 7 . . 4 . 7 - . 8 . . 7 .", ". . . . . . . . 11 - 9 - 8 - 7 -", "7 - . 7 . . 4 . 8 - . 9 . . 8 .", ". . . . . . . . 6 - 8 - 10 - 13 -",
-        "14 - . 14 . . 11 . 14 - . 15 . . 14 .", ". . . . . . . . 11 - 9 - 8 - 7 -", "12 - . 12 . . 9 . 12 - 14 - 16 - 14 -", "13 - 10 - 8 - 6 - 8 6 4 2 4 - . ."] },
+        "14 - . 14 . . 11 . 14 - . 15 . . 14 .", ". . . . . . . . 11 - 9 - 8 - 7 -", "12 - . 12 . . 9 . 12 - 14 - 16 - 14 -", "13 - 10 - 8 - 6 - 8 6 4 2 4 - . ."],
+        b: ["8 - - 10 12 - 10 -", "12 - 10 8 5 - 8 -", "7 - - 9 11 - 9 -", "11 - 9 7 4 - 7 -",
+          "9 - 7 - 5 7 9 12", "14 - 12 - 9 - 7 -", "13 - 10 - 8 10 13 -", "11 - 9 - 7 - 4 -"] },
       arp: { wave: "p25", oct: 1, vol: 0.014, pat: [0, 2, 3, 2], div: 4, bars: [1, 1, 1, 1, 0, 1, 0, 1, 0, 1, 0, 1] },
       wob: { oct: -1, vol: 0.11, depth: 1150, bars: [
         null, null, null, null,
         [[0, 4, 4], [0, 2, 8], [0, 2, 8], [0, 4, 6], [1, 4, 3]], [[0, 6, 6], [0, 2, 12], [4, 4, 4], [1, 4, 8]],
         [[0, 4, 4], [0, 2, 8], [0, 2, 8], [1, 4, 6], [1, 4, 3]], [[6, 6, 6], [6, 2, 12], [4, 4, 4], [1, 4, 8]],
         [[0, 2, 8], [0, 2, 8], [0, 4, 3], [0, 4, 6], [1, 4, 4]], [[0, 6, 6], [0, 2, 12], [4, 4, 4], [1, 4, 8]],
-        [[5, 4, 4], [5, 2, 8], [5, 2, 8], [5, 4, 6], [4, 4, 3]], [[6, 4, 6], [6, 4, 12], [1, 4, 8], [1, 2, 12], [1, 2, 16]]] },
+        [[5, 4, 4], [5, 2, 8], [5, 2, 8], [5, 4, 6], [4, 4, 3]], [[6, 4, 6], [6, 4, 12], [1, 4, 8], [1, 2, 12], [1, 2, 16]]],
+        b: [[[0, 6, 3], [0, 2, 12], [1, 2, 8], [1, 2, 8], [0, 4, 4]], [[0, 3, 6], [0, 3, 6], [0, 2, 3], [0, 4, 4], [1, 4, 2]],
+          [[0, 2, 16], [0, 2, 16], [0, 4, 2], [1, 2, 8], [1, 2, 8], [4, 4, 12]], [[0, 4, 8], [0, 4, 4], [0, 4, 2], [6, 4, 6]],
+          [[0, 8, 1], [0, 4, 8], [1, 4, 4]], [[0, 2, 8], [0, 2, 8], [0, 4, 2], [0, 4, 4], [4, 4, 6]],
+          [[0, 4, 2], [6, 4, 4], [4, 4, 8], [1, 4, 16]], [[0, 2, 6], [0, 2, 6], [0, 2, 12], [0, 2, 12], [4, 4, 3], [1, 4, 6]]],
+        c: [[[0, 12, 1], [1, 4, 8]], [[0, 8, 2], [0, 4, 6], [0, 4, 12]], [[0, 8, 4], [1, 8, 3]], [[0, 4, 2], [0, 4, 4], [0, 4, 8], [0, 4, 16]],
+          [[0, 8, 3], [4, 8, 2]], [[0, 8, 2], [0, 8, 4]], [[0, 4, 4], [0, 4, 8], [6, 8, 2]], [[0, 8, 1], [1, 4, 6], [0, 4, 8]]] },
       bass: { wave: "triangle", oct: -1, vol: 0.09, bars: ["0 . . . . . . .", "0 . . . 0 . . .", "0 . 0 . 0 . 0 .", "0 0 0 0 0 0 0 0"], only: [0, 1, 2, 3] },
       drums: { vol: 0.8,
         k: ["x...............", "x.......x.......", "x...x...x...x...", "x.x.x.x.xxxxxxxx", "x.....x...x.....", "x......x..x.....", "x.....x...x.....", "x..x......x..x.."],
@@ -362,11 +398,78 @@
   }
   function chordDeg(root, idx) { return root + [0, 2, 4, 7][idx % 4] + 7 * Math.floor(idx / 4); }
 
+  /* ---------- arrangement ----------
+   * A track's written material is short (a phrase A, a phrase B, and for the
+   * dubstep ones three sets of wobble bars). A FORM lays it out as a song:
+   * a list of sections, each saying how many bars, which material, and which
+   * parts play. compile() flattens that into one entry per bar, so the loop
+   * point is a couple of minutes on instead of eight bars.
+   *   n       bars            src     where in the material it starts
+   *   prog    "b" for the second progression          lead   "a", "b" or none
+   *   wob     "a", "b", "c"   drums   "full" (default), "half", "hat", "none"
+   *   harm    the lead doubled a third up             loct   lead octave shift
+   *   busy    extra hats      fill    a snare run through its last bar
+   *   tr      semitones up    riser   a rising hiss through its last bar
+   *   arp / bass   force on (1) or off (0); otherwise the track's own rule
+   *   turn    its last bar sits on the fifth of the home key, to lead back in */
+  var FORM = {
+    song: { loop: 1, secs: [
+      { n: 4, drums: "hat", arp: 1 },
+      { n: 8, lead: "a" },
+      { n: 8, lead: "a", harm: 1, fill: 1 },
+      { n: 8, prog: "b", lead: "b" },
+      { n: 8, prog: "b", lead: "b", harm: 1, busy: 1, fill: 1 },
+      { n: 8, lead: "a", loct: -1, drums: "none", echo: 1, arp: 1 },
+      { n: 8, lead: "a", tr: 2, harm: 1, busy: 1 },
+      { n: 8, prog: "b", lead: "b", tr: 2, fill: 1, turn: 1 }] },
+    dub: { loop: 1, secs: [
+      { n: 4, src: 0, lead: "a", riser: 1 },
+      { n: 8, src: 4, lead: "a", wob: "a" },
+      { n: 8, src: 4, wob: "b", arp: 1, fill: 1 },
+      { n: 8, prog: "b", lead: "b", arp: 1, bass: 1, drums: "half" },
+      { n: 4, src: 0, lead: "a", riser: 1 },
+      { n: 8, src: 4, wob: "c", lead: "a", loct: -1 },
+      { n: 8, src: 4, wob: "a", lead: "a", tr: 3, busy: 1, fill: 1 },
+      { n: 8, prog: "b", lead: "b", harm: 1, arp: 1, bass: 1, drums: "none" },
+      { n: 4, src: 0, lead: "a", tr: 3, riser: 1 },
+      { n: 8, src: 4, wob: "b", lead: "a", harm: 1, tr: 3 },
+      { n: 8, src: 4, wob: "c", arp: 1, busy: 1, fill: 1, riser: 1 }] }
+  };
+  var HALF = { k: "x...............", s: "........x.......", h: "..x...x...x...x." }, FILL_S = "..........x.xxxx";
+  function mergeRow(a, b) { var o = "", i; a = a || ""; for (i = 0; i < 16; i++) o += (b.charAt(i) !== "." && b.charAt(i)) || a.charAt(i) || "."; return o; }
+
   function compile(id) {
-    var night = /_night$/.test(id), base = TRACKS[id.replace(/_night$/, "")], T, k;
+    var night = /_night$/.test(id), base = TRACKS[id.replace(/_night$/, "")], T, k, F, si, sec, j, src, prog, lb, ws, d, B, at = 0;
     if (!base) return null;
-    T = { id: id, src: base, night: night, bpm: base.bpm, key: base.key, scale: base.scale, bars: base.prog.length, loopFrom: base.loopFrom || 0, cache: {} };
+    T = { id: id, src: base, night: night, bpm: base.bpm, key: base.key, scale: base.scale, seq: [], loopFrom: 0, cache: {} };
     if (night && base.night) for (k in base.night) T[k] = base.night[k];
+    F = FORM[base.dub ? "dub" : "song"]; d = base.drums || {};
+    for (si = 0; si < F.secs.length; si++) {
+      sec = F.secs[si];
+      if (si === F.loop) T.loopFrom = at;
+      for (j = 0; j < sec.n; j++) {
+        src = (sec.src || 0) + j;
+        prog = sec.prog === "b" && base.progB ? base.progB : base.prog;
+        lb = base.lead ? (sec.lead === "b" ? (base.lead.b || base.lead.bars) : (sec.lead === "a" ? base.lead.bars : null)) : null;
+        ws = base.wob && sec.wob ? (sec.wob === "a" ? base.wob.bars : base.wob[sec.wob]) : null;
+        B = { root: prog[src % prog.length], tr: sec.tr || 0, lead: lb ? lb[src % lb.length] : null, harm: !!sec.harm, loct: sec.loct || 0, echo: !!sec.echo,
+          arp: sec.arp != null ? !!sec.arp : !!(base.arp && (!base.arp.bars || base.arp.bars[src % base.arp.bars.length])),
+          bass: base.bass ? (sec.bass != null ? !!sec.bass : (!base.bass.only || base.bass.only.indexOf(src) !== -1)) : false,
+          bassBar: base.bass ? base.bass.bars[src % base.bass.bars.length] : null,
+          wob: ws ? (sec.wob === "a" ? ws[src % ws.length] : ws[j % ws.length]) : null,
+          k: "", s: "", h: "", busy: !!sec.busy, riser: !!sec.riser && j === sec.n - 1 };
+        if (sec.drums === "half") { B.k = HALF.k; B.s = HALF.s; B.h = HALF.h; }
+        else if (sec.drums === "hat") B.h = barOf(d.h, src, d.loopFrom, base.prog.length) || "";
+        else if (sec.drums === "none") B.k = j % 2 === 0 ? HALF.k : "";
+        else { B.k = barOf(d.k, src, d.loopFrom, base.prog.length) || ""; B.s = barOf(d.s, src, d.loopFrom, base.prog.length) || ""; B.h = barOf(d.h, src, d.loopFrom, base.prog.length) || ""; }
+        if (j === sec.n - 1) {
+          if (sec.fill) { B.s = mergeRow(B.s, FILL_S); B.k = mergeRow(B.k, "........x......."); }
+          if (sec.turn) { B.root = 4; B.tr = 0; B.lead = null; }
+        }
+        T.seq.push(B); at++;
+      }
+    }
+    T.bars = T.seq.length;
     return T;
   }
   function barOf(list, bar, loopFrom, total) {
@@ -375,11 +478,7 @@
     if (loopFrom && list.length < total) return bar < loopFrom ? list[bar % Math.min(list.length, loopFrom)] : list[loopFrom + ((bar - loopFrom) % (list.length - loopFrom))];
     return list[bar % list.length];
   }
-  function leadBar(T, part, bar) {
-    var key = (part === T.src.lead ? "L" : "B") + bar, c = T.cache[key];
-    if (!c) c = T.cache[key] = parseBar(part.bars[bar % part.bars.length]);
-    return c;
-  }
+  function parsed(T, str) { return T.cache[str] || (T.cache[str] = parseBar(str)); }
 
   function Player(id) {
     this.T = compile(id);
@@ -396,52 +495,56 @@
     try { g.cancelScheduledValues(t); g.setValueAtTime(Math.max(0.0001, g.value), t); g.exponentialRampToValueAtTime(Math.max(0.0001, to), t + secs); } catch (e) {}
   };
   Player.prototype.schedule = function (t, bar, step) {
-    var T = this.T, S = T.src, out = this.gain, spb = 60 / T.bpm, st = spb / 4, root = S.prog[bar % S.prog.length], i, n, ev, m, p, row, dv, idx, wb, acc;
+    var T = this.T, S = T.src, B = T.seq[bar], out = this.gain, spb = 60 / T.bpm, st = spb / 4, root, key, i, n, ev, m, p, dv, idx, wb, acc, c;
     var night = T.night, dub = !!S.dub;
+    if (!B) return;
+    root = B.root; key = T.key + B.tr;
     /* lead */
     p = S.lead;
-    if (p) {
-      ev = leadBar(T, p, bar);
+    if (p && B.lead) {
+      ev = parsed(T, B.lead);
       for (i = 0; i < ev.length; i++) if (ev[i].step === step) {
-        n = ev[i]; m = degToMidi(T.key + 12 * (p.oct || 0), T.scale, n.deg);
+        n = ev[i]; m = degToMidi(key + 12 * ((p.oct || 0) + B.loct), T.scale, n.deg);
         tone(out, night && p.wave === "p25" ? "p12" : p.wave, hz(m), t, n.len * st * 0.92, p.vol * (night ? 0.9 : 1), { vib: n.len >= 4 ? p.vib : 0, decay: 0.55, release: 0.05 });
-        if (p.echo || night) tone(out, p.wave, hz(m), t + st * 3, n.len * st * 0.6, p.vol * 0.3, { decay: 0.4 });
+        if (p.echo || night || B.echo) tone(out, p.wave, hz(m), t + st * 3, n.len * st * 0.6, p.vol * 0.3, { decay: 0.4 });
+        /* the second voice: a third above in the scale, quieter and thinner */
+        if (B.harm) tone(out, "p12", hz(degToMidi(key + 12 * ((p.oct || 0) + B.loct), T.scale, n.deg + 2)), t, n.len * st * 0.85, p.vol * 0.42, { decay: 0.5, release: 0.04 });
       }
     }
     /* arpeggio over the bar's chord */
     p = S.arp;
-    if (p && (!p.bars || p.bars[bar % p.bars.length])) {
+    if (p && B.arp) {
       dv = p.div === 4 ? 1 : (p.div === 2 ? 2 : 4);
       if (step % dv === 0) {
         idx = p.pat[((bar * 16 + step) / dv) % p.pat.length | 0];
-        m = degToMidi(T.key + 12 * (p.oct || 0), T.scale, chordDeg(root, idx));
+        m = degToMidi(key + 12 * (p.oct || 0), T.scale, chordDeg(root, idx));
         tone(out, p.wave, hz(m), t, st * dv * 0.8, p.vol, { decay: 0.35, release: 0.02 });
       }
     }
     /* bass: the written line by day; at night a pulse on every eighth */
     p = S.bass;
-    if (p && (!p.only || p.only.indexOf(bar) !== -1)) {
+    if (p && B.bass) {
       if (night) {
         if (step % 2 === 0) {
-          m = degToMidi(T.key + 12 * (p.oct || 0), T.scale, chordDeg(root, step === 14 ? 2 : (step === 6 ? 3 : 0)));
+          m = degToMidi(key + 12 * (p.oct || 0), T.scale, chordDeg(root, step === 14 ? 2 : (step === 6 ? 3 : 0)));
           tone(out, "triangle", hz(m), t, st * 1.5, p.vol, { release: 0.03 });
           tone(out, "p25", hz(m + 12), t, st * 0.9, p.vol * 0.16, { release: 0.02 });
         }
       } else {
-        ev = leadBar(T, p, bar);
+        ev = parsed(T, B.bassBar);
         for (i = 0; i < ev.length; i++) if (ev[i].step === step) {
-          m = degToMidi(T.key + 12 * (p.oct || 0), T.scale, chordDeg(root, ev[i].deg));
+          m = degToMidi(key + 12 * (p.oct || 0), T.scale, chordDeg(root, ev[i].deg));
           tone(out, p.wave, hz(m), t, ev[i].len * st * 0.9, p.vol, { release: 0.03 });
         }
       }
     }
     /* wobble bass */
     p = S.wob;
-    if (p && p.bars[bar % p.bars.length]) {
-      wb = p.bars[bar % p.bars.length]; acc = 0;
+    if (p && B.wob) {
+      wb = B.wob; acc = 0;
       for (i = 0; i < wb.length; i++) {
         if (acc === step) {
-          m = degToMidi(T.key + 12 * (p.oct || 0), T.scale, root + wb[i][0] - (wb[i][0] > 4 ? 7 : 0));
+          m = degToMidi(key + 12 * (p.oct || 0), T.scale, root + wb[i][0] - (wb[i][0] > 4 ? 7 : 0));
           wobble(out, hz(m), t, wb[i][1] * st, p.vol, wb[i][2] / spb / 2, p.depth);
         }
         acc += wb[i][1];
@@ -450,18 +553,17 @@
     /* drums */
     p = S.drums;
     if (p) {
-      row = barOf(p.k, bar, p.loopFrom, T.bars);
-      if (row && row.charAt(step) === "x") kick(out, t, 0.3 * p.vol);
-      else if (night && !dub && step % 4 === 0) kick(out, t, 0.26 * p.vol);        /* four on the floor after dark */
-      row = barOf(p.s, bar, p.loopFrom, T.bars);
-      if (row && row.charAt(step) === "x") snare(out, t, 0.13 * p.vol);
-      row = barOf(p.h, bar, p.loopFrom, T.bars);
-      if (row && row.charAt(step) === "x") hat(out, t, 0.045 * p.vol);
-      else if (row && row.charAt(step) === "o") hat(out, t, 0.05 * p.vol, true);
-      else if (night && !dub && step % 2 === 1) hat(out, t, 0.02 * p.vol);
+      c = B.k.charAt(step);
+      if (c === "x") kick(out, t, 0.3 * p.vol);
+      else if (night && !dub && B.k && step % 4 === 0) kick(out, t, 0.26 * p.vol);        /* four on the floor after dark */
+      if (B.s.charAt(step) === "x") snare(out, t, 0.13 * p.vol);
+      c = B.h.charAt(step);
+      if (c === "x") hat(out, t, 0.045 * p.vol);
+      else if (c === "o") hat(out, t, 0.05 * p.vol, true);
+      else if (B.h && ((night && !dub) || B.busy) && step % 2 === 1) hat(out, t, 0.02 * p.vol);
     }
-    /* the build before a drop: a rising hiss through its last bar */
-    if (dub && T.loopFrom && bar === T.loopFrom - 1 && step === 0) noise(out, t, st * 16, 0.05, "bandpass", 500, 9000, 3);
+    /* the build before a drop: a rising hiss through the bar */
+    if (B.riser && step === 0) noise(out, t, st * 16, 0.05, "bandpass", 500, 9000, 3);
   };
   Player.prototype.pump = function (now, ahead) {
     var T = this.T, st = 60 / T.bpm / 4;
@@ -535,6 +637,8 @@
     TRACKS: TRACKS,
     _parseBar: parseBar,
     _compile: compile,
+    /* for a check: schedule bars [from, to) of a track far in the future and report what threw */
+    _dry: function (id, from, to) { var P, b, st, errs = []; if (!ctx()) return ["no audio"]; P = new Player(id); P.gain.gain.value = 0; for (b = from; b < Math.min(to, P.T.bars); b++) for (st = 0; st < 16; st++) { try { P.schedule(ac.currentTime + 5 + b * 0.01, b, st); } catch (e) { errs.push(id + " bar " + b + " step " + st + ": " + e.message); } } try { P.gain.disconnect(); } catch (e2) {} return errs; },
     _degToMidi: degToMidi
   };
   if (typeof module === "object" && module.exports) module.exports = D.audio;
