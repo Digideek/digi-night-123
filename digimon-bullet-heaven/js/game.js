@@ -1938,6 +1938,7 @@
   function levelWindow(sec, hold) {
     var panel = $("skills-panel"), bar;
     levelWin.t = levelWin.max = sec;
+    levelWin.at = Date.now();              /* it appears under the cursor: a click already on its way does not pick a card */
     levelWin.hold = !!hold;                /* solo: no countdown, enemies wait until the window closes */
     toggleSkills(true);
     if (!panel || panel.hidden) {          /* the window could not open: do not leave the enemies waiting */
@@ -1972,6 +1973,7 @@
   }
   function addSkill(id) {
     if (!missionAuth || !run || !(run.skillPoints > 0)) return;
+    if (levelWin.t > 0 && Date.now() - (levelWin.at || 0) < LEVEL_FX.clickGuard * 1000) return;
     var res = missionAuth.act({ type: "skill.add", id: missionLocalId, skill: id }) || { ok: false };
     if (!res.ok) { if (res.reason) showNoticeToast(res.reason); return; }
     applyMissionSnapshot(takeMissionSnapshot());
@@ -5020,7 +5022,7 @@
    * hologram, an emote bubble with a gold arrow over its head, and a short
    * fanfare. While status points sit unspent a small gold arrow keeps
    * bobbing over the hologram. */
-  var LEVEL_FX = { windowDelay: 0.9, emoteTime: 2.8 };
+  var LEVEL_FX = { windowDelay: 0.08, clickGuard: 0.3, emoteTime: 2.8 };   /* the skill window opens almost at once (it waited 0.9 s); the fireworks play behind it */
   var levelFx = [], levelWinQueue = null;
   var FW_COLS = ["#ff7ad0", "#6ae0ff", "#ffe14a", "#8cff9a", "#c9a0ff", "#ff9a5a"];
   function monHeadY(form, footY) {

@@ -2124,7 +2124,7 @@ button.btn.danger { background: #e03038; border-color: #ff8080; color: #fff8f0; 
 
 /* ---------- job level-up: the skill tree, centre screen, on a timer ---------- */
 #skills-panel.is-center { position: fixed; left: 50%; top: 50%; right: auto; transform: translate(-50%, -50%); width: min(94vw, 460px); max-height: min(78vh, 620px); z-index: 70;
-  border-color: #ffd36a; box-shadow: 0 0 0 4px rgba(255, 211, 106, 0.18), 0 18px 60px rgba(0, 0, 0, 0.7); animation: lvlPop 0.22s ease-out; }
+  border-color: #ffd36a; box-shadow: 0 0 0 4px rgba(255, 211, 106, 0.18), 0 18px 60px rgba(0, 0, 0, 0.7); animation: lvlPop 0.12s ease-out; }
 @keyframes lvlPop { from { transform: translate(-50%, -50%) scale(0.86); opacity: 0; } to { transform: translate(-50%, -50%) scale(1); opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { #skills-panel.is-center { animation: none; } }
 #skills-timer { position: relative; height: 22px; margin: -2px 0 8px; border-radius: 7px; overflow: hidden; background: rgba(255, 211, 106, 0.14); }

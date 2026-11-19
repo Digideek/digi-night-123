@@ -819,3 +819,9 @@ doing its own thing and drawn its own way.
 - **Needs a Railway Volume** mounted at `/data` (HOSTING.md); the login screen says so until there is
   one. Off for `start-online.bat` unless `--accounts`. Tester mode never syncs.
 - Log out is in the profile panel. `node scripts/accounts-test.js`.
+
+## 2026-11-17r — The skill window opens at once
+
+- On a job level the skill window used to wait 0.9 s behind the fireworks. It now opens about a
+  tenth of a second after the level (`LEVEL_FX.windowDelay`), and its pop-in is quicker.
+- Because it appears under the cursor, a click in its first 0.3 s does not pick a card.
