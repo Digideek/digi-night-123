@@ -1354,6 +1354,7 @@
 
   Progression.prototype._handlers["brawl.begin"] = function (intent) {
     var sim = this.sim();
+    if (this.data && this.data.BRAWL_OFF) return { ok: true, skipped: true, reason: "off", fighters: [] };
     var p = this.player(intent.id);
     if (!sim) return { ok: false, reason: "no-run" };
     var cap = 6;
@@ -1713,7 +1714,7 @@
   Progression.prototype._markBrawlDue = function (p) {
     var sim = this.sim();
     if (!p || !sim) return false;
-    if (sim.noBrawl) return false; /* online co-op: brawls are off for now */
+    if (sim.noBrawl || (this.data && this.data.BRAWL_OFF)) return false; /* brawls are off (data.js BRAWL_OFF) */
     if (!(p.hp > 0)) return false; /* a partner that is down cannot call a brawl */
     var R = rarityApi();
     var cfg = (this.data && this.data.BRAWL) || {};

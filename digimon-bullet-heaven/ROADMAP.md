@@ -1277,3 +1277,58 @@ so real devices are much faster in absolute terms; what matters is the ratio.
   a couple of faint wet spots seeping past the edge.
 - `scripts/puddle-terrain-test.js`: 1,911 puddles across three fully soaked maps, 602 of them next to a
   cliff or water. None touches one (the previous build had 462 that did).
+
+## 2026-11-17z23 — PvP: only by choice, fought in real time, nobody stuck
+- **No PvP unless both flags are up.** Two players backing rival biomes used to be at war
+  automatically, with no flag, so players met and found themselves fighting. Now `_pvpFoes` is
+  simply "both flags up". The flag starts down every run.
+- **Real-time PvP on the map.** With both flags up, the other tamer's partner is just another
+  Digimon to your partner. It spots it when it comes near, runs at it and fights it with its moves,
+  going for whichever is closer, the wild one or the rival. Click or tap the other's partner (or
+  aim and RT) to order the attack (`_setPvpFocus`, input `pvp`, relayed for guests). A knockout
+  still sends the loser home to the farm with no death.
+- **Stuck in place online:** each level-up locked you and your partner for up to 20 s while the
+  cards were up, but online the world keeps going. Closing the window on a guest only asked the
+  host to let go, so you jittered and snapped back. Online, level-ups no longer lock you; the cards
+  come up and you get 3 s of cover. Solo is unchanged (the world waits with you).
+- **Brawl arena:** your Digimon ran down the screen and stuck as if Down were held. In an arena that
+  overlapped a cliff or water, each tick moved the fighter off the blocked ground to the nearest
+  walkable spot (possibly outside the arena) and clamped it back in. Now the arena is placed on
+  clear ground, a fighter moves only where steered and stops at walls, and spawns avoid blocked
+  ground (shared `brawl-sim.js` `step` for host and offline). On the old build, 4 of 25 brawls
+  beside cliffs had a fighter run off with no input; now none do.
+- **Mouse in brawls:** left-click anywhere on the arena punches, right-click dashes, and the hint
+  says so.
+- Tests: `pvp-realtime-test.js`, `brawl-terrain-test.js`; `pvp-test.js` and `level-lock-test.js` updated
+  to the new rules.
+
+## 2026-11-17z24 — Digimon fight by themselves; clicks only target or move
+- **One rule everywhere:** a Digimon attacks by itself, the way it fights wild ones. Clicking (or
+  tapping) only ever picks a target or moves it.
+- **Map PvP** (both flags up): your partner goes for theirs by itself, as built in 17z23. Click their
+  Digimon to target it, or open ground to pull yours away.
+- **Brawl arena:** your fighter now auto-attacks whoever is in reach (the one you picked first) and
+  goes for the nearest when idle. Click a fighter to target it, or open ground to move there; it
+  holds that spot for 2 s. The stick or keys steer it directly. The Punch button and the 17z23
+  click-to-punch / right-click-dash are gone (`brawl-sim.js` `_applyInput`, `brawl.js` `clickAt`,
+  `game.js` pointer handler; guests send the target on the PvP channel).
+- **The real "Down held" bug:** the authority keeps one input history per player, sorted by sequence
+  number, and fed the brawl "the last one after sorting". The brawl numbers its inputs from 1 again,
+  so that was always the last field input from before the brawl, replayed every tick. Whatever you
+  were pressing as the fight began stuck, and nothing pressed in the brawl got through. Now the
+  brawl gets the input just sent (`authority.js`). Checked in the browser: holding D moves it right,
+  a click moves it to the spot, and with nothing pressed it fights on its own.
+
+## 2026-11-17z25 — No brawl screen; PvP is just a fight on the map
+- The brawl screen never comes up any more (`data.js` `BRAWL_OFF`, checked in progression's
+  brawl-due / `brawl.begin` and in game.js `startBrawl` / `maybeStartBrawl`). The brawl code and its
+  tests stay; nothing in a run starts one.
+- PvP is only ever the real-time fight out on the map, the same as meeting any other Digimon:
+  - both flags up
+  - WASD / stick keeps walking your tamer
+  - the two partners fight by themselves
+  - a click only targets a Digimon or moves yours away
+- Checked: with a CPU teammate (which used to bring brawls), five level-ups in the browser stayed in
+  normal play, and A kept walking the tamer. `pvp-realtime-test.js`: holding a direction walks the
+  tamer 600 px while its partner keeps fighting the other.
+- How to Play: brawl and betting lines removed.

@@ -1185,7 +1185,7 @@
         if (e.form && D.sprites && D.sprites.preloadSpecies) D.sprites.preloadSpecies(e.form, true);
       } else if (e.type === "level" && e.skillPoints != null) {
         /* the fireworks go up first; the skill window follows a moment later so it does not cover them */
-        if (e.pause > 0 && (state === "playing" || state === "farm")) levelWinQueue = { t: state === "playing" ? LEVEL_FX.windowDelay : 0, pause: e.pause, hold: !!e.hold, level: e.level };
+        if (e.pause > 0 && (state === "playing" || state === "farm")) levelWinQueue = { t: state === "playing" ? LEVEL_FX.windowDelay : 0, pause: e.pause, hold: !!e.hold, lock: e.lock == null ? !!e.hold : !!e.lock, level: e.level };
         else if (e.pause > 0 && missionAuth && e.id === missionLocalId) { missionAuth.act({ type: "breather.end", id: missionLocalId }); showNoticeToast("Job level " + e.level + "!  +1 skill point. Press K to spend it."); }
         else showNoticeToast("Job level " + e.level + "!  +1 skill point. Press K to spend it.");
         addFloat(run.mx, run.my - 44, "Job Lv " + e.level + "!", "#9fe8ff");
@@ -1220,7 +1220,9 @@
     var authIn = { seq: missionSeq, x: inp.x || 0, y: inp.y || 0, atk: !!inp.fire, aim: run.aim, interact: !!(inp.interactHeld || inp.interact) };
     var clicked = consumeEnemyClick();
     if (clicked) authIn.focus = clicked._id;
+    else if (lastPvpClick) { authIn.pvp = lastPvpClick; lastGroundClick = null; }
     else if (lastGroundClick) authIn.go = [lastGroundClick.x, lastGroundClick.y];
+    lastPvpClick = null;
     lastGroundClick = null;
     missionAuth.onMessage({
       type: "input",
@@ -1987,9 +1989,10 @@
    * seconds (nothing can hurt the partner meanwhile). When the time is up it
    * shrinks back to the chip; a point not spent is kept. */
   var levelWin = { t: 0, max: 0 };
-  function levelWindow(sec, hold) {
+  function levelWindow(sec, hold, lock) {
     var panel = $("skills-panel"), bar;
     levelWin.t = levelWin.max = sec;
+    levelWin.lock = lock !== false;
     levelWin.at = Date.now();              /* it appears under the cursor: a click already on its way does not pick a card */
     levelWin.hold = !!hold;                /* solo: no countdown, enemies wait until the window closes */
     toggleSkills(true);
@@ -3508,6 +3511,7 @@
   }
   /* Click-to-attack: returns the enemy under the latest canvas click/tap
    * (sprites stand above their feet, so the hit box leans upward). */
+  var lastPvpClick = null;
   function consumeEnemyClick() {
     var c = D.input && D.input.consumeClick ? D.input.consumeClick() : null;
     if (!c || !run || isEggForm(run.form)) return null;
@@ -3524,6 +3528,21 @@
       r = Math.max((e.radius || 12) * 1.5, (e.radius || 12) + slack);
       d = dist2(w.x, w.y, e.x, e.y - (e.radius || 12) * 0.6);
       if (d < r * r && d < bestD) { bestD = d; best = e; }
+    }
+    /* nothing wild there: another tamer's partner, if you are both flagged for PvP? */
+    if (!best && run.pvpFlag && run.others) {
+      for (i = 0; i < run.others.length; i++) {
+        e = run.others[i];
+        if (!e.pvpFlag || !(e.hp > 0) || e.downed || e.faint > 0) continue;
+        r = 18 + slack;
+        d = dist2(w.x, w.y, e.mx, e.my - 10);
+        if (d < r * r && d < bestD) { bestD = d; lastPvpClick = e.id; }
+      }
+      if (lastPvpClick) {
+        addFloat(w.x, w.y - 30, "Attack!", "#ff8a6a");
+        sfx("ui");
+        return null;
+      }
     }
     if (best) {
       run.focusMarkT = 0.5;
@@ -4261,6 +4280,7 @@
   }
 
   function startBrawl(opts) {
+    if (D.BRAWL_OFF) return false;
     if (!run || run.ended) return false;
     if (!D.brawl || !D.brawl.begin) return false;
     opts = opts || {};
@@ -4281,6 +4301,7 @@
   }
 
   function maybeStartBrawl() {
+    if (D.BRAWL_OFF) return false;                 /* data.js: PvP is real time on the map, no brawl screen */
     if (!run || state === "evolution" || state === "brawl" || state === "farm") return false;
     if (missionAuth) {
       if (missionAuth.sim && missionAuth.sim.phase === "brawl") return startBrawl({ fromAuth: true });
@@ -4984,7 +5005,7 @@
   /* ---------- Update / draw ---------- */
   function updatePlaying(dt) {
     var inp = D.input.poll();
-    if (levelWin.t > 0 && inp) { inp.x = 0; inp.y = 0; }   /* choosing a skill: the pair is locked in place (mission-sim.js p.choosing) */
+    if (levelWin.t > 0 && levelWin.lock && inp) { inp.x = 0; inp.y = 0; }   /* choosing a skill solo: the pair is locked in place (mission-sim.js p.choosing); online you keep moving */
     if (missionAuth) {
       updatePlayingAuth(dt, inp);
       return;
@@ -5147,7 +5168,7 @@
       levelWinQueue.t -= dt;
       if (levelWinQueue.t <= 0) {
         f = levelWinQueue; levelWinQueue = null;
-        if (run && !run.ended && (state === "playing" || state === "farm")) levelWindow(f.pause, f.hold);
+        if (run && !run.ended && (state === "playing" || state === "farm")) levelWindow(f.pause, f.hold, f.lock);
         else if (missionAuth && run && !run.ended) { missionAuth.act({ type: "breather.end", id: missionLocalId }); showNoticeToast("Job level " + f.level + "!  +1 skill point. Press K to spend it."); }
       }
     }
@@ -8595,6 +8616,19 @@
         }
       });
     }
+    /* in a brawl, as on the map (Nov 21): your Digimon attacks by itself; a click or tap on a
+     * fighter sends it after that one, on open ground it moves there (to get away) */
+    window.addEventListener("pointerdown", function (e) {
+      if (state !== "brawl" || !D.brawl || !D.brawl.clickAt || !e.target || e.target.id !== "game") return;
+      if (e.pointerType === "mouse" && e.button !== 0) return;
+      var m = D.brawl.get && D.brawl.get();
+      if (!m || m.phase !== "fight" || !m.localFights) return;
+      var r = e.target.getBoundingClientRect(), gest = (D.input && D.input.camera) || { zoom: 1, rot: 0 }, w;
+      var ptr = { x: e.clientX - r.left, y: e.clientY - r.top };
+      if (D.gl && D.gl.screenToWorld) w = D.gl.screenToWorld(ptr, { x: m.camX, y: m.camY, viewW: r.width, viewH: r.height, zoom: gest.zoom || 1, rot: gest.rot || 0 });
+      else w = { x: m.camX + (ptr.x - r.width / 2), y: m.camY + (ptr.y - r.height / 2) };
+      D.brawl.clickAt(w.x, w.y);
+    });
     if ($("brawl-atk")) {
       $("brawl-atk").addEventListener("click", function (e) {
         e.preventDefault();

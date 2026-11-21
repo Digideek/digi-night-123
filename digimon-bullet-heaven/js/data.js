@@ -1598,6 +1598,10 @@
         { id: "greedy", stat: "magnet", mul: 1.12, label: "Greedy: pulls drops from farther" }
       ]
     },
+    /* Nov 21: no brawl screen, ever. PvP is the real-time fight out on the map (pvp-sim.js),
+     * the same as meeting any other Digimon: you keep walking your tamer with WASD and your
+     * partners just fight. The brawl code stays for its tests; nothing in a run starts one. */
+    BRAWL_OFF: true,
     BRAWL_CFG: {
       everyLevels: 1,
       minLevel: 2,

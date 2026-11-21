@@ -163,6 +163,7 @@
       bets: {},
       floats: []
     };
+    this.match.origin = this._clearArena(this.match.origin);
     var revived = this.pickRevive();
     if (revived) {
       this.match.phase = "revive";
@@ -226,6 +227,12 @@
       ang = (n / Math.max(1, live.length)) * Math.PI * 2 - Math.PI / 2;
       f.x = origin.x + Math.cos(ang) * ring;
       f.y = origin.y + Math.sin(ang) * ring;
+      if (this.data.world && this.data.world.isRaised && this.data.world.isRaised(f.x, f.y, this._fighterRad(f))) {
+        /* that spot is a cliff or water: walk the ring inwards until it isn't */
+        for (var rr = ring * 0.8; rr > 0 && this.data.world.isRaised(f.x, f.y, this._fighterRad(f)); rr -= ring * 0.2) {
+          f.x = origin.x + Math.cos(ang) * rr; f.y = origin.y + Math.sin(ang) * rr;
+        }
+      }
       f.facing = (f.x < origin.x) ? 1 : -1;
       f.ko = false;
       f.hp = f.maxHp;
@@ -270,6 +277,27 @@
     }
   };
 
+
+  /* shared by the authority (here) and the browser's own brawl (brawl.js): one step of movement */
+  function arenaBlocked(w, c, size) {
+    var n = 0, x, y;
+    for (y = c.y - size.h / 2 + 24; y <= c.y + size.h / 2 - 24; y += 40) for (x = c.x - size.w / 2 + 24; x <= c.x + size.w / 2 - 24; x += 40) if (w.isRaised(x, y, 6)) n++;
+    return n;
+  }
+  function brawlStep(w, origin, size, x, y, dx, dy, rad) {
+    var hw = size.w / 2, hh = size.h / 2, nx, ny, stuck;
+    nx = clamp(x + dx, origin.x - hw + 24, origin.x + hw - 24);
+    ny = clamp(y + dy, origin.y - hh + 24, origin.y + hh - 24);
+    if (w && w.isRaised) {
+      stuck = w.isRaised(x, y, rad);
+      if (!stuck) {
+        if (w.isRaised(nx, y, rad)) nx = x;
+        if (w.isRaised(nx, ny, rad)) ny = y;
+      }
+    }
+    return { x: nx, y: ny };
+  }
+
   BrawlSim.prototype.pushInput = function (id, inp) {
     if (!id) return;
     /* A press stays queued until the next fight tick uses it, so a quick
@@ -279,7 +307,10 @@
       x: inp && inp.x || 0,
       y: inp && inp.y || 0,
       attack: !!(inp && (inp.attack || inp.atk)) || !!(prev && prev.attack),
-      dash: !!(inp && inp.dash) || !!(prev && prev.dash)
+      dash: !!(inp && inp.dash) || !!(prev && prev.dash),
+      /* a click: a fighter to go for, or a spot to move to (kept until the next tick uses it) */
+      tgt: (inp && inp.tgt) || (prev && prev.tgt) || null,
+      go: (inp && inp.go) || (prev && prev.go) || null
     };
   };
 
@@ -339,12 +370,43 @@
     if ((!m.soloBonus && live.length <= 1) || m.fightT >= limit) this._resolveWinner(live);
   };
 
+  /* A player's Digimon fights the way it does out on the map (Nov 21): it attacks by itself
+   * whenever someone is in reach and goes for the nearest when it has nothing better to do.
+   * A click picks who it goes for, or a spot to move to (to get away); the stick or keys steer
+   * it directly. */
   BrawlSim.prototype._applyInput = function (f, inp, dt) {
-    var speed = 210;
-    f.vx = (inp.x || 0) * speed;
-    f.vy = (inp.y || 0) * speed;
-    if (inp.x > 0.2) f.facing = 1;
-    else if (inp.x < -0.2) f.facing = -1;
+    var speed = 210, manual = Math.abs(inp.x || 0) + Math.abs(inp.y || 0) > 0.15, foe = null, near = null, nd = 1e15, i, o, d, dx, dy, len;
+    if (inp.tgt) { f.tgtId = String(inp.tgt); f.goX = null; inp.tgt = null; }
+    if (inp.go && inp.go.length === 2) { f.goX = +inp.go[0]; f.goY = +inp.go[1]; f.tgtId = null; f.holdT = 0; inp.go = null; }
+    if (inp.tgt === null && f.tgtId) f.holdT = 0;
+    if (manual) { f.goX = null; f.holdT = 0; }
+    f.holdT = Math.max(0, (f.holdT || 0) - dt);
+    for (i = 0; i < this.match.fighters.length; i++) {
+      o = this.match.fighters[i];
+      if (o === f || !o.fighting || o.ko || !(o.hp > 0)) continue;
+      if (f.tgtId && o.id === f.tgtId) foe = o;
+      d = dist2(f.x, f.y, o.x, o.y);
+      if (d < nd) { nd = d; near = o; }
+    }
+    if (!foe) f.tgtId = null;
+    var chase = foe || near;
+    if (manual) {
+      f.vx = (inp.x || 0) * speed; f.vy = (inp.y || 0) * speed;
+    } else if (f.goX != null) {
+      dx = f.goX - f.x; dy = f.goY - f.y; len = Math.sqrt(dx * dx + dy * dy);
+      if (len < 14) { f.goX = null; f.holdT = 2; f.vx *= 0.4; f.vy *= 0.4; }   /* there: hold the spot a moment */
+      else { f.vx = dx / len * speed; f.vy = dy / len * speed; }
+    } else if (f.holdT > 0 && !foe) {
+      f.vx *= 0.4; f.vy *= 0.4;
+    } else if (chase) {
+      dx = chase.x - f.x; dy = chase.y - f.y; len = Math.sqrt(dx * dx + dy * dy) || 1;
+      if (len > 44) { f.vx = dx / len * speed * 0.9; f.vy = dy / len * speed * 0.9; }
+      else { f.vx *= 0.4; f.vy *= 0.4; }
+    } else { f.vx = 0; f.vy = 0; }
+    if (f.vx > 8) f.facing = 1; else if (f.vx < -8) f.facing = -1;
+    /* auto-attack: whoever is in reach (the one you picked first), facing them */
+    var hitMe = foe && Math.sqrt(dist2(f.x, f.y, foe.x, foe.y)) < 52 ? foe : (near && Math.sqrt(nd) < 52 ? near : null);
+    if (hitMe && f.atkCd <= 0) { f.facing = hitMe.x < f.x ? -1 : 1; this._tryAttack(f); }
     if (inp.dash) this._tryDash(f);
     if (inp.attack) this._tryAttack(f);
   };
@@ -452,22 +514,29 @@
     }
   };
 
+  /* Nov 21: a fighter only ever moves where it was steered. The old way slid it, teleported
+   * it to the nearest walkable ground (which could be outside the arena), then clamped it back
+   * inside (onto the cliff or water again): every tick it was shoved the same way and ended
+   * pinned to the arena's edge, as if a direction were held down. Now: clamp to the arena,
+   * stop on an axis that would walk into a cliff or water, never teleport; one that starts on
+   * blocked ground walks straight off it. */
   BrawlSim.prototype._moveFighter = function (f, dx, dy) {
-    var rad = this._fighterRad(f);
-    var pos;
-    var w = this.data && this.data.world;
-    if (w && w.moveSlide) pos = w.moveSlide(f.x, f.y, dx, dy, rad);
-    else pos = { x: f.x + dx, y: f.y + dy };
-    var origin = (this.match && this.match.origin) || { x: 0, y: 0 };
-    var size = this.arenaSize();
-    var hw = size.w / 2, hh = size.h / 2;
-    pos.x = clamp(pos.x, origin.x - hw + 24, origin.x + hw - 24);
-    pos.y = clamp(pos.y, origin.y - hh + 24, origin.y + hh - 24);
-    if (w && w.isRaised && w.isRaised(pos.x, pos.y, rad) && w.nearestWalkable) {
-      pos = w.nearestWalkable(pos.x, pos.y, 280, rad) || pos;
+    var p = brawlStep(this.data && this.data.world, (this.match && this.match.origin) || { x: 0, y: 0 }, this.arenaSize(), f.x, f.y, dx, dy, this._fighterRad(f));
+    f.x = p.x; f.y = p.y;
+  };
+  /* the arena goes on clear ground near where the brawl was called, so nobody is penned in */
+  BrawlSim.prototype._clearArena = function (origin) {
+    var w = this.data && this.data.world, size = this.arenaSize(), r, a, best = origin, bestN = 1e9, n, c;
+    if (!w || !w.isRaised) return origin;
+    for (r = 0; r <= 2600 && bestN > 0; r += 110) {
+      var k = r ? Math.max(8, Math.round(r / 90)) : 1;
+      for (a = 0; a < k; a++) {
+        c = { x: origin.x + Math.cos(a / k * Math.PI * 2) * r, y: origin.y + Math.sin(a / k * Math.PI * 2) * r };
+        n = arenaBlocked(w, c, size);
+        if (n < bestN) { bestN = n; best = c; if (!n) break; }
+      }
     }
-    f.x = pos.x;
-    f.y = pos.y;
+    return { x: Math.round(best.x), y: Math.round(best.y) };
   };
 
   BrawlSim.prototype._fighterRad = function (f) {
@@ -567,7 +636,7 @@
     };
   };
 
-  var api = { BrawlSim: BrawlSim };
+  var api = { BrawlSim: BrawlSim, step: brawlStep, arenaBlocked: arenaBlocked };
   D.net = D.net || {};
   D.net.brawl = api;
   if (isNode) module.exports = api;

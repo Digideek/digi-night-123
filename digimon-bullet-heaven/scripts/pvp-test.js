@@ -19,10 +19,11 @@ sim.players.push(a, b); sim.localId = "a";
 
 ok(!sim._pvpFoes(a, b), "nobody backed by a biome: no fighting");
 a.trust = { snow: 60 }; b.trust = { volcano: 70 };
-ok(sim._pvpFoes(a, b), "backed by different biomes: at war");
-b.trust.snow = 50;
-ok(!sim._pvpFoes(a, b), "a biome backs you both: same side");
-delete b.trust.snow;
+ok(!sim._pvpFoes(a, b), "backed by rival biomes but no flags up: still no fight (Nov 21: PvP is only ever by choice)");
+a.pvpFlag = true;
+ok(!sim._pvpFoes(a, b), "one flag up: no fight");
+b.pvpFlag = true;
+ok(sim._pvpFoes(a, b), "both flags up: they fight");
 b.atFarm = true; ok(!sim._pvpFoes(a, b), "nobody at the farm can be fought"); b.atFarm = false;
 
 const ev = []; const emit0 = sim.emit.bind(sim); sim.emit = e => { ev.push(e); return emit0(e); };

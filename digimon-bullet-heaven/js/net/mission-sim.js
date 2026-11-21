@@ -292,6 +292,8 @@
       /* Click-to-attack: the client may only name an enemy id. The sim
        * checks it exists and is alive; the partner does the rest. */
       if (inp.focus !== undefined) this._setFocus(msg.id, inp.focus);
+      /* clicked another tamer's partner while you are both flagged for PvP: go after it */
+      if (inp.pvp) this._setPvpFocus(msg.id, inp.pvp);
       /* Click-to-move: "come over here". The partner walks to the spot and
        * waits a moment before it goes back to picking its own fights. */
       if (inp.go) this._setGo(msg.id, inp.go);
@@ -770,6 +772,29 @@
     var focusLeash = (L.focusRadius || (L.returnRadius || 310) * 1.6);
     if (focus && Math.sqrt(dist2(focus.x, focus.y, p.x, p.y)) > focusLeash) focus = null;
     if (!focus) p.focusId = null;
+    /* an ordered attack on another tamer's partner (PvP, both flags up) */
+    var pf = p.pvpFocus && !this._isEgg(p.form) ? this.player(p.pvpFocus) : null;
+    if (pf && (!this._pvpFoes || !this._pvpFoes(p, pf) || !(pf.hp > 0) || pf.downed || pf.faint > 0 || Math.sqrt(dist2(pf.mx, pf.my, p.x, p.y)) > focusLeash)) pf = null;
+    if (!pf) p.pvpFocus = null;
+    if (focus) { pf = null; p.pvpFocus = null; }
+    /* Real-time PvP (Nov 21): once both of you have the flag up, the other tamer's partner is
+     * just another Digimon to fight. Yours spots it when it comes near, runs at it and fights
+     * it with its moves, the way it would a wild one (the hits themselves: pvp-sim.js). It goes
+     * for whichever is closer, the wild one or the rival partner. */
+    if (!pf && !focus && !p.goTo && !this._isEgg(p.form) && this._pvpFoes) {
+      var seekR = (L.seekRadius || 260) + 60, bestPf = null, bestPd = seekR * seekR, qi, qq, qd, wildD;
+      for (qi = 0; qi < this.players.length; qi++) {
+        qq = this.players[qi];
+        if (qq === p || !this._pvpFoes(p, qq) || !(qq.hp > 0) || qq.downed || qq.faint > 0 || this._isEgg(qq.form)) continue;
+        qd = dist2(qq.mx, qq.my, p.x, p.y);
+        if (qd < bestPd) { bestPd = qd; bestPf = qq; }
+      }
+      if (bestPf) {
+        var wild = this._nearestEnemy(p.x, p.y);
+        wildD = wild ? dist2(wild.x, wild.y, p.mx, p.my) : 1e15;
+        if (dist2(bestPf.mx, bestPf.my, p.mx, p.my) <= wildD) pf = bestPf;
+      }
+    }
     var target = focus || (this._isEgg(p.form) ? null : this._nearestEnemy(p.x, p.y));
     /* it only goes looking for a fight this close to its tamer (LEASH.seekRadius); anything
      * further off it leaves alone until it comes nearer, though its moves still fire at whatever is in their reach */
@@ -783,7 +808,13 @@
       if (go.arrived) go.hold -= dt;
       if (go.hold <= 0 || go.left <= -2 || (!go.arrived && go.left <= 0) || dTamer > (L.returnRadius || 175) * 1.8) go = p.goTo = null;
     }
-    if (go) {
+    if (pf && !go) {
+      /* close in until its moves reach (pvp-sim.js fires them by itself) */
+      var pd = Math.sqrt(dist2(p.mx, p.my, pf.mx, pf.my)), pr = ((this.data.PVP && this.data.PVP.reach) || 240) * 0.5;
+      if (pd > pr) { desiredX = pf.mx; desiredY = pf.my; } else { desiredX = p.mx; desiredY = p.my; }
+      p.aim = Math.atan2(pf.my - p.my, pf.mx - p.mx);
+      if (pf.mx !== p.mx) p.mfacing = pf.mx < p.mx ? -1 : 1;
+    } else if (go) {
       /* called over: walk to the spot, then stand there for a moment */
       desiredX = go.arrived ? p.mx : go.x; desiredY = go.arrived ? p.my : go.y;
       if (target) { p.aim = Math.atan2(target.y - p.my, target.x - p.mx); }
@@ -927,6 +958,13 @@
     return true;
   };
 
+  MissionSim.prototype._setPvpFocus = function (pid, foeId) {
+    var p = this.player(pid), f = this.player(String(foeId));
+    if (!p || !f || f === p || !this._pvpFoes || !this._pvpFoes(p, f)) return false;
+    p.pvpFocus = f.id; p.focusId = null; p.goTo = null;
+    this.emit({ type: "focus", id: p.id, pvp: f.id, x: f.mx, y: f.my });
+    return true;
+  };
   MissionSim.prototype._setFocus = function (pid, enemyId) {
     var p = this.player(pid);
     if (!p) return false;
@@ -3249,11 +3287,19 @@
       var LP = this.data.LEVEL_PAUSE;
       var lpT = LP ? (this.coop ? (LP.coopTime || LP.time) : LP.time) : 0;
       if (LP && lpT > 0) {
-        p.monInvuln = Math.max(p.monInvuln || 0, lpT);
-        if (!(p.kind === "cpu" || p.away || p.hasTamer === false)) p.choosing = lpT;
-        if (!this.coop) this.enemyFreeze = Math.max(this.enemyFreeze || 0, lpT);
+        if (this.coop) {
+          /* online the world doesn't stop for one player's level-up, so neither do you (Nov 21):
+           * the cards come up but you keep moving, with a few seconds' cover. Locking the pair in
+           * place for 20 s while everyone else carried on left players stuck mid-fight. */
+          p.monInvuln = Math.max(p.monInvuln || 0, LP.coopCover || 3);
+          p.tamerInvuln = Math.max(p.tamerInvuln || 0, LP.coopCover || 3);
+        } else {
+          p.monInvuln = Math.max(p.monInvuln || 0, lpT);
+          if (!(p.kind === "cpu" || p.away || p.hasTamer === false)) p.choosing = lpT;
+          this.enemyFreeze = Math.max(this.enemyFreeze || 0, lpT);
+        }
       }
-      this.emit({ type: "level", id: p.id, level: p.level, pending: 0, skillPoints: p.skillPoints, pause: lpT || 0, hold: !this.coop });
+      this.emit({ type: "level", id: p.id, level: p.level, pending: 0, skillPoints: p.skillPoints, pause: lpT || 0, hold: !this.coop, lock: !this.coop });
       if (p.kind === "cpu" || p.away || p.hasTamer === false) this._autoSkill(p);
     }
     while (p.xp >= p.xpNext) {

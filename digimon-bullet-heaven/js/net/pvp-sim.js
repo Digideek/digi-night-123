@@ -36,11 +36,10 @@
     MissionSim.prototype._pvpFoes = function (a, b) {
       var A, B, i;
       if (!a || !b || a === b || !a.hasTamer || !b.hasTamer || a.atFarm || b.atFarm || a.away || b.away) return false;
-      if (a.pvpFlag && b.pvpFlag) return true;          /* both flagged for a fight, whoever backs them */
-      A = this._trustedSet(a); B = this._trustedSet(b);
-      if (!A.length || !B.length) return false;
-      for (i = 0; i < A.length; i++) if (B.indexOf(A[i]) >= 0) return false;
-      return true;
+      /* Nov 21: only ever by choice. Two tamers fight only when BOTH have raised the PvP flag;
+       * backing rival biomes no longer starts a fight on its own (players ran into each other
+       * with no flag up and found themselves at war). The flag starts down every run. */
+      return !!(a.pvpFlag && b.pvpFlag);
     };
     MissionSim.prototype._updatePvp = function (dt) {
       var P = this.data.PVP, i, j, a, b, d, best, bd, w, def, lv, cd, dmg, s, k, mul;

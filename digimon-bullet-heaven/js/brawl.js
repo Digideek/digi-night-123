@@ -338,7 +338,7 @@
     hide(result, showResult);
     hide(payout, showPayout);
     hide(hud, m.phase === "fight");
-    hide(atk, m.phase === "fight" && m.localFights && !paused);
+    hide(atk, false);                     /* Nov 21: it attacks by itself, no Punch button */
     hide(pauseEl, paused);
     if (showRevive) renderRevive(m, revive);
     if (showOdds) renderOdds(m, odds);
@@ -709,6 +709,12 @@
   function moveFighter(f, dx, dy) {
     var rad = fighterRad(f);
     var pos;
+    /* the same step the authority uses (net/brawl-sim.js): no teleporting, no getting pinned */
+    if (D.net && D.net.brawl && D.net.brawl.step) {
+      pos = D.net.brawl.step(D.world, (match && match.origin) || { x: 0, y: 0 }, arenaSize(match || m), f.x, f.y, dx, dy, rad);
+      f.x = pos.x; f.y = pos.y;
+      return;
+    }
     if (D.world && D.world.moveSlide) pos = D.world.moveSlide(f.x, f.y, dx, dy, rad);
     else pos = { x: f.x + dx, y: f.y + dy };
     var origin = (match && match.origin) || { x: 0, y: 0 };
@@ -1028,12 +1034,15 @@
         var atk = consumeAttack();
         var dash = consumeDash(m);
         brawlSeq += 1;
-        var A = getAuth();
+        var A = getAuth(), cl = _clickQueued; _clickQueued = null;
         if (A && A.onMessage) {
+          var bi = { seq: brawlSeq, x: ainp.x || 0, y: ainp.y || 0, atk: atk, dash: dash };
+          if (cl && cl.tgt) bi.tgt = cl.tgt;
+          if (cl && cl.go) bi.go = cl.go;
           A.onMessage({
             type: "input",
             id: (m.session && (m.session.localId || m.session.local)) || (localFighterId(m)),
-            inputs: [{ seq: brawlSeq, x: ainp.x || 0, y: ainp.y || 0, atk: atk, dash: dash }]
+            inputs: [bi]
           });
         }
       }
@@ -1112,6 +1121,20 @@
     return down;
   }
   function queueAttack() { _atkQueued = true; }
+  /* a click in the arena (world coords): on a fighter, go for it; on open ground, move there */
+  var _clickQueued = null;
+  function clickAt(wx, wy) {
+    var m = match, i, f, best = null, bd = 34 * 34, d, me = localFighterId(m);
+    if (!m || m.phase !== "fight") return null;
+    for (i = 0; i < m.fighters.length; i++) {
+      f = m.fighters[i];
+      if (!f.fighting || f.ko || f.id === me || f.kind === "local" || f.kind === "host-client") continue;
+      d = dist2(wx, wy, f.x, f.y - 14);
+      if (d < bd) { bd = d; best = f; }
+    }
+    _clickQueued = best ? { tgt: best.id } : { go: [Math.round(wx), Math.round(wy)] };
+    return best ? "target" : "move";
+  }
   function queueDash() { _dashQueued = true; }
 
   function applyInput(m, playerId, inp, dt) {
@@ -1403,7 +1426,7 @@
       ctx.fillStyle = "rgba(255,255,255,0.72)";
       ctx.font = "12px Trebuchet MS, sans-serif";
       ctx.textAlign = "center";
-      var hint = (D.input && D.input.prompt) ? (D.input.prompt("move", "Move") + "  ·  " + D.input.prompt("confirm", "Attack") + extraHint(m)) : ("Move  ·  Confirm / Space / tap Punch to attack" + extraHint(m));
+      var hint = (D.input && D.input.prompt) ? (D.input.prompt("move", "Move") + "  ·  " + (D.input.lastSource === "touch" ? "It attacks by itself  ·  tap a fighter to go for it, or open ground to move" : "It attacks by itself  ·  click a fighter to go for it, or open ground to move") + extraHint(m)) : ("Move  ·  Confirm / Space / tap Punch to attack" + extraHint(m));
       if (m.soloBonus) hint = "Solo bonus  ·  " + hint;
       ctx.fillText(hint, vw / 2, vh - 14);
     }
@@ -1561,6 +1584,7 @@
     endQuiet: endQuiet,
     forcePhase: forcePhase,
     queueAttack: queueAttack,
+    clickAt: clickAt,
     queueDash: queueDash,
     placeBet: placeBet,
     hideScreen: hideScreen,

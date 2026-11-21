@@ -119,14 +119,19 @@
       if (inp.seq == null) continue;
       seen = false;
       for (j = 0; j < list.length; j++) if (list[j].seq === inp.seq) { seen = true; break; }
-      if (!seen) list.push({ seq: inp.seq, x: inp.x || 0, y: inp.y || 0, atk: !!inp.atk, dash: !!inp.dash, tick: inp.tick });
+      if (!seen) list.push({ seq: inp.seq, x: inp.x || 0, y: inp.y || 0, atk: !!inp.atk, dash: !!inp.dash, tick: inp.tick, tgt: inp.tgt || (inp.pvp === "h" ? "local" : inp.pvp) || null, go: inp.go || null });
     }
     list.sort(function (a, b) { return a.seq - b.seq; });
     if (list.length > INPUT_HISTORY * 2) list.splice(0, list.length - INPUT_HISTORY * 2);
     if (this.sim) this.sim.pushInput(msg);
     if (this.sim && this.sim.brawlSim && this.sim.phase === "brawl") {
-      var last = list.length ? list[list.length - 1] : null;
-      if (last) this.sim.brawlSim.pushInput(msg.id, last);
+      /* the input just sent, not the highest-numbered one on file: the field and the brawl
+       * number their inputs separately (the brawl starts again from 1), so "the last after
+       * sorting" was the last FIELD input from before the brawl, replayed every tick. Whatever
+       * you were pressing when the fight began (often Down) stuck, and your keys, stick and
+       * clicks in the brawl never got through (Nov 21). */
+      var bl = batch.length ? batch[batch.length - 1] : null;
+      if (bl) this.sim.brawlSim.pushInput(msg.id, { x: bl.x || 0, y: bl.y || 0, atk: !!bl.atk, dash: !!bl.dash, tgt: bl.tgt || (bl.pvp === "h" ? "local" : bl.pvp) || null, go: bl.go || null });
     }
   };
 

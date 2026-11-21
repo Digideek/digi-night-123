@@ -436,6 +436,7 @@
       if (!auth || !sim || !sim.player(id)) return;
       var inp = { seq: num(d.n) | 0, x: clamp(num(d.x), -1, 1), y: clamp(num(d.y), -1, 1), atk: !!d.a, dash: !!d.d, aim: num(d.m), interact: !!d.e };
       if (d.f !== undefined && d.f !== null) inp.focus = num(d.f) | 0;
+      if (d.pv) inp.pvp = String(d.pv).slice(0, 40);
       if (d.g && d.g.length === 2) inp.go = [num(d.g[0]), num(d.g[1])];
       auth.onMessage({ type: "input", id: id, inputs: [inp] });
       var n = H.net[id] || (H.net[id] = {});
@@ -780,6 +781,8 @@
         if (inp) {
           G.input.x = num(inp.x); G.input.y = num(inp.y); G.input.atk = !!inp.atk; G.input.aim = num(inp.aim); G.input.interact = !!inp.interact;
           if (inp.focus !== undefined) G.input.focus = inp.focus;
+          if (inp.pvp) G.input.pvp = inp.pvp;
+          if (inp.tgt) G.input.pvp = inp.tgt;            /* a brawl click target goes the same way */
           if (inp.go) G.input.go = inp.go;
           if (inp.atk) G.input.atkTap = true;
           if (inp.dash) G.input.dashTap = true;
@@ -959,6 +962,7 @@
       if (inBrawl && (inp.dash || inp.dashTap)) msg.d = 1;
       inp.atkTap = false; inp.dashTap = false;
       if (inp.focus != null) { msg.f = inp.focus; inp.focus = null; }
+      if (inp.pvp) { msg.pv = inp.pvp; inp.pvp = null; }
       if (inp.go) { msg.g = [Math.round(inp.go[0]), Math.round(inp.go[1])]; inp.go = null; }
       if (st === "levelup" || st === "evolution") msg.b = 1;
       /* idle and frozen: a trickle is enough to keep the host informed */

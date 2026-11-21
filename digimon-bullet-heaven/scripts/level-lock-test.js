@@ -57,7 +57,9 @@ ok(D.LEVEL_PAUSE.coopTime === 20 && D.LEVEL_PAUSE.time === 600, "co-op lock 20 s
 
 /* a real level-up sets it for a player and not for a CPU partner */
 w = mk(true); w.p.xp = w.p.xpNext + 1; w.sim._eatOrb(w.p, { kind: "xp", value: 0 });
-ok(w.p.level === 6 && w.p.choosing === 20, "a job level-up locks the player who levelled (co-op: " + w.p.choosing + " s)");
+ok(w.p.level === 6 && !(w.p.choosing > 0) && w.p.monInvuln >= 2.5, "online a job level-up does NOT lock you in place (the world doesn't stop), just a few seconds' cover (Nov 21)");
+w = mk(false); w.p.xp = w.p.xpNext + 1; w.sim._eatOrb(w.p, { kind: "xp", value: 0 });
+ok(w.p.level === 6 && w.p.choosing === 600 && w.sim.enemyFreeze > 0, "solo it still locks you, and the whole world waits with you");
 w = mk(true); w.p.kind = "cpu"; w.p.xp = w.p.xpNext + 1; w.sim._eatOrb(w.p, { kind: "xp", value: 0 });
 ok(w.p.level === 6 && !(w.p.choosing > 0), "a CPU partner is never locked");
 console.log(failed ? "level-lock-test: " + failed + " FAILED" : "level-lock-test: all passed"); process.exit(failed ? 1 : 0);
