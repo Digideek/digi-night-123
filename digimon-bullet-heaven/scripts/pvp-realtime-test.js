@@ -55,7 +55,35 @@ for (let t = 0; t < 30 * 4; t++) {
   if (w.b.atFarm) break;
 }
 ok(w.a.x < tx0 - 100, "holding a direction moves your tamer (" + Math.round(tx0 - w.a.x) + " px)");
-ok(w.b.hp < bHp || w.b.atFarm, "while your Digimon goes on fighting theirs by itself");
+ok(Math.hypot(w.a.mx - w.a.x, w.a.my - w.a.y) < 260, "and your Digimon comes with you instead of staying behind to fight (" + Math.round(Math.hypot(w.a.mx - w.a.x, w.a.my - w.a.y)) + " px from you)");
 ok(D.BRAWL_OFF === true, "no brawl screen: PvP is only ever this, out on the map");
+
+/* Nov 21: the ordinary fight, not a stand-still trade of numbers */
+w = pair(true);
+w.a.weapons = [{ id: "pepperBreath", level: 3, cd: 0 }];
+let shots = 0, pathA = 0, lastX = w.a.mx, lastY = w.a.my, stillT = 0, maxStill = 0;
+const emit0 = w.sim.emit.bind(w.sim);
+for (let t = 0; t < 30 * 8; t++) {
+  w.sim.pushInput({ type: "input", id: "a", inputs: [{ seq: t, x: 0, y: 0 }] });
+  w.sim.pushInput({ type: "input", id: "b", inputs: [{ seq: t, x: 0, y: 0 }] });
+  w.sim.step();
+  shots = Math.max(shots, (w.sim.bullets || []).filter(b => b.owner && (b.owner.id === "a" || b.owner === "a" || b.ownerId === "a")).length + ((w.sim.bullets || []).length ? 0 : 0));
+  const step = Math.hypot(w.a.mx - lastX, w.a.my - lastY); pathA += step; lastX = w.a.mx; lastY = w.a.my;
+  stillT = step < 0.05 ? stillT + 1 / 30 : 0; maxStill = Math.max(maxStill, stillT);
+  if (w.a.atFarm || w.b.atFarm) break;
+}
+ok((w.sim.bullets || []).length > 0 || shots > 0 || w.b.hp < 300 || w.b.atFarm, "it fights with its real moves (shots in the air, damage landed: " + Math.round(300 - w.b.hp) + ")");
+ok(pathA > 150 && maxStill < 3, "and keeps on its feet: it moved " + Math.round(pathA) + " px over the fight, never standing still more than " + maxStill.toFixed(1) + " s");
+ok(!w.sim.enemies.some(e => e.pvpOf), "the stand-ins never stay in the enemy list between steps");
+/* walk away mid-fight: your partner comes with you */
+w = pair(true);
+for (let t = 0; t < 30 * 2; t++) { w.sim.pushInput({ type: "input", id: "a", inputs: [{ seq: t, x: 0, y: 0 }] }); w.sim.pushInput({ type: "input", id: "b", inputs: [{ seq: t, x: 0, y: 0 }] }); w.sim.step(); }
+let worstGap = 0;
+for (let t = 0; t < 30 * 5; t++) {
+  w.sim.pushInput({ type: "input", id: "a", inputs: [{ seq: 100 + t, x: -1, y: 0 }] }); w.sim.pushInput({ type: "input", id: "b", inputs: [{ seq: 100 + t, x: 0, y: 0 }] }); w.sim.step();
+  if (t > 30) worstGap = Math.max(worstGap, Math.hypot(w.a.mx - w.a.x, w.a.my - w.a.y));
+}
+const L = D.LEASH || {};
+ok(worstGap < ((L.returnRadius || 175) * 1.8 + 80), "walk away mid-fight and your partner comes with you (never more than " + Math.round(worstGap) + " px from you)");
 console.log(failed ? failed + " FAILED" : "all passed");
 process.exit(failed ? 1 : 0);

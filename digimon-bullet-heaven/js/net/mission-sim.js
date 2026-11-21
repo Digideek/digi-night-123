@@ -733,6 +733,18 @@
     if (inp && inp.aim != null) p.aim = inp.aim;
   };
 
+  /* Footwork against another tamer's partner (Nov 21): it doesn't plant its feet and trade
+   * numbers. It circles at fighting range, switches direction every second or two, drifts in and
+   * out, and now and then side-steps hard, firing all the while (its moves aim by themselves). */
+  MissionSim.prototype._duelStep = function (p, t, dt) {
+    var L = this._leash(), dx = p.mx - t.x, dy = p.my - t.y, a = Math.atan2(dy, dx), r;
+    p.duelT = (p.duelT == null ? 0 : p.duelT) - dt;
+    if (p.duelT <= 0) { p.duelDir = this.rng() < 0.5 ? -1 : 1; p.duelT = 1.1 + this.rng() * 1.2; p.duelDash = this.rng() < 0.3 ? 0.35 : 0; }
+    p.duelDash = Math.max(0, (p.duelDash || 0) - dt);
+    r = Math.max(70, (L.holdRange || 70) + 25) + Math.sin(this.time * 1.7 + (p.id ? p.id.length : 1)) * 22;
+    a += (p.duelDir || 1) * (p.duelDash > 0 ? 1.1 : 0.55);
+    return { x: t.x + Math.cos(a) * r, y: t.y + Math.sin(a) * r * 0.8 };
+  };
   MissionSim.prototype._movePartner = function (p, dt) {
     var L = this._leash();
     p.monInvuln = Math.max(0, p.monInvuln - dt);
@@ -772,29 +784,6 @@
     var focusLeash = (L.focusRadius || (L.returnRadius || 310) * 1.6);
     if (focus && Math.sqrt(dist2(focus.x, focus.y, p.x, p.y)) > focusLeash) focus = null;
     if (!focus) p.focusId = null;
-    /* an ordered attack on another tamer's partner (PvP, both flags up) */
-    var pf = p.pvpFocus && !this._isEgg(p.form) ? this.player(p.pvpFocus) : null;
-    if (pf && (!this._pvpFoes || !this._pvpFoes(p, pf) || !(pf.hp > 0) || pf.downed || pf.faint > 0 || Math.sqrt(dist2(pf.mx, pf.my, p.x, p.y)) > focusLeash)) pf = null;
-    if (!pf) p.pvpFocus = null;
-    if (focus) { pf = null; p.pvpFocus = null; }
-    /* Real-time PvP (Nov 21): once both of you have the flag up, the other tamer's partner is
-     * just another Digimon to fight. Yours spots it when it comes near, runs at it and fights
-     * it with its moves, the way it would a wild one (the hits themselves: pvp-sim.js). It goes
-     * for whichever is closer, the wild one or the rival partner. */
-    if (!pf && !focus && !p.goTo && !this._isEgg(p.form) && this._pvpFoes) {
-      var seekR = (L.seekRadius || 260) + 60, bestPf = null, bestPd = seekR * seekR, qi, qq, qd, wildD;
-      for (qi = 0; qi < this.players.length; qi++) {
-        qq = this.players[qi];
-        if (qq === p || !this._pvpFoes(p, qq) || !(qq.hp > 0) || qq.downed || qq.faint > 0 || this._isEgg(qq.form)) continue;
-        qd = dist2(qq.mx, qq.my, p.x, p.y);
-        if (qd < bestPd) { bestPd = qd; bestPf = qq; }
-      }
-      if (bestPf) {
-        var wild = this._nearestEnemy(p.x, p.y);
-        wildD = wild ? dist2(wild.x, wild.y, p.mx, p.my) : 1e15;
-        if (dist2(bestPf.mx, bestPf.my, p.mx, p.my) <= wildD) pf = bestPf;
-      }
-    }
     var target = focus || (this._isEgg(p.form) ? null : this._nearestEnemy(p.x, p.y));
     /* it only goes looking for a fight this close to its tamer (LEASH.seekRadius); anything
      * further off it leaves alone until it comes nearer, though its moves still fire at whatever is in their reach */
@@ -808,21 +797,16 @@
       if (go.arrived) go.hold -= dt;
       if (go.hold <= 0 || go.left <= -2 || (!go.arrived && go.left <= 0) || dTamer > (L.returnRadius || 175) * 1.8) go = p.goTo = null;
     }
-    if (pf && !go) {
-      /* close in until its moves reach (pvp-sim.js fires them by itself) */
-      var pd = Math.sqrt(dist2(p.mx, p.my, pf.mx, pf.my)), pr = ((this.data.PVP && this.data.PVP.reach) || 240) * 0.5;
-      if (pd > pr) { desiredX = pf.mx; desiredY = pf.my; } else { desiredX = p.mx; desiredY = p.my; }
-      p.aim = Math.atan2(pf.my - p.my, pf.mx - p.mx);
-      if (pf.mx !== p.mx) p.mfacing = pf.mx < p.mx ? -1 : 1;
-    } else if (go) {
+    if (go) {
       /* called over: walk to the spot, then stand there for a moment */
       desiredX = go.arrived ? p.mx : go.x; desiredY = go.arrived ? p.my : go.y;
       if (target) { p.aim = Math.atan2(target.y - p.my, target.x - p.mx); }
     } else if (focus) {
       /* Ordered attack: go straight for the clicked enemy, ignoring the
        * normal roam leash, until it dies or the tamer runs too far off. */
-      var fd = Math.sqrt(dist2(p.mx, p.my, focus.x, focus.y));
-      if (fd > L.holdRange) { desiredX = focus.x; desiredY = focus.y; }
+      var fd = Math.sqrt(dist2(p.mx, p.my, focus.x, focus.y)), fw;
+      if (focus.pvpOf && fd <= L.holdRange + 90) { fw = this._duelStep(p, focus, dt); desiredX = fw.x; desiredY = fw.y; }
+      else if (fd > L.holdRange) { desiredX = focus.x; desiredY = focus.y; }
       else { desiredX = p.mx; desiredY = p.my; }
       p.aim = Math.atan2(focus.y - p.my, focus.x - p.mx);
       if (focus.x !== p.mx) p.mfacing = focus.x < p.mx ? -1 : 1;
@@ -831,6 +815,17 @@
       desiredY = p.y + 8;
     } else if (!p.hasTamer) {
       desiredX = p.mx; desiredY = p.my;
+    } else if (target && target.pvpOf && !(p.moving && dTamer > (L.runClose || 54)) && dTamer < L.returnRadius * 1.4) {
+      /* PvP (Nov 21): on its toes round the other partner, but never further than its leash from you */
+      var dw = this._duelStep(p, target, dt), lx = dw.x - p.x, ly = dw.y - p.y, ll = Math.sqrt(lx * lx + ly * ly), lim = L.roamRadius || 130;
+      if (ll > lim) {
+        /* can't circle that far: side-step to and fro along the edge of its range instead */
+        var ta = Math.atan2(target.y - p.y, target.x - p.x) + (p.duelDir || 1) * (p.duelDash > 0 ? 0.55 : 0.3);
+        dw = { x: p.x + Math.cos(ta) * lim * 0.9, y: p.y + Math.sin(ta) * lim * 0.9 };     /* on the side facing it, so its moves still reach */
+      }
+      desiredX = dw.x; desiredY = dw.y;
+      p.aim = Math.atan2(target.y - p.my, target.x - p.mx);
+      if (target.x !== p.mx) p.mfacing = target.x < p.mx ? -1 : 1;
     } else if (dTamer > L.returnRadius || (p.moving && dTamer > (L.runClose || 54))) {
       /* While the tamer is on the move the partner runs with it (still
        * firing), so leading it away from a crowd actually works. Stand
@@ -839,8 +834,9 @@
       desiredY = p.y + 6;
       following = true;
     } else if (target && dTamer < L.roamRadius) {
-      var ed = Math.sqrt(dist2(p.mx, p.my, target.x, target.y));
-      if (ed > L.holdRange) { desiredX = target.x; desiredY = target.y; }
+      var ed = Math.sqrt(dist2(p.mx, p.my, target.x, target.y)), tw;
+      if (target.pvpOf && ed <= L.holdRange + 90) { tw = this._duelStep(p, target, dt); desiredX = tw.x; desiredY = tw.y; }
+      else if (ed > L.holdRange) { desiredX = target.x; desiredY = target.y; }
       else { desiredX = p.mx; desiredY = p.my; }
       p.aim = Math.atan2(target.y - p.my, target.x - p.mx);
       if (target.x !== p.mx) p.mfacing = target.x < p.mx ? -1 : 1;
@@ -958,10 +954,13 @@
     return true;
   };
 
+  /* clicked the other tamer's partner (PvP): an ordinary attack order on its stand-in (pvp-sim.js) */
   MissionSim.prototype._setPvpFocus = function (pid, foeId) {
-    var p = this.player(pid), f = this.player(String(foeId));
+    var p = this.player(pid), f = this.player(String(foeId)), px;
     if (!p || !f || f === p || !this._pvpFoes || !this._pvpFoes(p, f)) return false;
-    p.pvpFocus = f.id; p.focusId = null; p.goTo = null;
+    this._pvpProxies = this._pvpProxies || {};
+    px = this._pvpProxies[f.id] || (this._pvpProxies[f.id] = { _id: -1000 - this.players.indexOf(f), pvpOf: f.id, st: 0, hitCd: 0 });
+    p.pvpFocus = f.id; p.focusId = px._id; p.goTo = null;
     this.emit({ type: "focus", id: p.id, pvp: f.id, x: f.mx, y: f.my });
     return true;
   };
@@ -981,7 +980,7 @@
     var i, e, best = null, bestD = 1e15, d, me = this._actor;
     for (i = 0; i < this.enemies.length; i++) {
       e = this.enemies[i];
-      if (e.dead || (me && this._spares && this._spares(me.id, e))) continue;
+      if (e.dead || (e.pvpOf && this._pvpSkip(me, e)) || (me && !e.pvpOf && this._spares && this._spares(me.id, e))) continue;
       d = dist2(x, y, e.x, e.y);
       if (d < bestD) { bestD = d; best = e; }
     }
@@ -1258,7 +1257,7 @@
     var i, e, best = null, bestD = 1e15, d, rr, me = this._actor;
     for (i = 0; i < this.enemies.length; i++) {
       e = this.enemies[i];
-      if (e.dead || (me && this._spares && this._spares(me.id, e))) continue;
+      if (e.dead || (e.pvpOf && this._pvpSkip(me, e)) || (me && !e.pvpOf && this._spares && this._spares(me.id, e))) continue;
       d = dist2(x, y, e.x, e.y);
       rr = reach + (e.radius || 10);
       if (d <= rr * rr && d < bestD) { bestD = d; best = e; }
@@ -1871,6 +1870,7 @@
 
   /* the rival lives in js/net/rival-sim.js */
   MissionSim.prototype.hurtEnemy = function (e, dmg, kbX, kbY, knock, owner, rolled, wid) {
+    if (e && e.pvpOf) return this._pvpHit ? this._pvpHit(e, dmg, owner) : false;   /* a PvP stand-in (pvp-sim.js) */
     if (e.rival && owner && owner.id === "rival") return false;        /* its own moves pass through it */
     if (!e || e.dead) return false;
     /* a biome that trusts you is left alone by your side's shots and blasts, unless you clicked it (faction-sim.js) */
@@ -3342,6 +3342,7 @@
       weatherApi().tick(this, dt, { data: this.data, phase: this.phase, rng: this.rng, combatReady: this._combatReady() });
     }
     var i, p, inp;
+    if (this._pvpProxyIn) this._pvpProxyIn();                          /* PvP stand-ins, for picking targets and firing */
     for (i = 0; i < this.players.length; i++) {
       p = this.players[i];
       inp = this._takeInput(p);
@@ -3358,6 +3359,7 @@
       this._tickRarity(p, dt);
       this._tickRevive(p, inp, dt);
     }
+    if (this._pvpProxyOut) this._pvpProxyOut();
     for (i = 0; i < this.cpus.length; i++) this._moveCpu(this.cpus[i], dt);
     if (this._updatePvp) this._updatePvp(dt);                         /* players at war (pvp-sim.js) */
     if (this.ally && this.ally.hp > 0) {
@@ -3389,8 +3391,10 @@
     }
     this._updateSpawns(dt);
     if (this._updateVirus) this._updateVirus(dt);
+    if (this._pvpProxyIn) this._pvpProxyIn();                          /* ...and for shots and ultimates landing */
     this._updateUlts(dt);
     this._updateBullets(dt);
+    if (this._pvpProxyOut) this._pvpProxyOut();
     this._updateEnemies(dt);
     this._updatePatches(dt);
     this._updatePuddles(dt);

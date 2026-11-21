@@ -1048,7 +1048,7 @@
         if (e.k === "dodge") { addFloat(e.x, e.y - 8, "dodge", "#8fe0d0"); continue; }
         if (e.k === "lucky") { addFloat(e.x, e.y - 8, "lucky!", "#ffe14a"); continue; }
         if (e.k === "burn") { addFloat(e.x, e.y - 6, "Burn", "#ff8a2a"); burst(e.x, e.y + 14, "#ff7a1a", 6, 110); continue; }
-        if (e.k === "alert") { addFloat(e.x, e.y - 8, "!", "#ff5a4a"); sfx("hurt"); continue; }
+        if (e.k === "alert") { addFloat(e.x, e.y - 8, "!", "#ff5a4a"); sfx("hurt"); herdAlert(e.x, e.y + 20); continue; }
         if (e.k === "st") {
           /* a new mark on an enemy: say so, but not for every one of a crowd at once */
           if (ST_LOOK[e.s] && run.time - stFloatT > 0.12) { stFloatT = run.time; addFloat(e.x, e.y - 4, ST_LOOK[e.s][0], ST_LOOK[e.s][1]); }
@@ -1129,6 +1129,7 @@
         sfx("level");
       } else if (e.type === "prop.used") {
         if (D.world && D.world.markUsed) D.world.markUsed(e.key);
+        if (e.kind === "cache" && run) cacheFade[e.key] = run.time;       /* an opened chest fades away */
         if (e.kind === "spire") {
           burst(e.x, e.y - 40, "#c050ff", 46, 360); burst(e.x, e.y - 20, "#1a1622", 26, 240); shake = Math.max(shake, 10); sfx("hurt");
           showNoticeToast(e.enemyType ? "The spire breaks.  " + spName(e.enemyType) + " steps out of the dark!" : "The spire breaks."); noticeToastTimer = 4.5;
@@ -5404,6 +5405,7 @@
     }
     return (zzzStrip = c);
   }
+  var cacheFade = {}, CACHE_FADE = 1.1;
   function drawZzz(en) {
     var t = run.time, top = en.y - (en.radius || 10) * 1.8 - 8, i, ph2, x, y, zs = zzzSprite();
     ctx.save();
@@ -5870,9 +5872,89 @@
 
   /* ---------- Faction trust (Nov 20, faction-sim.js) ---------- */
   function trustsFac(fac) { return !!(run && run.trust && D.FACTIONS && (run.trust[fac] || 0) >= D.FACTIONS.trusted); }
+  /* ---- what the biomes say (Nov 21): tiny speech bubbles, one at a time ---- */
+  var SAY = {
+    warm: ["Thanks, friend!", "You're alright!", "Keep it up!", "Nice one!"],
+    trusted: ["We trust you!", "Friend of ours!", "Pass in peace!"],
+    allied: ["We've got your back!", "We fight with you!", "Together!"],
+    cooling: ["Hmph...", "Don't forget us."],
+    hostile: ["Traitor!", "You'll pay!", "Grrr!"],
+    growl: ["Grrr!", "GRRR!", "Die!", "Attack!", "Rrrah!", "Get 'em!"]
+  };
+  var bubble = null, growlCd = 0, angry = {};
+  function drawBubbles() { if (bubble && bubble.en && !bubble.en.dead) drawBubble(bubble.en); }
+  function pickLine(kind) { var L = SAY[kind] || SAY.growl; return L[Math.floor(Math.random() * L.length)]; }
+  function nearestOfBiome(fac, x, y, maxD) {
+    var i, en, d, best = null, bd = maxD * maxD;
+    for (i = 0; i < enemies.length; i++) {
+      en = enemies[i];
+      if (!en || en.dead || en.virus || en.rival || en.nem || (fac && en.fac !== fac)) continue;
+      d = dist2(en.x, en.y, x, y);
+      if (d < bd) { bd = d; best = en; }
+    }
+    return best;
+  }
+  function say(en, kind, sec) {
+    if (!en) return false;
+    if (bubble && bubble.kind !== "growl" && kind === "growl" && bubble.t > 0) return false;   /* friends first */
+    bubble = { id: en._id, text: pickLine(kind), kind: kind, t: sec || 2.4, max: sec || 2.4, fac: en.fac };
+    return true;
+  }
+  function tickBubbles(dt) {
+    if (bubble) { bubble.t -= dt; if (bubble.t <= 0) bubble = null; }
+    growlCd = Math.max(0, growlCd - dt);
+  }
+  /* a herd has spotted you: they're angry (a little red sword for a while) and now and then one growls */
+  function herdAlert(x, y) {
+    var i, en, any = null;
+    if (!run) return;
+    for (i = 0; i < enemies.length; i++) {
+      en = enemies[i];
+      if (!en || en.dead || (en.fac && trustsFac(en.fac)) || dist2(en.x, en.y, x, y) > 160 * 160) continue;
+      angry[en._id] = run.time + 9;
+      if (!any || dist2(en.x, en.y, x, y) < dist2(any.x, any.y, x, y)) any = en;
+    }
+    if (any && growlCd <= 0 && Math.random() < 0.6 && dist2(any.x, any.y, run.x, run.y) < 700 * 700) { if (say(any, "growl", 1.6)) growlCd = 7; }
+  }
+  /* a little speech bubble over its head, in its biome's colour (friends) or angry red */
+  function drawBubble(en) {
+    var b = bubble, a, top, tw, w, h = 15, x, y, friend = b.kind !== "growl" && b.kind !== "hostile" && b.kind !== "cooling";
+    a = Math.min(1, (b.max - b.t) / 0.15, b.t / 0.3);
+    top = Math.round(en.y - (en.radius || 10) * 2 - (en.war ? 30 : 20) - 16 - (1 - Math.min(1, (b.max - b.t) / 0.2)) * 4);
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, a);
+    ctx.font = "bold 11px Trebuchet MS, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
+    tw = ctx.measureText ? ctx.measureText(b.text).width : b.text.length * 6;
+    w = Math.round(tw + 12); x = Math.round(en.x - w / 2); y = top;
+    ctx.fillStyle = friend ? warColor(b.fac || en.fac) : "#ff4a3a";
+    ctx.fillRect(x - 1, y - 1, w + 2, h + 2); ctx.fillRect(Math.round(en.x) - 3, y + h, 6, 3); ctx.fillRect(Math.round(en.x) - 1, y + h + 3, 2, 2);
+    ctx.fillStyle = friend ? "#fffaf0" : "#2a0806";
+    ctx.fillRect(x, y, w, h); ctx.fillRect(Math.round(en.x) - 2, y + h, 4, 2);
+    ctx.fillStyle = friend ? "#2a1e10" : "#ff9a8a";
+    ctx.fillText(b.text, Math.round(en.x), y + 11);
+    ctx.restore();
+  }
+  /* angry at you: a small red sword over its head */
+  function drawAngryMark(en) {
+    var top = Math.round(en.y - (en.radius || 10) * 2 - (en.war ? 20 : 8)), x = Math.round(en.x - 3);
+    ctx.save();
+    ctx.globalAlpha = 0.9;
+    ctx.fillStyle = "rgba(10,10,20,0.85)"; ctx.fillRect(x - 1, top - 1, 8, 11);
+    ctx.fillStyle = "#ff4a3a"; ctx.fillRect(x + 2, top, 2, 6);
+    ctx.fillStyle = "#ffd0c0"; ctx.fillRect(x + 2, top, 1, 5);
+    ctx.fillStyle = "#c8a040"; ctx.fillRect(x, top + 6, 6, 1); ctx.fillRect(x + 2, top + 7, 2, 2);
+    ctx.restore();
+  }
+  D.talk = { herdAlert: function (x, y) { herdAlert(x, y); }, bubble: function () { return bubble; } };
   function trustEvent(e) {
     if (!run || e.id !== run.myId) return;
     var n = biomeName(e.fac);
+    trustSig = "";                                   /* the meter redraws now */
+    if (e.level === "warm" || e.level === "trusted" || e.level === "allied" || e.level === "cooling" || e.level === "hostile") {
+      var who = nearestOfBiome(e.fac, run.x, run.y, 750);
+      if (who) say(who, e.level, e.level === "warm" ? 2.4 : 3);
+    }
+    if (e.level === "warm") { showNoticeToast(n + " is warming to you", "is-season is-war"); noticeToastTimer = 2.5; return; }
     if (e.level === "trusted") showNoticeToast(n + " trusts you now: its Digimon leave you be, and your attacks pass over them", "is-season is-war");
     else if (e.level === "allied") showNoticeToast(n + " fights at your side! A few of its Digimon will rally to you", "is-season is-war");
     else if (e.level === "cooling") showNoticeToast(n + " no longer fights for you, but still trusts you", "is-season is-war");
@@ -5880,9 +5962,10 @@
     noticeToastTimer = 4;
   }
   /* a friendly biome's Digimon: a small heart in its colour over it; one fighting for you also gets a ring */
-  function drawFriendMark(en) {
+  function drawFriendMark(en, alpha) {
     var c = warColor(en.fac), top = Math.round(en.y - (en.radius || 10) * 2 - (en.war ? 20 : 8)), x = Math.round(en.x - 4), mine = en.rally != null && en.rally === run.myId;
     ctx.save();
+    if (alpha != null) ctx.globalAlpha = alpha;
     if (mine) {
       ctx.globalAlpha = 0.55 + Math.sin(run.time * 5 + en._id) * 0.15; ctx.strokeStyle = c; ctx.lineWidth = 2;
       ctx.beginPath(); ctx.ellipse(en.x, en.y - 2, (en.radius || 10) + 6, ((en.radius || 10) + 6) * 0.5, 0, 0, Math.PI * 2); ctx.stroke();
@@ -5897,24 +5980,38 @@
   }
   /* the HUD strip: each biome you have any standing with, its trust, and whether it leaves you be or fights for you */
   var trustSig = "";
+  /* Nov 21: a clear friendship meter per biome. Each biome you have any standing with, and the
+   * one you are standing in: a status word, a bar with marks at Trusted and Allies, and how far
+   * there is to go. */
+  function trustStatus(k, t) {
+    var F = D.FACTIONS;
+    if (run.allied && run.allied[k]) return { cls: "is-ally", word: "Allies", next: "" };
+    if (t >= F.trusted) return { cls: "is-trusted", word: "Trusted", next: Math.round(t) + "/" + F.max + " to allies" };
+    if (F.warmAt && t >= F.warmAt) return { cls: "is-warm", word: "Friendly", next: Math.round(t) + "/" + F.trusted + " to trusted" };
+    return { cls: "", word: "Neutral", next: Math.round(t) + "/" + F.trusted + " to trusted" };
+  }
   function tickTrustHud() {
-    var box = $("hud-trust"), F = D.FACTIONS, list = [], k, sig, html, i, t, cls;
+    var box = $("hud-trust"), F = D.FACTIONS, list = [], k, sig, html, i, t, st, here = null, b;
     if (!box || !F) return;
     if (!run || state !== "playing" || !run.trust) { if (!box.hidden) box.hidden = true; trustSig = ""; return; }
+    b = D.world && D.world.biomeAt ? D.world.biomeAt(run.x, run.y) : null;
+    here = b ? b.id : null;
     for (k in run.trust) if (run.trust[k] >= 1) list.push([k, run.trust[k]]);
-    list.sort(function (a, b) { return b[1] - a[1]; });
+    list.sort(function (a, c) { return c[1] - a[1]; });
     list = list.slice(0, 4);
-    sig = list.map(function (q) { return q[0] + Math.round(q[1]) + (run.allied && run.allied[q[0]] ? "A" : ""); }).join("|");
+    if (here && !list.some(function (q) { return q[0] === here; }) && list.length) list.push([here, run.trust[here] || 0]);
+    sig = list.map(function (q) { return q[0] + Math.round(q[1]) + (run.allied && run.allied[q[0]] ? "A" : ""); }).join("|") + "@" + here;
     if (sig === trustSig) return;
     trustSig = sig;
     box.hidden = !list.length;
-    html = "";
+    html = list.length ? '<div class="trust-head">Biome friendship</div>' : "";
     for (i = 0; i < list.length; i++) {
-      k = list[i][0]; t = list[i][1];
-      cls = run.allied && run.allied[k] ? "is-ally" : (t >= F.trusted ? "is-trusted" : "");
-      html += '<div class="trust-row ' + cls + '" title="' + biomeName(k) + ": " + Math.round(t) + ' trust"><i style="background:' + warColor(k) + '"></i><b>' + biomeName(k) +
-        '</b><span class="trust-bar"><span style="width:' + Math.round(t) + '%;background:' + warColor(k) + '"></span><em style="left:' + F.trusted + '%"></em></span><s>' +
-        (cls === "is-ally" ? "★" : (cls ? "♥" : "")) + "</s></div>";
+      k = list[i][0]; t = list[i][1]; st = trustStatus(k, t);
+      html += '<div class="trust-row ' + st.cls + (k === here ? " is-here" : "") + '" title="' + biomeName(k) + ": " + st.word + '">' +
+        '<i style="background:' + warColor(k) + '"></i><b>' + biomeName(k) + '</b><u>' + (st.cls === "is-ally" ? "★ " : st.cls ? "♥ " : "") + st.word + '</u>' +
+        '<span class="trust-bar"><span style="width:' + Math.round(100 * t / F.max) + '%;background:' + warColor(k) + '"></span>' +
+        '<em style="left:' + Math.round(100 * F.trusted / F.max) + '%"></em>' + (F.warmAt ? '<em class="w" style="left:' + Math.round(100 * F.warmAt / F.max) + '%"></em>' : "") + '</span>' +
+        (st.next ? '<small>' + st.next + '</small>' : '<small>they fight for you</small>') + "</div>";
     }
     box.innerHTML = html;
   }
@@ -6419,7 +6516,13 @@
       for (pi = 0; pi < propList.length; pi++) {
         (function (pr) {
           enqueue(pr.y, 0, function () {
-            var kind = pr.kind, spent = pr.key && D.world.isUsed(pr.key), sway = 0, gy;
+            var kind = pr.kind, spent = pr.key && D.world.isUsed(pr.key), sway = 0, gy, fadeA = 1;
+            /* Nov 21: an opened chest doesn't stay in the way: it fades out in a second and is gone */
+            if (spent && kind === "cache") {
+              var opened = cacheFade[pr.key];
+              if (opened == null || run.time - opened > CACHE_FADE) return;
+              fadeA = 1 - (run.time - opened) / CACHE_FADE;
+            }
             if (spent) kind += "_used";
             var burnSt = pr.tk && D.world.burnState ? D.world.burnState(pr.tk) : 0;
             if (burnSt) kind = (pr.tuft ? "tallgrass" : "meadow") + (burnSt === 1 ? "_burnt" : "_sprout");
@@ -6432,7 +6535,9 @@
             }
             var fall = pr.fk && D.world.fallOf ? D.world.fallOf(pr.fk) : null;
             if (fall) { drawFallen(pr, kind, fall); return; }
+            if (fadeA < 1) { ctx.save(); ctx.globalAlpha = Math.max(0, fadeA); }
             if (D.sprites.drawProp) D.sprites.drawProp(ctx, kind, pr.x + sway, pr.y);
+            if (fadeA < 1) ctx.restore();
             else D.sprites.drawDecor(ctx, pr.x, pr.y, kind);
             if (pr.kind === "spire" && !spent) {
               ctx.save();
@@ -6475,6 +6580,9 @@
           if (en.zz) drawZzz(en);
           if (en.war) drawWarBanner(en);
           if (en.fac && (en.rally != null || trustsFac(en.fac))) drawFriendMark(en);
+          else if (en.fac && D.FACTIONS && D.FACTIONS.warmAt && run.trust && (run.trust[en.fac] || 0) >= D.FACTIONS.warmAt) drawFriendMark(en, 0.45);   /* warming to you: a faint heart */
+          else if (angry[en._id] > run.time) drawAngryMark(en);
+          if (bubble && bubble.id === en._id) bubble.en = en;     /* drawn in the late pass, over everything */
           if (en.alv > 1) drawAllyLevel(en);
           if (en.nem) drawNemesis(en);
           /* dust where feet land: every step for bosses, now and then for the pack */
@@ -6695,6 +6803,7 @@
       ctx.fillText(f.text, f.x, f.y);
       ctx.globalAlpha = 1;
     }
+    drawBubbles();                                   /* speech bubbles above everything in the world */
     ctx.restore();
     if (run && state !== "farm" && state !== "title") drawSeasonFx();
     if (D.weather && run && run.weather && state === "playing") {
@@ -8101,6 +8210,7 @@
     tickDna(dt);
     tickBiome(dt);
     tickBurst(dt);
+    tickBubbles(dt);
     tickLevelWindow(dt);
     tickLevelFx(state === "playing" || state === "farm" ? dt : 0);
     tickBolts(state === "playing" ? dt : 0);

@@ -27,9 +27,15 @@ ok(sim._pvpFoes(a, b), "both flags up: they fight");
 b.atFarm = true; ok(!sim._pvpFoes(a, b), "nobody at the farm can be fought"); b.atFarm = false;
 
 const ev = []; const emit0 = sim.emit.bind(sim); sim.emit = e => { ev.push(e); return emit0(e); };
+/* Nov 21: hits go through the ordinary fight, landing on a stand-in that passes them on */
+a.pvpFlag = b.pvpFlag = true;
 let i = 0; const hp0 = b.hp;
-while (!b.atFarm && i++ < 3000) { sim.time += 1 / 30; a.monInvuln = 0; b.monInvuln = 0; sim._updatePvp(1 / 30); }
-ok(b.hp < hp0 && ev.some(e => e.k === "rshot"), "partners fight on sight, the shots drawn between them");
+sim._pvpProxyIn();
+const sb = sim.enemies.find(e => e.pvpOf === "b");
+ok(!!sb && !sim.enemies.some(e => e.pvpOf === "a" && false), "each partner in the fight has a stand-in to aim at");
+while (!b.atFarm && i++ < 3000) { sim.time += 1 / 30; a.monInvuln = 0; b.monInvuln = 0; sim.hurtEnemy(sb, 12, 0, 0, 0, { id: "a" }); }
+sim._pvpProxyOut();
+ok(b.hp < hp0 && ev.some(e => e.type === "hurt" && e.id === "b"), "a hit on the stand-in lands on the real partner");
 const ko = ev.find(e => e.type === "pvp.ko");
 ok(ko && ko.winner === a.id && b.atFarm && b.hp > 1 && !b.downed, "beaten: no death, knocked back home to the farm (" + Math.round(b.hp) + " HP)");
 ok(a.bits === 100 + Math.floor(100 * P.bits) && b.bits === 100 - Math.floor(100 * P.bits) && b.pvpShield === P.koShield, "the winner takes " + Math.round(P.bits * 100) + "% of the loser's Bits; the loser gets a longer shield");

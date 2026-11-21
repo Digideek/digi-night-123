@@ -27,7 +27,9 @@ const lv0 = e.lv, hp0 = e.maxHp, type0 = e.type;
 p.monInvuln = 0; sim.hurtMon(p, 99999, e);
 ok(e.nemesis && e.nem === 1 && e.nemTitle === "Isaac's Nemesis", "the one that beat your partner is now “" + e.nemTitle + "”");
 ok(e.lv >= lv0 + N.perKill.lv && e.maxHp > hp0 * 1.4 && e.hp === e.maxHp, "it gained levels (" + lv0 + " → " + e.lv + ") and health (" + Math.round(hp0) + " → " + Math.round(e.maxHp) + "), healed in full");
-ok(e.type !== type0, "and digivolved (" + type0 + " → " + e.type + ")");
+{ const nx = sim._burstForm(type0), need = D.LEVELS.band[D.ENEMIES[nx].stageDisplay][0];
+  ok(N.perKill.lv === 4 && (e.lv >= need ? e.type === nx : e.type === type0), "4 levels a win, and it digivolves only if that reaches the next form (Lv " + e.lv + ", " + nx + " needs " + need + "): " + type0 + " → " + e.type); }
+ok(e.nemAway > sim.time, "after beating you it heads out of the low-level area for a while");
 ok(!e.pack && !e.nest, "it left its herd to roam");
 ok(p.respawns === 1 && !sim.runOver, "(your partner respawns as usual in Open World)");
 /* a friend falls to it too */
@@ -43,9 +45,25 @@ p.x = 99999; p.mx = 99999; q.x = 99999; q.mx = 99999;
 const fac = sim._factionOf(e);
 const other = Object.keys(D.ENEMIES).find(k => !D.ENEMIES[k].boss && D.biomes.homeOf(k) && D.biomes.homeOf(k) !== fac && D.ENEMIES[k].stageDisplay === "Child (Rookie)");
 const prey = sim.spawnEnemy(other, { x: e.x + 200, y: e.y, keepType: true });
+e.nemAway = 0;                                              /* (later on, once it has gone) */
 const tgt = sim._nemesisAct(e, 1e15, 0.1);
 ok(tgt === prey, "no tamer near: it hunts a " + other + " of another biome");
 ok(sim._nemesisAct(e, 100 * 100, 0.1) === null, "a tamer's side close by: it comes for them");
+/* Nov 21: no forced digivolution: a Baby nemesis a few levels up stays a Baby */
+{ const baby = Object.keys(D.ENEMIES).find(k => D.ENEMIES[k].stageDisplay === "Baby I" && !D.ENEMIES[k].boss && sim._burstForm(k) !== k);
+  const bb = sim.spawnEnemy(baby, { x: 3500, y: 0, keepType: true }); bb.lv = 1;
+  const p2 = Object.assign({}, p, { id: "p2", name: "Ann", hp: 5, monInvuln: 0, hatchedAt: -999 }); sim.players.push(p2);
+  sim._nemesisKill(bb, p2);
+  const bn = sim._burstForm(baby), bneed = D.LEVELS.band[D.ENEMIES[bn].stageDisplay][0];
+  ok(bb.nemesis && bb.lv === 5 && (bb.lv >= bneed ? bb.type === bn : bb.type === baby), "a Baby that wins a fight (Lv 1 → " + bb.lv + ") digivolves only if that reaches the next form (" + bn + " needs Lv " + bneed + "): " + baby + " → " + bb.type);
+  const bb2 = sim.spawnEnemy(Object.keys(D.ENEMIES).find(k => D.ENEMIES[k].stageDisplay === "Child (Rookie)" && !D.ENEMIES[k].boss && sim._burstForm(k) !== k), { x: 3600, y: 0, keepType: true });
+  bb2.lv = 7; const t2 = bb2.type; sim._nemesisKill(bb2, p2);
+  ok(bb2.lv === 11 && bb2.type === t2, "a Rookie at Lv 7 that wins one (Lv 11, a Champion needs " + D.LEVELS.band["Adult (Champion)"][0] + ") stays a Rookie: " + bb2.type); bb2.dead = true;
+  /* it leaves the start: placed just outside the Baby sanctuary, it heads out past the Rookie zone */
+  bb.x = D.RESPAWN.zone.baby + 300; bb.y = 0;
+  const go = sim._nemesisAct(bb, 300 * 300, 0.1);
+  ok(go && go.x > D.RESPAWN.zone.rookie, "even with a tamer close by, it walks off out of the low-level area (to x " + Math.round(go && go.x) + ")");
+  sim.players.splice(sim.players.indexOf(p2), 1); bb.dead = true; }
 /* a herd of its own */
 const kin = Object.keys(D.ENEMIES).filter(k => !D.ENEMIES[k].boss && D.biomes.homeOf(k) === fac).slice(0, 3);
 const herd = kin.map((k, i) => { const m = sim.spawnEnemy(k, { x: e.x + 60 + i * 20, y: e.y + 30, keepType: true }); m.fac = fac; return m; });

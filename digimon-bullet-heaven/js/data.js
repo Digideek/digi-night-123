@@ -370,7 +370,7 @@
    *   breedSec     one more every this many seconds, out of sight or not
    *   startFull    how full a nest is the first time anyone comes near
    *   settlers     how many a conquering biome starts a taken nest with */
-  var NESTS = { tick: 1, activate: 980, cap: { herd: 6, nursery: 7, alpha: 5 }, capPerYear: 1, capMax: 11, breedSec: 40, startFull: 1, settlers: 2, scatter: 70 };
+  var NESTS = { tick: 1, activate: 980, cap: { herd: 6, nursery: 7, alpha: 5 }, capPerYear: 1, capMax: 11, breedSec: 40, babyBreedSec: 10, babyCapAdd: 2, startFull: 1, settlers: 2, scatter: 70 };
 
   /* Faction trust (Nov 20; faction-sim.js). Per tamer, per biome, 0 to max.
    *   trusted     at or above: that biome leaves you be, and your side's attacks pass over it unless you click one
@@ -382,7 +382,13 @@
    *               within guard of you, and drift off past rallyLeave */
   var FACTIONS = {
     tick: 1, max: 100, trusted: 40, allyHold: 85, frontCells: 3,
-    killGain: 6, killLoss: 12, bossMul: 2.5, lordMul: 9,
+    /* Nov 21: allies came within a minute or two; it is real work now. A kill gives killGain x
+     * the stage weight (a Baby is worth little, a Mega a lot), less the closer you are to the top
+     * (down to topKeep of it near max), and a biome gives at most perMinute in any minute. */
+    killGain: 1.5, killLoss: 12, bossMul: 2.5, lordMul: 9,
+    stageWeight: { "Baby I": 0.25, "Baby II (In-Training)": 0.5, "Child (Rookie)": 1, "Adult (Champion)": 2, "Perfect (Ultimate)": 3.5, "Ultimate (Mega)": 6, "Ultimate (Mega+)": 7, "Armor": 2 },
+    topKeep: 0.25, perMinute: 8,
+    warmAt: 15,                                            /* "friendly": its Digimon start to warm to you (a faint heart, a word of thanks) */
     hitLoss: 0.5, hitLossTrusted: 4, hitEvery: 0.5,
     fadeAfter: 60, fade: 0.25,
     rallyCap: 3, rallyReach: 520, rallyLeave: 1100, guard: 320
@@ -392,7 +398,7 @@
    *   reach   partner-to-partner distance it starts at; share: of each move's damage
    *   koAt    a partner at or below this share of its health is beaten: home to the farm with koHp,
    *           the winner takes `bits` of the loser's Bits, and the loser comes back with a koShield-second shield */
-  var PVP = { reach: 240, share: 0.5, koAt: 0.08, koHp: 0.3, bits: 0.25, koShield: 6, flagOff: 10 };   /* flagOff: seconds to lower the PvP flag */
+  var PVP = { reach: 240, share: 0.7, koAt: 0.08, koHp: 0.3, bits: 0.25, koShield: 6, flagOff: 10 };   /* flagOff: seconds to lower the PvP flag */
   /* Allies that grow (pvp-sim.js): a Digimon rallied to you levels from its own kills (1 each, 4 for a
    * boss) and `share` of each of yours; xpBase + xpPer per level to the next. Each level: health x hpPer
    * (heals healPer), damage x dmgPer. At evolveAt levels it digivolves into its line's standard next form. */
@@ -461,7 +467,8 @@
     pts: { partner: 10, wild: 1, big: 4 },
     tiers: [10, 20, 35, 55, 80, 110, 150], beyond: 50,
     titles: ["Nemesis", "Scourge", "Tyrant", "Warlord", "Calamity", "Doom", "Apocalypse"],
-    perKill: { lv: 6, hp: 1.5, dmg: 1.22 },
+    perKill: { lv: 4, hp: 1.5, dmg: 1.22 },                 /* Nov 21: 4 levels a win (was 6); it digivolves only when its level gets there */
+    leaveSec: 90, edgeWait: 6,                              /* after beating you it heads out of the low-level area for leaveSec; one left waiting at the start's edge gives up after edgeWait s */
     perWild: { hp: 1.03, dmg: 1.01, heal: 0.2, lvEvery: 3 },
     radiusPer: 0.06, radiusMax: 1.8,
     notice: 650, hunt: 700, roam: 900,

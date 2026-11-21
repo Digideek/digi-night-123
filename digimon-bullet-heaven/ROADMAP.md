@@ -1332,3 +1332,107 @@ so real devices are much faster in absolute terms; what matters is the ratio.
   normal play, and A kept walking the tamer. `pvp-realtime-test.js`: holding a direction walks the
   tamer 600 px while its partner keeps fighting the other.
 - How to Play: brawl and betting lines removed.
+
+## 2026-11-17z26 — The random white blocks on the map
+- Flat white tile-edged blocks would appear over the ground at random, more often after a while and
+  in storms. Cause: the WebGL renderer never freed a texture. Every map chunk that was redrawn
+  (walking somewhere new, grass burning, ice, seasons, territory changes) left its old texture
+  (~630 KB) on the graphics card. When the card ran out, the next upload failed, and a failed
+  upload was drawn with the plain white texture, so that whole patch of ground came out white.
+- Fixes:
+  - **Chunks:** throwing a chunk away now frees its texture (`world.js` `dropChunk` /
+    `dropAllChunks`, `renderer.release`).
+  - **Text:** the text cache frees its textures when it empties.
+  - **Failed uploads:** they now draw nothing for that frame and retry, instead of white
+    (`renderer._none`; out-of-memory is detected with `getError`).
+- Measured (live GPU textures while travelling and changing seasons): before, 64 → 751 after eight
+  jumps and still climbing; now map chunks hold at ~71, the cache size. What still grows is
+  only small Digimon sprite frames, a few KB each, once per species you meet.
+
+## 2026-11-17z27 — Baby nests breed back fast
+- Players ran out of Baby Digimon. Every nest bred back one Digimon per 40 s, and the baby nests
+  round the start held only 3.
+- Nests of Baby I / In-Training Digimon now breed every 10 s (`NESTS.babyBreedSec`) and hold 2 more
+  (`babyCapAdd`, 3 → 5 round the start). That applies both while you're there and to their catch-up
+  while you're away. Other nests are unchanged (`nest-sim.js` `_nestBaby` / `_nestBreed`).
+- `scripts/baby-nest-test.js`: clear all 5 baby nests by the start; the first one is back in 5 s, and
+  90 s later 20 babies are out again.
+
+## 2026-11-17z28 — Biome loyalty takes real work
+- Allies came within a minute or two: every kill by a border gave the neighbouring biome 6 trust,
+  and 100 is allied (17 kills).
+- Now (`data.js` FACTIONS, `faction-sim.js` `_trustEarn` / `_trustStageW`):
+  - **Base gain:** 1.5 per kill.
+  - **Stage weight:** Baby ×0.25, In-Training ×0.5, Rookie ×1, Champion ×2, Ultimate ×3.5, Mega ×6
+    (Mega+ ×7, Armor ×2).
+  - **Taper:** gains shrink as trust climbs, down to a quarter near the top.
+  - **Per-minute cap:** a biome gives at most 8 trust a minute.
+  - Losses, fading and the rally rules are unchanged.
+- **Result:**
+  - At the very best (strong Digimon, fighting non-stop): ~5 min to trusted, ~13 min to allies.
+  - Grinding babies: ~10 min to trusted, ~40 min to allies.
+  - 20 kills in a rush no longer earn trust at all. Checked in `faction-test.js`.
+
+## 2026-11-17z29 — Nemeses grow slower and don't camp the start
+- **How many form is unchanged:** every Digimon that beats a partner still becomes a nemesis.
+- **4 levels a win** (was 6; `NEMESIS.perKill.lv`).
+- **No forced digivolution:** it used to digivolve the moment it first won, and again with every new
+  title. Now it digivolves only when its level reaches the bottom of the next form's stage band
+  (`LEVELS.band`), from any source: winning, feeding on wild Digimon, a new title's +2
+  (`nemesis-sim.js` `_nemGrow`). A Lv 7 Rookie that wins (Lv 11, Champion needs 14) stays a Rookie.
+- **It leaves the start:** after beating you, a nemesis heads out past the whole low-level area (the
+  Rookie zone + 700 px) for `leaveSec` (90 s), whoever is about. One left waiting at the edge of the
+  start's sanctuary gives up after `edgeWait` (6 s) and wanders off too. It can still chase you back
+  in later.
+
+## 2026-11-17z30 — You can see who your friends are
+- **Friendship meter** (under the minimap, "Biome friendship"). Each biome you have any standing with,
+  and the one you're standing in ("· here"), shows:
+  - a status: Neutral, ♥ Friendly (15+), ♥ Trusted (40+) or ★ Allies (100)
+  - a bar in the biome's colour with marks at Friendly and Trusted
+  - how far to go ("16/40 to trusted", "44/100 to allies")
+- **Tiny speech bubbles**, one on screen at a time, gone in 2–3 s, drawn over everything. At each
+  milestone the nearest Digimon of that biome says a few words:
+  - "Thanks, friend!" (Friendly, new `warm` milestone in `faction-sim.js`)
+  - "We trust you!", "We've got your back!" (Trusted, Allies)
+  - "Traitor!" (turned against you)
+- **Growls:** when a herd spots you, now and then one growls ("Grrr!", "Die!", "Attack!"), with a
+  7 s cooldown, and friendly lines take priority.
+- **Over their heads:**
+  - a faint heart in the biome's colour for Digimon warming to you
+  - the full heart for trusted ones
+  - a small red sword for 9 s over a herd that's just spotted you
+- `game.js`: `say` / `herdAlert` / `drawBubble` / `drawAngryMark` / `tickTrustHud`;
+  `data.js` `FACTIONS.warmAt`.
+
+## 2026-11-17z31 — Opened chests go away
+- An opened data cache (chest) used to stay on the map as an open chest, and stayed solid, so it got
+  in the way. Now it fades out over ~1 s once opened and is gone. Its spot is walkable straight away
+  (`world.js` `solidProp` skips a used cache; `game.js` `cacheFade`). Broken spires still stay as
+  they are.
+- Checked in the browser: walked up, pressed E, the chest faded and its spot stopped blocking.
+
+## 2026-11-17z32 — PvP is the ordinary fight
+- Flagged PvP partners stood still and traded damage numbers: a shortcut that hurt the other partner
+  directly on a timer, with no real moves, no movement and no tie to their tamer.
+- **Stand-ins** (`pvp-sim.js` `_pvpProxyIn` / `_pvpProxyOut` / `_pvpHit` / `_pvpSkip`). Each partner in a
+  PvP fight gets an invisible stand-in, slipped into the enemy list only while partners pick targets
+  and fire, and while shots and ultimates land. Your partner treats the other one exactly as a wild
+  Digimon:
+  - noticed within its usual seek range
+  - fought with every one of its moves (projectiles, arcs, beams, the lot)
+  A hit on the stand-in lands on the real partner (`PVP.share`, now 70%, with its own dodge and the
+  same knock-out home to the farm). Only someone at war with its owner can target a stand-in, and
+  it's gone before the wild Digimon move, the snapshot is taken, or anything is counted. The old
+  direct-damage loop is gone.
+- **Footwork** (`mission-sim.js` `_duelStep`):
+  - It circles the other partner at fighting range, switching direction every second or two,
+    drifting in and out, and sometimes side-stepping hard.
+  - It never goes further than its leash from you: at the edge, it side-steps along the side facing
+    the opponent so its moves still reach.
+  - Walk away and it comes with you, still firing.
+  - Clicking their partner is an ordinary attack order on its stand-in.
+- Checked online with two browsers, both flagged: the host's partner moved 766 px in 8 s, shots in
+  the air, both took damage, no errors. `pvp-realtime-test.js`: real moves land; it moves ~1,200 px in
+  8 s, never still more than 0.6 s; it stays within ~100 px of a tamer walking off. `pvp-test.js`
+  updated.

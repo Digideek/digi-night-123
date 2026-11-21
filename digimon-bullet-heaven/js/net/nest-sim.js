@@ -43,6 +43,20 @@
       return Z.cradle && d2 < Z.cradle * Z.cradle ? 3 : (d2 < Z.baby * Z.baby ? 2 : (d2 < Z.rookie * Z.rookie ? 1 : 0));
     };
     var LOW = { "Baby I": 3, "Baby II (In-Training)": 2, "Child (Rookie)": 1 };
+    /* Nov 21: baby nests (Baby I and In-Training) breed back much faster (NESTS.babyBreedSec,
+     * every 10 s instead of 40) and hold a couple more (babyCapAdd): players ran out of them. */
+    MissionSim.prototype._nestBaby = function (st) {
+      var d = st && st.type ? this._enemies()[st.type] : null, sd = d && d.stageDisplay;
+      return sd === "Baby I" || sd === "Baby II (In-Training)";
+    };
+    MissionSim.prototype._nestBreed = function (st) {
+      var N = this._nestCfg();
+      return this._nestBaby(st) && N.babyBreedSec ? N.babyBreedSec : N.breedSec;
+    };
+    MissionSim.prototype._nestBabyCap = function (st) {
+      var N = this._nestCfg();
+      if (!st.babyCapped && this._nestBaby(st) && N.babyCapAdd) { st.cap += N.babyCapAdd; st.babyCapped = true; }
+    };
     MissionSim.prototype._nestType = function (biome, kind, wave, key, x, y) {
       var BI = this.data.biomes, defs = this._enemies(), stages = {}, t, list, ck, k, i, zone = this._startZone(x, y), lowOk;
       if (!BI || !BI.homeOf) return null;
@@ -95,7 +109,7 @@
           /* bred back while nobody was looking */
           /* a nest is never wiped out for good: one nearly emptied breeds back faster (data.js LEVELS.lowMul) */
           var LVn = this.data.LEVELS, fast = LVn && st.count < LVn.lowAt ? LVn.lowMul : 1;
-          st.count = Math.min(st.cap, st.count + (this.time - st.t) * fast / N.breedSec);
+          st.count = Math.min(st.cap, st.count + (this.time - st.t) * fast / this._nestBreed(st));
           st.t = this.time;
         }
       }
@@ -105,14 +119,16 @@
         if (!st.active) {
           /* conquered: the winner moves in, a few at first */
           if (n.biome !== st.biome) { st.biome = n.biome; st.count = Math.min(st.count, N.settlers); st.type = null; }
-          if (st.stage !== stageKey && !this._startZone(st.x, st.y)) { st.stage = stageKey; st.type = null; st.cap = this._nestCap(st.kind); }
-          if (!st.type) st.type = this._nestType(st.biome, st.kind, wave, k, st.x, st.y);
+          if (st.stage !== stageKey && !this._startZone(st.x, st.y)) { st.stage = stageKey; st.type = null; st.cap = this._nestCap(st.kind); st.babyCap0 = null; }
+          if (!st.type) { st.type = this._nestType(st.biome, st.kind, wave, k, st.x, st.y); st.babyCapped = false; if (st.babyCap0 != null) st.cap = st.babyCap0; }
+          if (st.babyCap0 == null) st.babyCap0 = st.cap;
+          this._nestBabyCap(st);
           if (st.type && st.count >= 1 && this._spawnsOpen()) this._nestRelease(st);
         } else {
           /* out and about: a nest short of its cap hatches one more now and then */
           st.breedT -= step;
           if (st.breedT <= 0) {
-            st.breedT = N.breedSec;
+            st.breedT = this._nestBreed(st);
             if (st.count + 1 <= st.cap && (alive[k] || 0) < st.cap) { st.count += 1; this._nestMember(st, true); }
           }
         }
@@ -156,7 +172,7 @@
       var N = this._nestCfg(), n = Math.floor(st.count), i, pk = "nest:" + st.key, defs = this._enemies(), leader;
       this.packs = this.packs || {};
       this.packs[pk] = { awake: false, x: st.x, y: st.y, hx: st.x, hy: st.y, cx: st.x, cy: st.y, tx: st.x, ty: st.y, task: "graze", tT: 3 + this.rng() * 6, night: (defs[st.type] || {}).attribute === "Virus", nest: st.key };
-      st.active = true; st.breedT = N.breedSec;
+      st.active = true; st.breedT = this._nestBreed(st);
       if (st.kind === "alpha" && this.data.stageBoss && !this._startZone(st.x, st.y)) {
         leader = this.data.stageBoss(this._partnerStageIdx(), this.seed, hash01(st.key) * 1000 | 0, this.time);
         if (leader) { var b = this._nestMember(st, false, leader); if (b) { b.nestLeader = true; n -= 1; } }

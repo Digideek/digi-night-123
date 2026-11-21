@@ -63,6 +63,7 @@
       else if (p.allied[fac] && now < F.allyHold) { delete p.allied[fac]; lvl = now >= F.trusted ? "cooling" : "hostile"; }
       else if (was < F.trusted && now >= F.trusted) lvl = "trusted";
       else if (was >= F.trusted && now < F.trusted) lvl = "hostile";
+      else if (F.warmAt && was < F.warmAt && now >= F.warmAt) lvl = "warm";       /* it's starting to like you (Nov 21) */
       if (lvl) this.emit({ type: "trust", id: p.id, fac: fac, level: lvl, value: Math.round(now) });
     };
 
@@ -79,7 +80,29 @@
         b = w.cellOwner(cx, cy);
         if (b && b !== fac) seen[b] = 1;
       }
-      for (b in seen) this._trustAdd(p, b, F.killGain * big * share);
+      for (b in seen) this._trustEarn(p, b, F.killGain * big * share * this._trustStageW(e));
+    };
+    /* how much a kill of this one is worth, by stage (data.js FACTIONS.stageWeight) */
+    MissionSim.prototype._trustStageW = function (e) {
+      var F = this._facCfg(), d = this._enemies()[e.type], sd = d && d.stageDisplay, W = F.stageWeight;
+      if (!W || !sd) return 1;
+      return W[sd] != null ? W[sd] : 1;
+    };
+    /* trust earned (not lost): less near the top, and no more than perMinute in any minute */
+    MissionSim.prototype._trustEarn = function (p, fac, amt) {
+      var F = this._facCfg(), now = this._trustOf(p, fac), win, room;
+      if (!(amt > 0)) return;
+      if (F.topKeep != null) amt *= 1 - (1 - F.topKeep) * Math.min(1, now / F.max);
+      if (F.perMinute) {
+        p.trustWin = p.trustWin || {};
+        win = p.trustWin[fac];
+        if (!win || this.time - win.t >= 60) win = p.trustWin[fac] = { t: this.time, got: 0 };
+        room = F.perMinute - win.got;
+        if (room <= 0) return;
+        amt = Math.min(amt, room);
+        win.got += amt;
+      }
+      this._trustAdd(p, fac, amt);
     };
     /* a hit that landed: a little trust lost, more from a biome that trusted you (rate-limited) */
     MissionSim.prototype._trustHit = function (p, e) {

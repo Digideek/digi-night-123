@@ -26,7 +26,7 @@
     if (!id || id === season) return false;
     season = id;
     /* Re-bake lazily: chunks and tiles are rebuilt as they are drawn. */
-    cache = {};
+    dropAllChunks();
     cacheOrder = [];
     tileCache = {};
     return true;
@@ -135,7 +135,7 @@
     if (id === nat) { if (terr[k]) { delete terr[k]; terrN--; } }
     else { if (!terr[k]) terrN++; terr[k] = id; }
     ownCache = {}; ownCount = 0; propCache = {}; propCount = 0;
-    for (j = -1; j <= 1; j++) for (i = -1; i <= 1; i++) delete cache[chunkKey(cx + i, cy + j)];
+    for (j = -1; j <= 1; j++) for (i = -1; i <= 1; i++) dropChunk(chunkKey(cx + i, cy + j));
     terrVer++; iceVer++;
     return true;
   }
@@ -567,6 +567,13 @@
   }
 
   /* ---------- Chunk bake ---------- */
+  /* throwing a chunk away frees its texture on the graphics card too (renderer.js release) */
+  function glRelease(ch) {
+    var R = D.gl && D.gl.renderer;
+    if (ch && ch.canvas && R && R.release) R.release(ch.canvas);
+  }
+  function dropChunk(key) { if (cache[key]) { glRelease(cache[key]); delete cache[key]; } }
+  function dropAllChunks() { var k; for (k in cache) glRelease(cache[k]); cache = {}; }
   function chunkKey(cx, cy) {
     return cx + "," + cy;
   }
@@ -576,7 +583,7 @@
     cacheOrder.push(key);
     if (cacheOrder.length > CACHE_MAX) {
       var old = cacheOrder.shift();
-      delete cache[old];
+      dropChunk(old);
     }
   }
 
@@ -840,8 +847,9 @@
     return v;
   }
   function solidProp(x, y, tx, ty) {
-    var f = SOLID[propAt(tx, ty)], px, py;
+    var k = propAt(tx, ty), f = SOLID[k], px, py;
     if (!f) return false;
+    if (k === "cache" && used[tx + "," + ty]) return false;          /* an opened chest is gone: walk right over the spot */
     px = (tx + 0.5) * TILE; py = (ty + 0.9) * TILE;
     return Math.abs(x - px) <= f[0] && y <= py + 2 && y >= py - f[1];
   }
@@ -968,11 +976,11 @@
   }
   function solidLiquidT(tx, ty) { var b = biomeDef(tx, ty); return !!(b && b.solidWater); }
   /* drop the baked look of the chunk holding this tile, so it is redrawn frozen or thawed */
-  function dirtyTile(tx, ty) { delete cache[chunkKey(Math.floor(tx / CHUNK), Math.floor(ty / CHUNK))]; }
+  function dirtyTile(tx, ty) { dropChunk(chunkKey(Math.floor(tx / CHUNK), Math.floor(ty / CHUNK))); }
   function iceTick() {
     var q = Math.floor(seasonIce() * 24), k, u, b, tx, ty;
     if (q !== iceQ) {
-      if (iceQ >= 0 || q > 0) { iceVer++; cache = {}; cacheOrder = []; }
+      if (iceQ >= 0 || q > 0) { iceVer++; dropAllChunks(); cacheOrder = []; }
       iceQ = q; iceLevel = q / 24;
     }
     if (clock >= iceNext) {
@@ -1260,7 +1268,7 @@
     pudRoom = {};
     colors();
     seed = (s == null ? 1 : (s | 0)) || 1;
-    cache = {};
+    dropAllChunks();
     cacheOrder = [];
     tileCache = {};
     matCache = {}; matCount = 0; bioCache = {}; bioCount = 0; lairCache = {};

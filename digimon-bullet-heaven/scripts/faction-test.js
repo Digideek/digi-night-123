@@ -32,8 +32,13 @@ const typeOf = side => Object.keys(D.ENEMIES).find(k => !D.ENEMIES[k].boss && D.
 function mk(side, x, y) { const e = sim.spawnEnemy(typeOf(side), { x, y, keepType: true }); e.fac = side; return e; }
 
 /* fight for side b at the border: kill side a's Digimon there */
-for (let i = 0; i < 7; i++) { const e = mk(f.a, bx - 40, by); sim._killEnemy(e, { id: p.id }); }
-ok(sim._trustOf(p, f.b) >= F.trusted && sim._trustOf(p, f.a) === 0, "kill " + f.a + "'s Digimon at the border and " + f.b + " trusts you (" + sim._trustOf(p, f.b) + ")");
+/* Nov 21: it's real work now. A quick burst of kills isn't enough... */
+for (let i = 0; i < 20; i++) { const e = mk(f.a, bx - 40, by); sim._killEnemy(e, { id: p.id }); }
+ok(sim._trustOf(p, f.b) < F.trusted, "20 kills in a rush: " + f.b + " doesn't trust you yet (" + sim._trustOf(p, f.b) + ", at most " + F.perMinute + " a minute)");
+/* ...but keep fighting for it, a kill every 5 s, and it comes round in a few minutes */
+let tTrust = null;
+for (let s = 5; s <= 20 * 60 && tTrust == null; s += 5) { sim.time += 5; const e = mk(f.a, bx - 40, by); sim._killEnemy(e, { id: p.id }); if (sim._trustOf(p, f.b) >= F.trusted) tTrust = s; }
+ok(tTrust != null && tTrust >= 4 * 60 && sim._trustOf(p, f.a) === 0, "fighting " + f.a + " at the border, " + f.b + " trusts you after " + (tTrust / 60).toFixed(1) + " minutes (" + sim._trustOf(p, f.b) + ")");
 
 const friend = mk(f.b, p.mx + 30, p.my), foe = mk(f.a, p.mx + 60, p.my);
 sim._actor = p;
@@ -55,8 +60,9 @@ sim._contactHits(friend, D.ENEMIES[friend.type] || {}, 10, 0.1);
 ok(p.tamerHp === th && p.hp === mh, "standing right next to it, it leaves you and your partner alone (trust " + sim._trustOf(p, f.b) + ", hp " + mh + "→" + p.hp + ")");
 
 /* full trust: they rally */
-for (let i = 0; i < 12; i++) { const e = mk(f.a, bx - 40, by); sim._killEnemy(e, { id: p.id }); }
-ok(p.allied && p.allied[f.b], f.b + " fights at your side at full trust (" + sim._trustOf(p, f.b) + ")");
+let tAlly = null;
+for (let s = 5; s <= 60 * 60 && tAlly == null; s += 5) { sim.time += 5; const e = mk(f.a, bx - 40, by); sim._killEnemy(e, { id: p.id }); if (p.allied && p.allied[f.b]) tAlly = s; }
+ok(tAlly != null && (tTrust + tAlly) >= 12 * 60, f.b + " fights at your side at full trust, after " + ((tTrust + tAlly) / 60).toFixed(0) + " minutes of steady fighting (" + sim._trustOf(p, f.b) + ")");
 for (let i = 0; i < 4; i++) mk(f.b, p.x + 100 + i * 30, p.y);
 sim._facT = 0; sim._updateFactions(0.1);
 const helpers = sim.enemies.filter(e => e.rally === p.id && !e.dead);

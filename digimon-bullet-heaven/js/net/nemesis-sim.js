@@ -47,6 +47,10 @@
       }
       e.nemKills += 1;
       e.lv = (e.lv || 1) + N.perKill.lv;
+      /* it doesn't hang about the start: off out of the low-level area for a while (it may still
+       * chase you back in later) */
+      e.nemAway = this.time + (N.leaveSec || 90);
+      e.nrx = null;
       e.maxHp = Math.round(e.maxHp * N.perKill.hp); e.hp = e.maxHp;
       e.dmgMul = (e.dmgMul || 1) * N.perKill.dmg;
       this._nemPoints(e, N.pts.partner);
@@ -61,28 +65,44 @@
       e.dmgMul = (e.dmgMul || 1) * N.perWild.dmg;
       if (e.nemWild % N.perWild.lvEvery === 0) e.lv = (e.lv || 1) + 1;
       this._nemPoints(e, (victim && (victim.boss || victim.lord || victim.nemesis)) ? N.pts.big : N.pts.wild);
+      this._nemGrow(e);
     };
     MissionSim.prototype._nemPoints = function (e, n) {
       var N = cfg(this), was = e.nem || 0, now, defs = this._enemies(), next, from, k;
       e.nemPts = (e.nemPts || 0) + n;
       now = Math.max(1, this._nemTierOf(e.nemPts));
       e.nem = now;
-      for (k = was; k < now; k++) {                                     /* each new title: digivolve when the line goes further */
+      for (k = was; k < now; k++) {                                     /* each new title: a couple more levels */
         if (k === 0) continue;                                          /* (the first title comes with the kill's growth) */
-        from = e.type; next = this._burstForm ? this._burstForm(e.type) : e.type;
-        if (next && next !== e.type && defs[next]) {
-          e.type = next;
-          e.maxHp = Math.round(Math.max(e.maxHp, (defs[next].hp || e.maxHp) * 2)); e.hp = e.maxHp;
-          if (this._actorRad) e.radius = Math.max(e.radius || 10, Math.round(this._actorRad(next) * 0.9));
-        }
+        from = e.type;
         e.lv = (e.lv || 1) + 2;
+        this._nemGrow(e, true);                                         /* it digivolves only if those levels reach the next form */
         this.emit({ type: "nemesis.rise", id: e._id, from: from, form: e.type, tier: k + 1, x: Math.round(e.x), y: Math.round(e.y) });
       }
-      if (was === 0) { from = e.type; next = this._burstForm ? this._burstForm(e.type) : e.type; if (next && next !== e.type && defs[next]) { e.type = next; if (this._actorRad) e.radius = Math.max(e.radius || 10, Math.round(this._actorRad(next) * 0.9)); this.emit({ type: "nemesis.rise", id: e._id, from: from, form: e.type, tier: 1, x: Math.round(e.x), y: Math.round(e.y) }); } }
+      if (was === 0) { from = e.type; this._nemGrow(e, true); if (e.type !== from) this.emit({ type: "nemesis.rise", id: e._id, from: from, form: e.type, tier: 1, x: Math.round(e.x), y: Math.round(e.y) }); }
       e.nemScale = Math.min(N.radiusMax, 1 + N.radiusPer * e.nem);
       e.nemTitle = this._nemTitle(e);
     };
 
+    /* Nov 21: a nemesis digivolves only when its level has really got there. It used to digivolve on
+     * the spot when it first beat you and again with every new title, levels or not; now it takes
+     * the next form on its line only once its level reaches the bottom of that form's stage band
+     * (data.js LEVELS.band), and keeps going while it still does. A Koromon a few levels up but
+     * short of a Rookie's stays a Koromon. */
+    MissionSim.prototype._nemGrow = function (e, quiet) {
+      var defs = this._enemies(), B = this.data.LEVELS && this.data.LEVELS.band, next, nd, need, from, guard = 0;
+      if (!e || !this._burstForm || !B) return;
+      while (guard++ < 4) {
+        next = this._burstForm(e.type); nd = next && defs[next];
+        if (!nd || next === e.type) return;
+        need = B[nd.stageDisplay] ? B[nd.stageDisplay][0] : null;
+        if (need == null || (e.lv || 1) < need) return;
+        from = e.type; e.type = next;
+        e.maxHp = Math.round(Math.max(e.maxHp, (nd.hp || e.maxHp) * 2)); e.hp = e.maxHp;
+        if (this._actorRad) e.radius = Math.max(e.radius || 10, Math.round(this._actorRad(next) * 0.9));
+        if (!quiet) this.emit({ type: "nemesis.rise", id: e._id, from: from, form: e.type, tier: Math.max(2, e.nem || 1), x: Math.round(e.x), y: Math.round(e.y) });
+      }
+    };
     /* where it goes when no tamer's side is near: a fight with another biome's Digimon, or a roam */
     MissionSim.prototype._nemesisAct = function (e, closest, dt) {
       var N = cfg(this), i, o, d, best = null, bd = N.hunt * N.hunt, fac = this._factionOf ? this._factionOf(e) : null, a, r, s;
@@ -90,11 +110,23 @@
        * that has just hatched again is not beaten again the moment it hatches */
       var Z = this.data.RESPAWN && this.data.RESPAWN.zone, keep = Z ? Z.baby + 150 : 0, dc = Math.sqrt(e.x * e.x + e.y * e.y);
       if (keep && dc < keep) { r = (keep + 250) / Math.max(1, dc); return { x: e.x * r + (dc < 1 ? keep + 250 : 0), y: e.y * r }; }
+      /* just beat you (or tired of waiting at the start's edge): off out past the low-level area,
+       * whoever is about (Nov 21: they were camping the beginning) */
+      var out = Z ? (Z.rookie || Z.baby * 2) + 700 : 0;
+      if (out && e.nemAway > this.time) {
+        if (dc >= out) { e.nemAway = 0; }
+        else { r = (out + 200) / Math.max(1, dc); return { x: dc < 1 ? out + 200 : e.x * r, y: dc < 1 ? 0 : e.y * r, wander: true }; }
+      }
       if (closest < N.notice * N.notice) {
         if (keep) { /* chasing someone into the sanctuary: stop at its edge */
           var stop = null;
           for (i = 0; i < this.players.length; i++) { o = this.players[i]; if (Math.sqrt(o.mx * o.mx + o.my * o.my) < Z.baby) stop = o; }
-          if (stop && dist2(e.x, e.y, stop.mx, stop.my) < N.notice * N.notice && dc < keep + 200) return { x: e.x, y: e.y, wander: true, idle: true };
+          if (stop && dist2(e.x, e.y, stop.mx, stop.my) < N.notice * N.notice && dc < keep + 200) {
+            e.edgeT = (e.edgeT || 0) + dt;
+            if (e.edgeT > (N.edgeWait || 6)) { e.edgeT = 0; e.nemAway = this.time + (N.leaveSec || 90); e.nrx = null; }   /* gives up and wanders off */
+            return { x: e.x, y: e.y, wander: true, idle: true };
+          }
+          e.edgeT = 0;
         }
         return null;
       }

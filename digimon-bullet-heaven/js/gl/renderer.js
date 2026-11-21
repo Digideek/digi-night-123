@@ -165,6 +165,7 @@
     gl.bindBuffer(gl.ARRAY_BUFFER, this._buf);
     gl.bufferData(gl.ARRAY_BUFFER, this._data.byteLength, gl.DYNAMIC_DRAW);
     this._white = this._makeSolid();
+    this._none = this._makeClear();
     this._circle = this._makeCircle(false);
     this._ring = this._makeCircle(true);
     gl.disable(gl.DEPTH_TEST);
@@ -179,7 +180,7 @@
       self.ok = false;
       self._texMap = typeof WeakMap !== "undefined" ? new WeakMap() : null;
       self._textures = [];
-      self._white = self._circle = self._ring = null;
+      self._white = self._circle = self._ring = self._none = null;
       self._curTex = null;
     }, false);
     canvas.addEventListener("webglcontextrestored", function () {
@@ -204,6 +205,27 @@
     g.fillStyle = "#fff";
     g.fillRect(0, 0, 2, 2);
     return this.upload(c, { nearest: true, wrap: "clamp" });
+  };
+
+  /* fully transparent: what a failed upload draws as (Nov 21: it used to be solid white) */
+  Renderer.prototype._makeClear = function () {
+    var c = document.createElement("canvas");
+    c.width = 2; c.height = 2;
+    return this.upload(c, { nearest: true, wrap: "clamp" });
+  };
+  /* Free the GPU copy of a canvas nobody will draw again (world.js does this when it throws
+   * away a map chunk). Nothing was ever freed before: every chunk redrawn (walking somewhere
+   * new, grass burning, ice, seasons, territory) left its old texture behind until the graphics
+   * card ran out, and then the next upload failed and drew solid white: the random bright
+   * blocks over the map. */
+  Renderer.prototype.release = function (src) {
+    var rec = this._texMap && src ? this._texMap.get(src) : null;
+    if (!rec || !this.gl || rec === this._white || rec === this._none || rec === this._circle) return;
+    this.flush();
+    if (this._curTex === rec) this._curTex = null;
+    try { this.gl.deleteTexture(rec.tex); } catch (e) {}
+    this._texMap.delete(src);
+    this.stats.live = Math.max(0, (this.stats.live || 0) - 1);
   };
 
   Renderer.prototype._makeCircle = function (ring) {
@@ -237,17 +259,25 @@
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, wrap);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filt);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filt);
+    var failed = false;
     try {
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, src);
+      /* out of video memory doesn't throw, it just leaves an error behind */
+      if ((src.width || 0) * (src.height || 0) > 4096 && gl.getError() === gl.OUT_OF_MEMORY) failed = true;
     } catch (e) {
-      return this._white;
+      failed = true;
+    }
+    if (failed) {
+      /* draw nothing this frame (not a white block) and try again next time */
+      if (!rec) { try { gl.deleteTexture(tex); } catch (e2) {} }
+      return this._none || this._white;
     }
     rec = rec || { tex: tex, id: ++this._texId, w: src.width || 1, h: src.height || 1 };
     rec.w = src.width || rec.w;
     rec.h = src.height || rec.h;
     rec.nearest = !!opts.nearest;
     rec.wrap = opts.wrap || "clamp";
-    if (this._texMap) this._texMap.set(src, rec);
+    if (this._texMap) { if (!this._texMap.get(src)) this.stats.live = (this.stats.live || 0) + 1; this._texMap.set(src, rec); }
     this.stats.textures = this._texId;
     return rec;
   };
@@ -881,7 +911,11 @@
       g.fillText(text, x, y);
     }
     var rec = { canvas: c, x: x, y: y, w: w, h: h, px: px };
-    if (textCacheN > 256) { textCache = {}; textCacheN = 0; }
+    if (textCacheN > 256) {
+      /* the old words go, and their copies on the graphics card with them (Nov 21) */
+      for (var tk in textCache) if (textCache[tk] && textCache[tk].canvas) this._r.release(textCache[tk].canvas);
+      textCache = {}; textCacheN = 0;
+    }
     textCache[key] = rec; textCacheN++;
     return rec;
   };
