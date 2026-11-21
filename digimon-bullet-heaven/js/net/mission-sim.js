@@ -1666,6 +1666,12 @@
   MissionSim.prototype._addPatch = function (kind, x, y, r, dps, owner, gen) {
     var S = this.data && this.data.STATUS, P = S && S.patch, list = this.patches || (this.patches = []), w = this.data.world, i, q, life, reach;
     if (!P) return null;
+    /* fire never sits on water (Nov 21): on water or lava it is just steam, and next to it the
+     * patch is pulled in until it stays on the bank */
+    if (kind === "fire" && w) {
+      if (w.groundAt && w.groundAt(x, y) === "water") { if (this._steam) this._steam(x, y); return null; }
+      if (w.waterNear) { while (r > 14 && w.waterNear(x, y, r * 0.9)) r *= 0.8; if (w.waterNear(x, y, 10)) { if (this._steam) this._steam(x, y); return null; } }
+    }
     /* what is already on the ground here reacts first */
     for (i = list.length - 1; i >= 0 && kind; i--) {
       q = list[i]; reach = (r + q.r) * 0.75;

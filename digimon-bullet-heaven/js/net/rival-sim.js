@@ -256,7 +256,7 @@
       e.radius = this._actorRad(rp.form);
       e.maxHp = rp.maxHp; e.hp = Math.max(1, Math.min(rp.maxHp, rp.hp));
       e.dmgMul = 1; e.pack = null;
-      rv.eid = e._id; rv.x = e.x; rv.y = e.y; rv.tx = e.x + 30; rv.ty = e.y + 10; rv.state = "hunt";
+      rv.eid = e._id; rv.x = e.x; rv.y = e.y; this._rivalTamerPlace(rv, e.x + 30, e.y + 10); rv.state = "hunt";
       this._rivalFit(rv, false);
       return e;
     };
@@ -364,10 +364,36 @@
         if (n && dist2(e.x, e.y, rv.stuckX || 0, rv.stuckY || 0) < 12 * 12 && !tgt) { rv.wpX = null; rv.skipT = 2.5; }
         rv.stuckT = 0; rv.stuckX = e.x; rv.stuckY = e.y;
       }
-      /* its tamer keeps a few steps behind it */
+      /* its tamer keeps a few steps behind it, on foot like you: round cliffs, water and lava,
+       * even when its partner flies or swims across (then it finds the way round, and if
+       * there is none it catches up the long way: it reappears on the near bank) */
+      this._rivalTamerStep(rv, e, dt);
+    };
+
+    MissionSim.prototype._rivalTamerStep = function (rv, e, dt) {
+      var tb = rv.tb || (rv.tb = { _id: 7919, radius: 14, type: null }), d, n, k, pos, mv, spot;
+      if (rv.tx == null || !isFinite(rv.tx)) { rv.tx = e.x; rv.ty = e.y; }
+      tb.x = rv.tx; tb.y = rv.ty;
       d = Math.sqrt(dist2(rv.tx, rv.ty, e.x, e.y));
-      if (d > 46) { n = norm(e.x - rv.tx, e.y - rv.ty); k = Math.min(d - 40, (this._tamer().speed || 150) * 1.1 * dt); rv.tx += n.x * k; rv.ty += n.y * k; rv.tMoving = true; rv.tFacing = n.x < 0 ? -1 : 1; }
-      else rv.tMoving = false;
+      if (d <= 46) { rv.tMoving = false; rv.tStuck = 0; return; }
+      n = this._steer(tb, e.x, e.y, "rivalTamer", dt);
+      k = Math.min(d - 40, (this._tamer().speed || 150) * 1.1 * dt);
+      pos = this._slide(rv.tx, rv.ty, n.x * k, n.y * k, 9, 0);
+      mv = Math.abs(pos.x - rv.tx) + Math.abs(pos.y - rv.ty);
+      rv.tx = pos.x; rv.ty = pos.y;
+      rv.tMoving = mv > 0.2;
+      if (rv.tMoving) rv.tFacing = n.x < 0 ? -1 : 1;
+      /* no way round (an island, a lake its partner swam): after a while it catches up */
+      rv.tStuck = (mv < k * 0.3 || d > 520) ? (rv.tStuck || 0) + dt : 0;
+      if (rv.tStuck > 2.5) {
+        spot = this._snap(e.x - 30 * (e.facing || 1), e.y + 10, 9, 360, 0);
+        rv.tx = spot.x; rv.ty = spot.y; rv.tStuck = 0;
+      }
+    };
+    /* put the tamer down on ground it can stand on */
+    MissionSim.prototype._rivalTamerPlace = function (rv, x, y) {
+      var spot = this._snap(x, y, 9, 360, 0);
+      rv.tx = spot.x; rv.ty = spot.y;
     };
 
     /* what the screen is told */

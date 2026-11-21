@@ -374,8 +374,63 @@
     ctx.restore();
   }
 
+  /* ---------- one shared sheet for field props and shadows (Nov 21) ----------
+   * Every tree, rock and bush was its own texture and every shadow a third, so the WebGL
+   * draw broke into a new batch at nearly every prop (~180 times a frame). Props are copied
+   * once onto this sheet and drawn from it, shadows too, so a whole forest is one batch.
+   * The sheet is a plain canvas: the 2D fallback just draws sub-rectangles of it. */
+  var ATLAS_W = 2048, ATLAS_H = 2048, atlas = null;
+  function atlasReset() {
+    var cv = typeof document !== "undefined" ? document.createElement("canvas") : null;
+    if (!cv) { atlas = { off: true }; return; }
+    cv.width = ATLAS_W; cv.height = ATLAS_H;
+    atlas = { cv: cv, g: cv.getContext("2d"), x: 0, y: 0, rowH: 0, map: typeof WeakMap !== "undefined" ? new WeakMap() : null, n: 0 };
+    if (!atlas.g || !atlas.map) atlas.off = true;
+  }
+  function atlasOf(c) {
+    if (!c || !c.width || !c.height) return null;
+    if (!atlas) atlasReset();
+    if (atlas.off) return null;
+    var r = atlas.map.get(c), w = c.width, h = c.height;
+    if (r) return r;
+    if (w > 384 || h > 384) return null;
+    if (atlas.x + w + 2 > ATLAS_W) { atlas.x = 0; atlas.y += atlas.rowH + 2; atlas.rowH = 0; }
+    if (atlas.y + h + 2 > ATLAS_H) {
+      /* full (many seasons and biomes later): start a fresh sheet */
+      atlasReset();
+      if (atlas.off) return null;
+    }
+    atlas.g.drawImage(c, atlas.x, atlas.y);
+    r = { cv: atlas.cv, sx: atlas.x, sy: atlas.y, w: w, h: h };
+    atlas.map.set(c, r);
+    atlas.x += w + 2; atlas.rowH = Math.max(atlas.rowH, h);
+    /* the WebGL side sends just this rectangle (renderer.js drawImage) */
+    (atlas.cv.__subs || (atlas.cv.__subs = [])).push({ x: r.sx, y: r.sy, c: c });
+    atlas.n++;
+    return r;
+  }
+  var shadowCv = null;
+  function shadowCanvas() {
+    if (shadowCv || typeof document === "undefined") return shadowCv;
+    var c = document.createElement("canvas"), g;
+    c.width = 72; c.height = 26;
+    g = c.getContext("2d");
+    if (!g) return null;
+    g.fillStyle = "rgb(12,8,16)";
+    g.beginPath(); g.ellipse(36, 13, 33, 10.8, 0, 0, Math.PI * 2); g.fill();
+    return (shadowCv = c);
+  }
   function shadow(ctx, x, y, spread, alpha) {
-    var s = spread || 1;
+    var s = spread || 1, sc = shadowCanvas(), a = sc ? atlasOf(sc) : null;
+    if (a) {
+      ctx.save();
+      ctx.imageSmoothingEnabled = false;            /* the sheet is pixel art: keep it crisp */
+      ctx.globalAlpha = (ctx.globalAlpha == null ? 1 : ctx.globalAlpha) * (alpha || 0.32);
+      /* the sheet's ellipse is 3x the size of a spread-1 shadow */
+      ctx.drawImage(a.cv, a.sx, a.sy, a.w, a.h, Math.round(x) + Math.round(3.2 * s) - 12 * s, Math.round(y) + 3 - (13 / 3) * s, 24 * s, (26 / 3) * s);
+      ctx.restore();
+      return;
+    }
     ctx.save();
     ctx.fillStyle = "rgba(12,8,16," + (alpha || 0.32) + ")";
     ctx.beginPath();
@@ -2674,11 +2729,12 @@
   }
 
   function drawProp(ctx, kind, x, y) {
-    var c = decorCanvas(kind), sp = propSpread(kind);
+    var c = decorCanvas(kind), sp = propSpread(kind), a = atlasOf(c);
     if (sp > 0) shadow(ctx, x, y, sp, 0.3);
     ctx.save();
     ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(c, Math.round(x - c.width / 2), Math.round(y - c.height + 6));
+    if (a) ctx.drawImage(a.cv, a.sx, a.sy, a.w, a.h, Math.round(x - c.width / 2), Math.round(y - c.height + 6), c.width, c.height);
+    else ctx.drawImage(c, Math.round(x - c.width / 2), Math.round(y - c.height + 6));
     ctx.restore();
   }
 

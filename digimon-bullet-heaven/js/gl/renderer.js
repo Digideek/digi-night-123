@@ -252,6 +252,18 @@
     return rec;
   };
 
+  Renderer.prototype.subUpload = function (rec, subs) {
+    var gl = this.gl, i, sb;
+    if (!gl || !rec || !rec.tex) { subs.length = 0; return; }
+    this.flush();
+    gl.bindTexture(gl.TEXTURE_2D, rec.tex);
+    for (i = 0; i < subs.length; i++) {
+      sb = subs[i];
+      try { gl.texSubImage2D(gl.TEXTURE_2D, 0, sb.x, sb.y, gl.RGBA, gl.UNSIGNED_BYTE, sb.c); } catch (e) {}
+    }
+    subs.length = 0;
+  };
+
   Renderer.prototype.invalidate = function (src) {
     this.upload(src, { dirty: true });
   };
@@ -595,6 +607,9 @@
       sx = a; sy = b; sw = c; sh = d; dx = e; dy = f; dw = g; dh = h;
     }
     var rec = this._r.upload(img, { nearest: !this.imageSmoothingEnabled, wrap: "clamp" });
+    /* a shared sprite sheet that just had something added (sprites.js atlasOf): send only the
+     * new rectangles, not the whole sheet */
+    if (img.__subs && img.__subs.length) this._r.subUpload(rec, img.__subs);
     var tw = rec.w || img.width || 1, th = rec.h || img.height || 1;
     var u0 = sx / tw, v0 = sy / th, u1 = (sx + sw) / tw, v1 = (sy + sh) / th;
     this._fillBox(dx, dy, dw, dh, [1, 1, 1, this.globalAlpha], rec, u0, v0, u1, v1);
@@ -630,7 +645,35 @@
     return "complex";
   };
 
+  /* Curves become short straight segments (Nov 21). A path with a quadraticCurveTo used to
+   * be drawn on a scratch canvas and uploaded as a new texture every time, with two batch
+   * flushes: a grass fire's flickering flames did that ~250 times a frame and the frame rate
+   * fell through the floor in lightning storms. Flattened, it goes down the fast poly path. */
+  GL2D.prototype._flattenQuads = function () {
+    var p = this._path, out = [], i, n, lx = 0, ly = 0, sx = 0, sy = 0, k, t, u, steps, has = false;
+    for (i = 0; i < p.length; i++) if (p[i].k === "quad") { has = true; break; }
+    if (!has) return false;
+    for (i = 0; i < p.length; i++) {
+      n = p[i];
+      if (n.k === "move") { out.push(n); lx = sx = n.x; ly = sy = n.y; }
+      else if (n.k === "line") { out.push(n); lx = n.x; ly = n.y; }
+      else if (n.k === "close") { out.push(n); lx = sx; ly = sy; }
+      else if (n.k === "quad") {
+        /* about one segment per 14 px of curve: a flame a few pixels tall needs only 2-3 */
+        steps = Math.max(2, Math.min(10, Math.ceil((Math.abs(n.x - lx) + Math.abs(n.y - ly) + Math.abs(n.cpx - lx) + Math.abs(n.cpy - ly)) / 14)));
+        for (k = 1; k <= steps; k++) {
+          t = k / steps; u = 1 - t;
+          out.push({ k: "line", x: u * u * lx + 2 * u * t * n.cpx + t * t * n.x, y: u * u * ly + 2 * u * t * n.cpy + t * t * n.y });
+        }
+        lx = n.x; ly = n.y;
+      } else out.push(n);
+    }
+    this._path = out;
+    return true;
+  };
+
   GL2D.prototype.fill = function () {
+    this._flattenQuads();
     var kind = this._pathKind();
     var col = this._col(this.fillStyle);
     var add = this._add();
@@ -647,6 +690,7 @@
   };
 
   GL2D.prototype.stroke = function () {
+    this._flattenQuads();
     var kind = this._pathKind();
     var lw = this.lineWidth || 1;
     if (kind === "ellipse") {
@@ -890,6 +934,7 @@
 
   D.gl = {
     Renderer: Renderer,
+    GL2D: GL2D,
     attach: attach,
     screenToWorld: screenToWorld,
     viewSpan: viewSpan,

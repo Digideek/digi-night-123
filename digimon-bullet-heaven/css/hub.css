@@ -452,3 +452,26 @@ button.btn.lobby2-start.is-go { background: linear-gradient(#ffe066, #f6b21a); c
 }
 @media (max-height: 560px) { #lobby-stage { max-height: 30vh; } .lobby2-slot canvas { width: 40px; height: 40px; } .lobby2-slot { grid-template-columns: 40px 1fr; } }
 .lobby2-blurb { margin: 0; min-height: 2.6em; font-size: 12.5px; line-height: 1.35; color: #b8c8dc; text-align: center; }
+
+/* ---------- the first-time tour (js/tour.js) ---------- */
+#tour { position: fixed; inset: 0; z-index: 9000; pointer-events: none; }
+#tour[hidden] { display: none; }
+.tour-shade { position: absolute; inset: 0; background: rgba(4, 8, 20, 0.72); pointer-events: auto; transition: background 0.2s; }
+.tour-shade.is-cut { background: transparent; }
+.tour-ring { position: absolute; border: 3px solid #ffd23a; border-radius: 6px; box-shadow: 0 0 0 9999px rgba(4, 8, 20, 0.72), 0 0 18px rgba(255, 210, 58, 0.8), inset 0 0 12px rgba(255, 210, 58, 0.35); transition: left 0.25s ease, top 0.25s ease, width 0.25s ease, height 0.25s ease; animation: tourPulse 1.4s ease-in-out infinite; pointer-events: none; }
+@keyframes tourPulse { 50% { border-color: #fff3b0; } }
+.tour-bubble { position: absolute; display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; box-sizing: border-box; background: #0f1a33; border: 3px solid #f6b21a; box-shadow: 6px 6px 0 rgba(0, 0, 0, 0.5); color: #eef3fa; pointer-events: auto; transition: left 0.25s ease, top 0.25s ease; }
+.tour-bubble.is-in { animation: tourIn 0.22s ease-out; }
+@keyframes tourIn { from { opacity: 0; transform: translateY(6px); } }
+.tour-guide { width: 72px; height: 72px; flex-shrink: 0; image-rendering: pixelated; background: radial-gradient(circle at 50% 70%, rgba(255, 210, 58, 0.25), rgba(0, 0, 0, 0) 70%); }
+.tour-body { flex: 1; min-width: 0; }
+.tour-count { font-size: 10px; letter-spacing: 0.14em; color: #9bb0c4; font-weight: 800; }
+.tour-body h3 { margin: 2px 0 4px; font-size: 17px; color: #ffd23a; }
+.tour-body p { margin: 0; font-size: 13.5px; line-height: 1.45; color: #dfe8f4; }
+.tour-btns { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+.tour-btns span { flex: 1; }
+.tour-btns button { font: inherit; font-size: 13px; font-weight: 800; cursor: pointer; padding: 6px 14px; border: 2px solid #2c3f5c; background: #1c2a44; color: #cfe0ff; }
+.tour-btns .tour-skip { background: none; border-color: transparent; color: #8a9ab0; padding: 6px 4px; text-decoration: underline; }
+.tour-btns .tour-next { background: linear-gradient(#ffe066, #f6b21a); color: #3a2408; border-color: #5a3a08; }
+.tour-btns .tour-back[hidden] { display: none; }
+.tour-replay { margin-left: 8px; }

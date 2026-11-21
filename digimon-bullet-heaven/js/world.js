@@ -400,9 +400,19 @@
   function waterColorBase(x, y, tx, ty, cov) {
     /* Irregular sparkles instead of a sine that tiles every 16px. */
     var speck = hash2((tx || 0) * 13 + x, (ty || 0) * 11 + y, seed + 110);
-    var col = mixHex(B ? B.w0 : "#1c6874", B ? B.w1 : "#4eb8b4", 0.28 + speck * 0.4), wd;
+    /* Smooth and dark (Nov 21): random bright specks made water look like gravel to a
+     * colour-blind tester. Now it is a calm, deep tone with long soft bands; the life in it
+     * is the moving ripples drawn on top each frame (game.js drawWaterFx). */
+    var band = 0.5 + 0.5 * Math.sin((x + (tx || 0) * 16) * 0.35 + (y + (ty || 0) * 16) * 0.9);
+    var lava = !!(B && B.solidWater);
+    var col = mixHex(B ? B.w0 : "#1c6874", B ? B.w1 : "#4eb8b4", 0.18 + band * 0.18 + speck * 0.06), wd;
+    if (!lava) {
+      col = mixHex(col, "#041018", 0.38);
+      /* however bright a biome's water is (green sludge, pale oasis), keep it well darker than the ground */
+      var L = hexLum(col);
+      if (L > 0.2) col = mixHex(col, "#041018", Math.min(0.7, (L - 0.2) / L + 0.05));
+    }
     if (cov < 0.55) col = mixHex(col, B ? B.foam : "#b8fff8", 0.5 * (1 - cov));
-    if (speck > 0.91) col = mixHex(col, B ? B.spark : "#e8fffc", 0.55);
     if (B && B.wdeco && cov > 0.8) { wd = B.wdeco(x, y, speck); if (wd) col = wd; }
     return col;
   }
@@ -420,8 +430,21 @@
     return col;
   }
 
+  /* Readable without colour (Nov 21): a colour-blind player couldn't tell a plateau from
+   * grass. Ground you can't cross gets shapes, not just hues: a hard near-black outline on
+   * every open edge, a regular diagonal hatch over plateau tops (grass is only ever random
+   * speckle), a dark foot under each cliff face, and a dark shoreline round water and lava. */
+  var EDGE_INK = "#0b0705";
+  function hexLum(c) {
+    var p = parseColor(c);
+    return (0.2126 * p[0] + 0.7152 * p[1] + 0.0722 * p[2]) / 255;
+  }
   function cliffTopColor(x, y, tx, ty, mask) {
-    return sz(cliffTopColorBase(x, y, tx, ty, mask), "cliff", x, y, tx, ty);
+    var col = sz(cliffTopColorBase(x, y, tx, ty, mask), "cliff", x, y, tx, ty);
+    if (((x + y) & 3) === 0) col = mixHex(col, "#1a120a", 0.32);
+    if ((!(mask & 1) && y === 0) || (!(mask & 2) && x === 15) || (!(mask & 8) && x === 0) || (!(mask & 4) && y === 15)) col = EDGE_INK;
+    else if ((!(mask & 2) && x === 14) || (!(mask & 8) && x === 1) || (!(mask & 4) && y === 14)) col = mixHex(col, EDGE_INK, 0.35);
+    return col;
   }
 
   function cliffTopColorBase(x, y, tx, ty, mask) {
@@ -484,6 +507,7 @@
             g = grassColor(x, y, tx, ty, variant);
             col = mixHex(g, waterColor(x, y, tx, ty, cov), Math.min(1, cov * 1.15));
             if (cov > 0.2 && cov < 0.62) col = mixHex(col, B ? B.foam : "#9af0ea", 0.4);
+            if (cov > 0.05 && cov <= 0.3) col = mixHex(g, EDGE_INK, 0.8);          /* the shoreline: you stop here */
           }
         } else {
           col = cliffTopColor(x, y, tx, ty, mask);
@@ -513,6 +537,9 @@
         /* East side of the face is darker, west a little lit. */
         if (!(mask & 2) && x > 13) col = mixHex(col, "#1a120c", 0.4);
         if (!(mask & 8) && x < 2) col = mixHex(col, "#7a6248", 0.25);
+        /* the wall's own outline: its open sides and its foot */
+        if ((!(mask & 2) && x === 15) || (!(mask & 8) && x === 0) || y === FACE_PX - 1) col = EDGE_INK;
+        else if (y === FACE_PX - 2) col = mixHex(col, EDGE_INK, 0.45);
         ctx.fillStyle = col;
         ctx.fillRect(x * SCALE, y * SCALE, SCALE, SCALE);
       }
@@ -722,6 +749,35 @@
         ctx.drawImage(ch.canvas, Math.round(dx), Math.round(dy));
       }
     }
+  }
+
+  /* Open water and lava tiles in view, for the moving ripples and bubbles (game.js
+   * drawWaterFx). Listed once per chunk; a chunk is rebuilt when ice comes or goes.
+   * Each entry: [tx, ty, kind (1 water, 2 lava), inner (all four neighbours the same)] */
+  function chunkWater(ch, cx, cy) {
+    if (ch.water) return ch.water;
+    var out = [], i, j, tx, ty, lava, inner;
+    for (j = 0; j < CHUNK; j++) for (i = 0; i < CHUNK; i++) {
+      tx = cx * CHUNK + i; ty = cy * CHUNK + j;
+      if (materialAt(tx, ty) !== MAT.WATER) continue;
+      lava = solidLiquidT(tx, ty);
+      if (!lava && isFrozenTile(tx, ty)) continue;
+      inner = materialAt(tx + 1, ty) === MAT.WATER && materialAt(tx - 1, ty) === MAT.WATER && materialAt(tx, ty + 1) === MAT.WATER && materialAt(tx, ty - 1) === MAT.WATER;
+      out.push([tx, ty, lava ? 2 : 1, inner ? 1 : 0]);
+    }
+    ch.water = out;
+    return out;
+  }
+  function waterInView(camX, camY, viewW, viewH) {
+    if (!ready) return [];
+    var x0 = camX - viewW / 2 - TILE, y0 = camY - viewH / 2 - TILE, x1 = camX + viewW / 2 + TILE, y1 = camY + viewH / 2 + TILE;
+    var cx0 = Math.floor(x0 / (CHUNK * TILE)), cy0 = Math.floor(y0 / (CHUNK * TILE)), cx1 = Math.floor(x1 / (CHUNK * TILE)), cy1 = Math.floor(y1 / (CHUNK * TILE));
+    var out = [], cx, cy, list, i, w, tx0 = Math.floor(x0 / TILE), ty0 = Math.floor(y0 / TILE), tx1 = Math.floor(x1 / TILE), ty1 = Math.floor(y1 / TILE);
+    for (cy = cy0; cy <= cy1; cy++) for (cx = cx0; cx <= cx1; cx++) {
+      list = chunkWater(getChunk(cx, cy), cx, cy);
+      for (i = 0; i < list.length; i++) { w = list[i]; if (w[0] >= tx0 && w[0] <= tx1 && w[1] >= ty0 && w[1] <= ty1) out.push(w); }
+    }
+    return out;
   }
 
   function propsInView(camX, camY, viewW, viewH) {
@@ -1037,9 +1093,34 @@
     need = (1 - depth) * 0.9;                       /* deeper spots fill first */
     if (soak <= need) return null;
     fullR = depth >= PUD.pondAt ? PUD.pondR : PUD.minR + (PUD.maxR - PUD.minR) * (depth - 0.25) / (PUD.pondAt - 0.25);
+    var px = (tx + 0.5) * TILE + (hash2(cx, cy, seed + 843) - 0.5) * TILE * 0.6, py = (ty + 0.5) * TILE, key = cx + "," + cy;
+    /* never over a cliff, its wall, or water: a pond spilling across one hid the edge and read
+     * as a ramp up a plateau or a bridge over a river (Nov 21) */
+    fullR = Math.min(fullR, puddleRoom(key, px, py));
+    if (fullR < 8) return null;
     r = fullR * Math.min(1, (soak - need) / 0.35);
     if (r < 6) return null;
-    return { x: (tx + 0.5) * TILE + (hash2(cx, cy, seed + 843) - 0.5) * TILE * 0.6, y: (ty + 0.5) * TILE, r: r, pond: depth >= PUD.pondAt, key: cx + "," + cy, biome: b ? b.id : "plains" };
+    return { x: px, y: py, r: r, pond: depth >= PUD.pondAt, key: key, biome: b ? b.id : "plains", h1: hash2(cx, cy, seed + 851), h2: hash2(cx, cy, seed + 852) };
+  }
+  /* How big a puddle at (x, y) may grow before its outline (with the wobble it is drawn with,
+   * PUD_SPILL) comes within PUD_GAP px of a cliff top, the face hanging below one, or water.
+   * The land doesn't move, so it is worked out once per spot. */
+  var PUD_SPILL = 1.3, PUD_GAP = 6, pudRoom = {};
+  function puddleRoom(key, x, y) {
+    if (pudRoom[key] != null) return pudRoom[key];
+    var reach = PUD.pondR * PUD_SPILL + PUD_GAP + TILE, t0x = Math.floor((x - reach) / TILE), t1x = Math.floor((x + reach) / TILE),
+        t0y = Math.floor((y - reach) / TILE), t1y = Math.floor((y + reach) / TILE), tx, ty, m, blocked, nx, ny, d, best = PUD.pondR;
+    for (ty = t0y; ty <= t1y; ty++) for (tx = t0x; tx <= t1x; tx++) {
+      m = materialAt(tx, ty);
+      blocked = m === MAT.CLIFF || m === MAT.WATER || materialAt(tx, ty - 1) === MAT.CLIFF;     /* the last: the wall hanging into this tile */
+      if (!blocked) continue;
+      /* nearest point of the tile to the centre, measured in the puddle's squashed (x : 0.62y) space */
+      nx = Math.max(tx * TILE, Math.min(x, (tx + 1) * TILE)); ny = Math.max(ty * TILE, Math.min(y, (ty + 1) * TILE));
+      d = Math.sqrt((nx - x) * (nx - x) + ((ny - y) / 0.62) * ((ny - y) / 0.62));
+      d = (d - PUD_GAP) / PUD_SPILL;
+      if (d < best) best = d;
+    }
+    return (pudRoom[key] = Math.max(0, best));
   }
   function puddlesIn(x0, y0, x1, y1) {
     var out = [], span = PUD.cell * TILE, a, b, cx, cy, p;
@@ -1176,6 +1257,7 @@
   }
 
   function reset(s) {
+    pudRoom = {};
     colors();
     seed = (s == null ? 1 : (s | 0)) || 1;
     cache = {};
@@ -1203,6 +1285,7 @@
     init: init,
     drawGround: drawGround,
     propsInView: propsInView,
+    waterInView: waterInView,
     elevationAt: elevationAt,
     materialAt: materialAt,
     _river: riverField,
@@ -1251,6 +1334,7 @@
     setSoak: function (v) { soak = Math.max(0, Math.min(1, v || 0)); },
     soak: function () { return soak; },
     puddlesIn: puddlesIn,
+    PUD_SPILL: PUD_SPILL,
     inPuddle: inPuddle,
     snowAt: snowAt,
     ICE: ICE,

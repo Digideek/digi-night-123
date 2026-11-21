@@ -2043,9 +2043,9 @@
     chip.hidden = !on;
     if (!on) { panel.hidden = true; skillsUi.open = false; return; }
     var pts = run.skillPoints || 0, sk = run.skills || {}, t, act, firing = {}, html = "", i, s, list, e, def, lv, why, sig, rows, btns, ml, ico, cv, g, p, legacy;
-    $("skills-chip-text").textContent = "Job Lv " + (run.level || 1) + (pts ? "" : "  \u00b7  Skills [K]");
+    $("skills-chip-text").textContent = "Job Lv " + (run.level || 1) + (pts ? "" : "  \u00b7  Skills" + kh("skills"));
     $("skills-chip-badge").hidden = !pts;
-    $("skills-chip-badge").textContent = pts + (pts === 1 ? " pt [K]" : " pts [K]");
+    $("skills-chip-badge").textContent = pts + (pts === 1 ? " pt" : " pts") + kh("skills");
     chip.classList.toggle("has-points", pts > 0);
     panel.hidden = !skillsUi.open;
     if (!skillsUi.open) return;
@@ -2156,14 +2156,14 @@
     var pts = run.statPoints || 0, lvl = run.tamerLevel || 1, at = run.attrs || RO.fresh(), bo = run.attrBonus || {}, i, id, html = "", sig, rows, btns, c, dv, cheapest = 99;
     for (i = 0; i < RO.ORDER.length; i++) if ((at[RO.ORDER[i]] || 1) < RO.CFG.cap) cheapest = Math.min(cheapest, RO.cost(at[RO.ORDER[i]] || 1));
     var canSpend = pts >= cheapest;
-    $("stats-chip-text").textContent = "Base Lv " + lvl + (canSpend ? "" : "  \u00b7  Status [T]");
+    $("stats-chip-text").textContent = "Base Lv " + lvl + (canSpend ? "" : "  \u00b7  Status" + kh("stats"));
     $("stats-chip-badge").hidden = !canSpend;
-    $("stats-chip-badge").textContent = pts + " pts [T]";
+    $("stats-chip-badge").textContent = pts + " pts" + kh("stats");
     chip.classList.toggle("has-points", canSpend);
     /* say so the first few times points arrive, and again if they sit unspent */
     if (canSpend && (pts > (statsUi.lastPts || 0) || run.time - (statsUi.nagAt || 0) > 60) && !statsUi.open) {
       if ((statsUi.nudges || 0) < 3 || pts <= (statsUi.lastPts || 0)) {
-        showNoticeToast("You have " + pts + " stat points to spend.  Press T, or tap the gold Base button."); noticeToastTimer = 4;
+        showNoticeToast("You have " + pts + " stat points to spend.  " + (D.input.lastSource === "touch" ? "Tap the gold Base button." : D.input.lastSource === "gamepad" ? "Press R3." : "Press T, or click the gold Base button.")); noticeToastTimer = 4;
         statsUi.nudges = (statsUi.nudges || 0) + 1;
       }
       statsUi.nagAt = run.time;
@@ -2213,6 +2213,8 @@
    * the jump in health, attack and speed, or say "not yet": it keeps
    * levelling as it is, earns one small random perk, and asks again five
    * levels later. The game does not pause for it. */
+  /* the key for an action on the device in hand: " [K]", " [View]", or nothing on touch */
+  function kh(action) { return D.input && D.input.hint ? D.input.hint(action) : ""; }
   function evoOfferShown() { return !!(run && !run.ended && run.evoOffer && state === "playing" && !run.downed && !isEggForm(run.form)); }
   function tickEvoOffer(dt) {
     var box = $("evo-offer"), on = evoOfferShown(), nm;
@@ -2452,7 +2454,7 @@
         chip.style.setProperty("--fill", pct + "%");
         chip.className = run.burstLeft > 0 ? "active" : (pct >= 100 ? "full" : "");
         T = myUlt();
-        $("burst-chip-text").textContent = T ? (pct >= 100 ? T.name.toUpperCase() + " READY [R]" : T.name + " " + pct + "%") : (run.burstLeft > 0 ? "WARP  " + run.burstLeft.toFixed(1) + "s" : (pct >= 100 ? "WARP READY [R]" : "Warp " + pct + "%"));
+        $("burst-chip-text").textContent = T ? (pct >= 100 ? T.name.toUpperCase() + " READY" + kh("burst") : T.name + " " + pct + "%") : (run.burstLeft > 0 ? "WARP  " + run.burstLeft.toFixed(1) + "s" : (pct >= 100 ? "WARP READY" + kh("burst") : "Warp " + pct + "%"));
         if (ultShake) { ultShake.t += dt || 0; if (ultShake.t >= ultShake.at) { shake = Math.max(shake, 16); sfx("hurt"); ultShake = null; } }
       }
     }
@@ -3509,7 +3511,7 @@
   function consumeEnemyClick() {
     var c = D.input && D.input.consumeClick ? D.input.consumeClick() : null;
     if (!c || !run || isEggForm(run.form)) return null;
-    var w = screenToWorldPt(c);
+    var w = c.world || screenToWorldPt(c);
     if (!w) return null;
     lastGroundClick = null;
     var i, e, r, d, best = null, bestD = 1e15;
@@ -3534,6 +3536,29 @@
       sfx("ui");
     }
     return best;
+  }
+  /* RT on a controller: send the partner at the enemy the right stick points
+   * to (or the one you're walking toward, or the nearest). */
+  function sendPartnerAtAim() {
+    if (!run || run.ended || isEggForm(run.form) || run.downed) return;
+    var ang = null, mx = D.input.moveX, my = D.input.moveY, i, e, dx, dy, d, da, sc, best = null, bestSc = 1e15;
+    if (D.input.aimStick) ang = D.input.aimAngle;
+    else if (Math.abs(mx) + Math.abs(my) > 0.2) ang = Math.atan2(my, mx);
+    for (i = 0; i < enemies.length; i++) {
+      e = enemies[i];
+      if (!e || e.dead || e.zz) continue;
+      dx = e.x - run.x; dy = e.y - run.y; d = Math.sqrt(dx * dx + dy * dy);
+      if (d > 460) continue;
+      sc = d;
+      if (ang != null) {
+        da = Math.abs(Math.atan2(Math.sin(Math.atan2(dy, dx) - ang), Math.cos(Math.atan2(dy, dx) - ang)));
+        if (da > 0.9) continue;
+        sc = d * (1 + da * 1.5);
+      }
+      if (sc < bestSc) { bestSc = sc; best = e; }
+    }
+    if (!best) { showNoticeToast("No enemy that way."); noticeToastTimer = 1.2; return; }
+    if (D.input.pushClick) D.input.pushClick({ world: { x: best.x, y: best.y - (best.radius || 12) * 0.6 }, type: "pad" });
   }
   function focusedEnemy() {
     if (!run) return null;
@@ -5341,21 +5366,48 @@
     D.sprites.drawProp(ctx, base, pr.x, pr.y - 4);
     ctx.restore();
   }
+  /* the three z's, outline and all, baked once onto one strip (Nov 21): drawn as text they were
+   * six separate textures per sleeper, and at night, with half the field asleep, that broke the
+   * draw into a hundred-odd extra batches a frame */
+  var zzzStrip = null;
+  function zzzSprite() {
+    if (zzzStrip) return zzzStrip;
+    var c = document.createElement("canvas"), g, i;
+    c.width = 3 * 24; c.height = 24;
+    g = c.getContext("2d");
+    g.textAlign = "center"; g.textBaseline = "alphabetic"; g.lineWidth = 3; g.lineJoin = "round";
+    for (i = 0; i < 3; i++) {
+      g.font = "bold " + (8 + i * 2) + "px Trebuchet MS, sans-serif";
+      g.strokeStyle = "rgba(10,14,30,0.85)"; g.fillStyle = "#cfe0ff";
+      g.strokeText("z", i * 24 + 12, 17); g.fillText("z", i * 24 + 12, 17);
+    }
+    return (zzzStrip = c);
+  }
   function drawZzz(en) {
-    var t = run.time, top = en.y - (en.radius || 10) * 1.8 - 8, i, ph2, x, y;
+    var t = run.time, top = en.y - (en.radius || 10) * 1.8 - 8, i, ph2, x, y, zs = zzzSprite();
     ctx.save();
-    ctx.font = "bold 11px Trebuchet MS, sans-serif"; ctx.textAlign = "center"; ctx.lineWidth = 3;
     for (i = 0; i < 3; i++) {
       ph2 = (t * 0.45 + i / 3 + (en._id % 7) * 0.13) % 1;
       x = en.x + 6 + ph2 * 12 + Math.sin(ph2 * 6 + i) * 2; y = top - ph2 * 18;
       ctx.globalAlpha = Math.sin(ph2 * Math.PI) * 0.9;
-      ctx.font = "bold " + (8 + i * 2) + "px Trebuchet MS, sans-serif";
-      ctx.strokeStyle = "rgba(10,14,30,0.85)"; ctx.fillStyle = "#cfe0ff";
-      ctx.strokeText("z", x, y); ctx.fillText("z", x, y);
+      ctx.drawImage(zs, i * 24, 0, 24, 24, x - 12, y - 17, 24, 24);
     }
     ctx.restore();
   }
   /* rain-filled puddles and ponds: muddy rim, water, a highlight; rings when it is still raining; ice in winter */
+  /* an uneven, irregular rim: the same wobble every frame for the same puddle */
+  function puddleBlob(p, scale, dy) {
+    var n = 22, j, th, rr, a1 = (p.h1 || 0) * 6.28, a2 = (p.h2 || 0) * 6.28;
+    ctx.beginPath();
+    ctx.moveTo(p.x, p.y + dy);                       /* from the centre, so the WebGL fan fills it right */
+    for (j = 0; j <= n; j++) {
+      th = j / n * Math.PI * 2;
+      rr = p.r * scale * (1 + 0.13 * Math.sin(3 * th + a1) + 0.07 * Math.sin(5 * th + a2) - 0.03);
+      ctx.lineTo(p.x + Math.cos(th) * rr, p.y + dy + Math.sin(th) * rr * 0.62);
+    }
+    ctx.closePath();
+    ctx.fill();
+  }
   function drawPuddles() {
     if (!D.world || !D.world.puddlesIn) return;
     var span = camSpan(), list = D.world.puddlesIn(camX - span.w / 2 - 20, camY - span.h / 2 - 20, camX + span.w / 2 + 20, camY + span.h / 2 + 20), i, p, k, ry, wet, frozen, t = run.time, ph2, rx, cx, cy;
@@ -5365,11 +5417,22 @@
     ctx.save();
     for (i = 0; i < list.length; i++) {
       p = list[i]; ry = p.r * 0.62;
-      ctx.globalAlpha = 0.28; ctx.fillStyle = "#2a2014";
-      ctx.beginPath(); ctx.ellipse(p.x, p.y + 1, p.r + 4, ry + 3, 0, 0, Math.PI * 2); ctx.fill();
+      /* soaked into the ground, not stamped on it (Nov 21): a damp halo that fades out, an
+       * uneven wobbly edge, and a few wet spots where it has seeped out past the rim. All of it
+       * stays inside world.js PUD_SPILL x r, which is kept clear of cliffs and water. */
+      ctx.globalAlpha = 0.16; ctx.fillStyle = "#2a2014";
+      puddleBlob(p, 1.1, 2);                       /* x1.17 wobble = 1.29, inside PUD_SPILL */
+      ctx.globalAlpha = 0.22;
+      puddleBlob(p, 1.04, 1);
+      for (k = 0; k < (p.r > 20 ? 3 : 2); k++) {
+        var sa = (p.h1 * 6.28) + k * 2.2 + p.h2, sr = p.r * (0.14 + 0.1 * ph(p.x + k, p.y));
+        cx = p.x + Math.cos(sa) * p.r * 1.0; cy = p.y + Math.sin(sa) * ry * 1.0;
+        ctx.globalAlpha = frozen ? 0.45 : 0.3; ctx.fillStyle = frozen ? "#cfe6f2" : (p.pond ? "#2a6478" : "#3a7a8e");
+        ctx.beginPath(); ctx.ellipse(cx, cy, sr, sr * 0.62, 0, 0, Math.PI * 2); ctx.fill();
+      }
       ctx.globalAlpha = frozen ? 0.85 : (p.pond ? 0.78 : 0.62);
       ctx.fillStyle = frozen ? "#cfe6f2" : (p.pond ? "#2a6478" : "#3a7a8e");
-      ctx.beginPath(); ctx.ellipse(p.x, p.y, p.r, ry, 0, 0, Math.PI * 2); ctx.fill();
+      puddleBlob(p, 1, 0);
       ctx.globalAlpha = frozen ? 0.8 : 0.35; ctx.fillStyle = frozen ? "#ffffff" : "#a8e0f0";
       ctx.beginPath(); ctx.ellipse(p.x - p.r * 0.25, p.y - ry * 0.3, p.r * 0.45, ry * 0.28, -0.15, 0, Math.PI * 2); ctx.fill();
       if (!frozen && wet > 0.15) {
@@ -5590,7 +5653,7 @@
     var show = !!(run && !run.ended && (state === "playing" || state === "farm") && D.PVP);
     c.hidden = !show;
     if (!show) return;
-    c.textContent = run.pvpFlag ? (run.pvpOffAt ? "PvP lowering… " + Math.max(0, Math.ceil(run.pvpOffAt - run.time)) + "s" : "PvP ON [V]") : "PvP off [V]";
+    c.textContent = run.pvpFlag ? (run.pvpOffAt ? "PvP lowering… " + Math.max(0, Math.ceil(run.pvpOffAt - run.time)) + "s" : "PvP ON" + kh("pvp")) : "PvP off" + kh("pvp");
     c.classList.toggle("is-urgent", !!run.pvpFlag);
   }
   /* crossed golden swords over a tamer whose PvP flag is up */
@@ -5880,15 +5943,21 @@
     var span = camSpan(), list = D.world.burntInView(camX, camY, span.w, span.h), T = (D.sprites && D.sprites.TILE) || 48, i, b, a, k, t = run ? run.time : 0;
     if (!list.length) return;
     ctx.save();
+    /* two passes, so the char blobs (one texture) and the specks (another) each go in one batch */
+    ctx.fillStyle = "#1a110c";
     for (i = 0; i < list.length; i++) {
       b = list[i];
       a = Math.min(1, b.age / 0.5) * (b.state === 2 ? clamp(b.left / b.sprout, 0, 1) : 1);
-      ctx.globalAlpha = 0.5 * a; ctx.fillStyle = "#1a110c";
+      ctx.globalAlpha = 0.5 * a;
       for (k = 0; k < 3; k++) {
         ctx.beginPath();
         ctx.ellipse(b.x + (ph(b.tx * 3 + k, b.ty) - 0.5) * T * 0.4, b.y + (ph(b.tx, b.ty * 3 + k) - 0.5) * T * 0.4, T * (0.42 + ph(b.tx + k, b.ty + 7) * 0.22), T * (0.32 + ph(b.tx + 9, b.ty + k) * 0.18), 0, 0, Math.PI * 2);
         ctx.fill();
       }
+    }
+    for (i = 0; i < list.length; i++) {
+      b = list[i];
+      a = Math.min(1, b.age / 0.5) * (b.state === 2 ? clamp(b.left / b.sprout, 0, 1) : 1);
       ctx.globalAlpha = 0.35 * a; ctx.fillStyle = "#6a5a50";
       for (k = 0; k < 4; k++) ctx.fillRect(Math.round(b.x + (ph(b.tx + k * 5, b.ty + 2) - 0.5) * T * 0.8), Math.round(b.y + (ph(b.tx + 3, b.ty + k * 5) - 0.5) * T * 0.7), 3, 2);
       if (b.age < 12 && b.state === 1) {
@@ -5911,10 +5980,16 @@
   var ST_PIPS = [["wet", "#4aa7ff"], ["chill", "#bfe8ff"], ["root", "#6fc24a"], ["shock", "#ffe14a"], ["bleed", "#e0464a"], ["poison", "#b06ad0"], ["curse", "#a060d0"], ["daze", "#ffe27a"]];
   var stFloatT = 0;
   function ph(a, b) { var n = Math.sin(a * 127.1 + b * 311.7) * 43758.5453; return n - Math.floor(n); }
+  /* Nov 21: only what is on screen, and all the flames in one additive pass at the end
+   * (switching the blend mode or texture per patch broke the draw into hundreds of batches) */
+  var fireList = [];
   function drawPatches() {
-    var i, q, a, k, n, fx, fy, hgt, t = run ? run.time : 0, sq = 0.72;
+    var i, q, a, k, n, fx, fy, hgt, t = run ? run.time : 0, sq = 0.72, span = camSpan(), pad = 80;
+    var vx0 = camX - span.w / 2 - pad, vx1 = camX + span.w / 2 + pad, vy0 = camY - span.h / 2 - pad, vy1 = camY + span.h / 2 + pad;
+    fireList.length = 0;
     for (i = 0; i < patches.length; i++) {
       q = patches[i];
+      if (q.x + q.r < vx0 || q.x - q.r > vx1 || q.y + q.r < vy0 || q.y - q.r > vy1) continue;
       a = Math.max(0, Math.min(1, q.t / 0.7, (q.max - q.t) / 0.2 + 0.25));
       ctx.save();
       if (q.kind === "wet") {
@@ -5942,14 +6017,24 @@
           ctx.beginPath(); ctx.arc(q.x + (ph(q.id, k + 3) - 0.5) * q.r * 1.3, q.y + (ph(q.id, k + 7) - 0.5) * q.r * sq, 2 + n * 4, 0, Math.PI * 2); ctx.fill();
         }
       } else {
-        /* fire: scorched ground, and tongues of flame that flicker */
+        /* fire: scorched ground now, the tongues of flame after the loop */
         ctx.globalAlpha = 0.4 * a; ctx.fillStyle = "#24140c";
         ctx.beginPath(); ctx.ellipse(q.x, q.y, q.r, q.r * sq, 0, 0, Math.PI * 2); ctx.fill();
-        ctx.globalCompositeOperation = "lighter";
+        fireList.push(q, a);
+      }
+      ctx.restore();
+    }
+    if (!fireList.length) return;
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    for (i = 0; i < fireList.length; i += 2) {
+      q = fireList[i]; a = fireList[i + 1];
+      {
         n = Math.max(5, Math.round(q.r / 4));
         for (k = 0; k < n; k++) {
           fx = q.x + (ph(q.id, k) - 0.5) * q.r * 1.7; fy = q.y + (ph(q.id, k + 31) - 0.5) * q.r * sq * 1.6;
           if ((fx - q.x) * (fx - q.x) / (q.r * q.r) + (fy - q.y) * (fy - q.y) / (q.r * q.r * sq * sq) > 1) continue;
+          if (D.world.groundAt && D.world.groundAt(fx, fy) === "water") continue;     /* no flames on water */
           hgt = (9 + ph(q.id, k + 61) * 13) * (0.7 + 0.3 * Math.sin(t * 13 + k * 2.1)) * a;
           ctx.globalAlpha = 0.75 * a; ctx.fillStyle = "#ff6a1a";
           ctx.beginPath(); ctx.moveTo(fx - 4, fy); ctx.quadraticCurveTo(fx - 3 + Math.sin(t * 9 + k) * 2, fy - hgt * 0.6, fx + Math.sin(t * 7 + k) * 3, fy - hgt); ctx.quadraticCurveTo(fx + 4, fy - hgt * 0.5, fx + 4, fy); ctx.fill();
@@ -5957,8 +6042,8 @@
           ctx.beginPath(); ctx.moveTo(fx - 2, fy); ctx.quadraticCurveTo(fx, fy - hgt * 0.4, fx + Math.sin(t * 7 + k) * 1.5, fy - hgt * 0.6); ctx.quadraticCurveTo(fx + 2, fy - hgt * 0.3, fx + 2, fy); ctx.fill();
         }
       }
-      ctx.restore();
     }
+    ctx.restore();
   }
   /* the marks on one enemy: ice round a frozen one, flames on a burning one, small pips for the rest */
   function drawEnemyStatus(en, barX, barY) {
@@ -5993,11 +6078,95 @@
     ctx.restore();
   }
 
+  /* Water you can read without colour (Nov 21): wavy white ripple lines drift across every
+   * open-water tile and now and then a glint flashes; lava swells with bubbles that pop.
+   * Gravel never moves, so even in grey the water reads as water. */
+  function wHash(a, b) { var h = (a * 374761393 + b * 668265263) | 0; h = (h ^ (h >>> 13)) * 1274126177 | 0; return ((h ^ (h >>> 16)) >>> 0) / 4294967296; }
+  function drawWaterFx() {
+    if (!D.world || !D.world.waterInView) return;
+    var span = camSpan(), list = D.world.waterInView(camX, camY, span.w, span.h), T = (D.sprites && D.sprites.TILE) || 48, P = T / 16;
+    var t = (typeof performance !== "undefined" ? performance.now() : Date.now()) / 1000, i, w, h1, h2, x0, y0, ph, a, ox, oy, k, r, u, lavaOn = 0;
+    if (!list.length) return;
+    ctx.save();
+    for (i = 0; i < list.length; i++) {
+      w = list[i];
+      x0 = w[0] * T; y0 = w[1] * T;
+      h1 = wHash(w[0], w[1]); h2 = wHash(w[1] + 77, w[0] - 31);
+      if (w[2] === 2) { lavaOn = 1; continue; }
+      /* two ripple lines per tile, drifting east with the current and breathing in and out */
+      for (k = 0; k < (w[3] ? 2 : 1); k++) {
+        ph = t * (0.35 + h1 * 0.2) + h2 * 6.28 + k * 3.1;
+        a = 0.35 + 0.45 * Math.max(0, Math.sin(ph));
+        if (a < 0.08) continue;
+        oy = w[3] ? Math.floor((k ? 0.68 : 0.22) * 16 + h1 * 4) : 8;
+        ox = w[3] ? Math.floor(((t * (5 + h2 * 4) + h1 * 16 + k * 8) % 16)) : 5 + Math.floor(h2 * 3);
+        ctx.globalAlpha = a;
+        ctx.fillStyle = "#f2fbff";
+        /* a little "~": up, across, down, across */
+        ctx.fillRect(x0 + ((ox) % 16) * P, y0 + (oy + 1) * P, P * 2, P);
+        ctx.fillRect(x0 + ((ox + 2) % 16) * P, y0 + oy * P, P * 2, P);
+        ctx.fillRect(x0 + ((ox + 4) % 16) * P, y0 + (oy + 1) * P, P * 2, P);
+        if (w[3]) ctx.fillRect(x0 + ((ox + 6) % 16) * P, y0 + oy * P, P * 2, P);
+      }
+      /* a glint, now and then */
+      u = (t * 0.5 + h1 * 13) % 7;
+      if (w[3] && u < 0.35) {
+        ctx.globalAlpha = 1 - u / 0.35;
+        ctx.fillStyle = "#ffffff";
+        ox = x0 + (3 + Math.floor(h2 * 10)) * P; oy = y0 + (3 + Math.floor(h1 * 10)) * P;
+        ctx.fillRect(ox, oy - P, P, P * 3); ctx.fillRect(ox - P, oy, P * 3, P);
+      }
+    }
+    if (lavaOn) for (i = 0; i < list.length; i++) {
+      w = list[i];
+      if (w[2] !== 2) continue;
+      x0 = w[0] * T; y0 = w[1] * T;
+      h1 = wHash(w[0], w[1]); h2 = wHash(w[1] + 77, w[0] - 31);
+      /* lots of little bubbles: each rises, swells a pixel or two and pops (edge tiles keep them
+       * in the middle, clear of the bank) */
+      for (k = 0; k < (w[3] ? 5 : 3); k++) {
+        var hb = wHash(w[0] * 7 + k * 131, w[1] * 5 - k * 71), hc = wHash(w[1] * 3 + k * 53, w[0] * 11 + k * 17);
+        var ub = (t / (0.9 + hb * 1.3) + hc) % 1, inset = w[3] ? 2 : 5;
+        var bx = x0 + (inset + hb * (16 - inset * 2)) * P, by = y0 + (inset + hc * (16 - inset * 2)) * P;
+        if (ub < 0.75) {
+          var rb = Math.max(1, Math.round(1 + 1.6 * (ub / 0.75))) * P * 0.5;
+          ctx.globalAlpha = 0.95;
+          ctx.fillStyle = "#2a0a02"; ctx.fillRect(Math.round(bx - rb - P * 0.5), Math.round(by - rb - P * 0.5), Math.round(rb * 2 + P), Math.round(rb * 2 + P));
+          ctx.fillStyle = ub > 0.5 ? "#fff0a0" : "#ffc23a"; ctx.fillRect(Math.round(bx - rb), Math.round(by - rb), Math.round(rb * 2), Math.round(rb * 2));
+        } else if (ub < 0.85) {
+          ctx.globalAlpha = 1 - (ub - 0.75) / 0.1;
+          ctx.fillStyle = "#ffe48a";
+          ctx.fillRect(bx - P * 1.5, by, P, P); ctx.fillRect(bx + P * 0.5, by, P, P); ctx.fillRect(bx - P * 0.5, by - P, P, P);
+        }
+      }
+      if (!w[3]) continue;
+      u = (t / (2.2 + h1 * 1.6) + h2) % 1;               /* 0..1 through one bubble's life */
+      ox = x0 + (4 + h2 * 8) * P; oy = y0 + (4 + h1 * 8) * P;
+      if (u < 0.8) {
+        r = (1 + 4 * (u / 0.8)) * P;
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = "#1a0602";
+        ctx.beginPath(); ctx.arc(ox, oy, r + P, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = "#ffcf4a";
+        ctx.beginPath(); ctx.arc(ox, oy, r, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = "#fff3b8";
+        ctx.fillRect(ox - r * 0.5, oy - r * 0.5, P, P);
+      } else {
+        /* pop: a ring flying out */
+        r = (5 + 6 * ((u - 0.8) / 0.2)) * P;
+        ctx.globalAlpha = 1 - (u - 0.8) / 0.2;
+        ctx.strokeStyle = "#ffe48a"; ctx.lineWidth = P;
+        ctx.beginPath(); ctx.arc(ox, oy, r, 0, Math.PI * 2); ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
   function drawWorld() {
     var span = camSpan();
     var vw = span.w, vh = span.h;
     if (D.world && D.world.drawGround) {
       D.world.drawGround(ctx, camX, camY, vw, vh);
+      drawWaterFx();
       drawPuddles();
       drawNests();
       drawFronts();
@@ -6253,7 +6422,7 @@
               ctx.restore();
             }
             if (useNow && pr.key === useNow.key) {
-              var label = pr.kind === "spire" ? "[E] Break the spire" : "[E] Open";
+              var label = (kh("interact") ? kh("interact").slice(1) + " " : "") + (pr.kind === "spire" ? "Break the spire" : "Open");
               ctx.save();
               ctx.font = "bold 13px Trebuchet MS, sans-serif"; ctx.textAlign = "center"; ctx.lineWidth = 3;
               ctx.strokeStyle = "rgba(8,10,24,0.9)"; ctx.fillStyle = pr.kind === "spire" ? "#e2b0ff" : "#b8ffe4";
@@ -6653,16 +6822,28 @@
     var z = camZoom();
     return { x: (x - camX) * z + viewW / 2, y: (y - camY) * z + viewH / 2, z: z };
   }
-  function glow(x, y, r, col, a, n) {
-    var p = toScreen(x, y), k, rr;
-    n = n || 8; a *= 8 / n;
-    /* thin layers, each a little wider: adds up to a soft pool of light */
-    for (k = 0; k < n; k++) {
-      rr = r * p.z * (0.22 + 0.78 * (k + 1) / n);
-      ctx.globalAlpha = a * 0.1;
-      ctx.fillStyle = col;
-      ctx.beginPath(); ctx.ellipse(p.x, p.y, rr, rr * 0.8, 0, 0, Math.PI * 2); ctx.fill();
-    }
+  /* A soft pool of light. It used to be 4-8 stacked translucent ellipses per light, painted
+   * every frame; with a field of burning grass at night that was a lot of overdraw. Now each
+   * colour is baked once into a small radial-gradient sprite (uploaded once, Nov 21) and a
+   * light is a single quad. Same look: bright core to about a fifth, fading to the edge. */
+  var glowSprites = {};
+  function glowSprite(col) {
+    var c = glowSprites[col], g, gr;
+    if (c) return c;
+    c = document.createElement("canvas"); c.width = c.height = 64;
+    g = c.getContext("2d");
+    gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+    gr.addColorStop(0, col); gr.addColorStop(0.22, col);
+    gr.addColorStop(0.6, D.seasons && D.seasons.rgba ? D.seasons.rgba(g, col, 0.45) : col);
+    gr.addColorStop(1, D.seasons && D.seasons.rgba ? D.seasons.rgba(g, col, 0) : "rgba(0,0,0,0)");
+    g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
+    return (glowSprites[col] = c);
+  }
+  function glow(x, y, r, col, a) {
+    var p = toScreen(x, y), rr = r * p.z;
+    if (p.x + rr < 0 || p.x - rr > viewW || p.y + rr < 0 || p.y - rr > viewH) return;
+    ctx.globalAlpha = Math.min(1, a * 0.8);
+    ctx.drawImage(glowSprite(col), p.x - rr, p.y - rr * 0.8, rr * 2, rr * 1.6);
   }
   function drawDayNight() {
     if (!D.seasons.dayInfo) return;
@@ -6675,12 +6856,17 @@
       ctx.fillStyle = D.seasons.rgba(ctx, "#050a2a", 0.46 * d.dark); ctx.fillRect(0, 0, viewW, viewH);
       if (!reducedFx) {
         ctx.globalCompositeOperation = "lighter";
+        ctx.imageSmoothingEnabled = true;
         glow(run.x, run.y - 22, 120, "#2a6a8a", 0.5 * d.dark);
         if (!run.faint) glow(run.mx, run.my - 14, 95, "#6a5030", 0.45 * d.dark);
-        for (i = 0; i < patches.length; i++) {
+        /* the nearest dozen fires light the dark; past that more glow adds nothing you'd see */
+        var lit = 0;
+        for (i = 0; i < patches.length && lit < 12; i++) {
           q = patches[i]; if (q.kind !== "fire") continue;
+          if (Math.abs(q.x - camX) > viewW || Math.abs(q.y - camY) > viewH) continue;
           fl = 0.8 + Math.sin(run.time * 11 + q.id) * 0.2;
-          glow(q.x, q.y - 6, q.r * 2.4, "#a84a10", 0.6 * d.dark * fl * Math.min(1, q.t / 0.6), 4);
+          glow(q.x, q.y - 6, q.r * 2.4, "#a84a10", 0.6 * d.dark * fl * Math.min(1, q.t / 0.6));
+          lit++;
         }
       }
     }
@@ -7020,7 +7206,7 @@
       /* the Farm button (Nov 20): greyed with an enemy close, a countdown while you stand still */
       var near = state === "playing" ? farmBlocked() : null;
       el.hudFarm.hidden = state !== "playing" || isEggForm(run.form);
-      el.hudFarm.textContent = farmGo ? "Going… " + Math.max(0, farmGo.left).toFixed(1) + "s" : (near ? "Farm: enemies near" : "Farm [G]");
+      el.hudFarm.textContent = farmGo ? "Going… " + Math.max(0, farmGo.left).toFixed(1) + "s" : (near ? "Farm: enemies near" : "Farm" + kh("farm"));
       el.hudFarm.classList.toggle("is-warn", !!near && !farmGo);
       el.hudFarm.classList.toggle("is-urgent", !!farmGo);
     } else if (el.hudFarm) {
@@ -8178,7 +8364,8 @@
     /* E is the one interact key: the shop, a spire or cache, a Digimon you can
      * catch, a DNA partner, in that order, whichever is in reach. (C and J
      * still work for catching and DNA; nothing on screen mentions them.) */
-    D.input.on("interact", function () {
+    D.input.on("interact", function () { interactNow(); });
+    function interactNow() {
       var ct;
       if (state === "farm" && D.farm) { D.farm.interact(); return; }
       if (state !== "playing") return;
@@ -8188,8 +8375,111 @@
       if (ct && chargeReadyFor(ct)) { tryCapture({ enemy: ct }); return; }
       if (!dnaBox && dnaMate()) { dnaAsk(); return; }
       if (ct) tryCapture({ enemy: ct });   /* not ready yet: say why */
-    });
+    }
     D.input.on("feed", function () { toggleFeedMenu(); });
+
+    /* ---- controller: the buttons a run needs, and steering the small windows ---- */
+    function padPopup() {
+      if (state !== "playing" && state !== "farm") return null;
+      var b;
+      if (dnaBox && (b = $("dna-box")) && !b.hidden) return b;
+      if (evoOfferShown() && (b = $("evo-offer")) && !b.hidden) return b;
+      if (feedMenu.open && (b = $("feed-menu")) && !b.hidden) return b;
+      if ((b = $("skills-panel")) && !b.hidden) return b;
+      if ((b = $("stats-panel")) && !b.hidden) return b;
+      return null;
+    }
+    function padButtons(box) {
+      return Array.prototype.filter.call(box.querySelectorAll("button"), function (n) {
+        return !n.hidden && !n.disabled && n.offsetParent !== null && !/close$/.test(n.id || "");
+      });
+    }
+    function padMark(box, step) {
+      var list = padButtons(box), i = +(box.getAttribute("data-pad") || 0);
+      if (!list.length) return null;
+      if (box.getAttribute("data-pad") == null || list.indexOf(box._padSel) < 0) i = 0;
+      else i = (list.indexOf(box._padSel) + (step || 0) + list.length) % list.length;
+      list.forEach(function (n, k) { n.classList.toggle("is-padsel", k === i); });
+      box.setAttribute("data-pad", i);
+      box._padSel = list[i];
+      return list[i];
+    }
+    function padClose(box) {
+      if (!box) return;
+      if (box.id === "dna-box") dnaPick(-1);
+      else if (box.id === "evo-offer") answerEvoOffer(false);
+      else if (box.id === "feed-menu") closeFeedMenu();
+      else if (box.id === "skills-panel") toggleSkills(false);
+      else if (box.id === "stats-panel") toggleStats(false);
+    }
+    function padActive() { return D.input.lastSource === "gamepad"; }
+    D.input.on("nav", function (dir) {
+      var box;
+      if (!padActive() || !(box = padPopup())) return;
+      padMark(box, dir);
+    });
+    D.input.on("confirm", function () {
+      var box, b;
+      if (!padActive() || !(box = padPopup())) return;
+      b = box._padSel && box.contains(box._padSel) ? box._padSel : padMark(box, 0);
+      if (b) { b.click(); sfx("ui"); }
+      setTimeout(function () { var bx = padPopup(); if (bx) padMark(bx, 0); }, 60);
+    });
+    D.input.on("back", function () {
+      var box;
+      if (!padActive() || !(box = padPopup()) || box.id === "feed-menu") return;   /* the feed menu already closes on back */
+      padClose(box);
+    });
+    D.input.on("padButton", function (b) {
+      if (state !== "playing") return;
+      if (b === "lb") toggleFeedMenu();
+      else if (b === "rb") doBurst();
+      else if (b === "lt") askFarm();
+      else if (b === "select") { if (skillsActive()) toggleSkills(); }
+      else if (b === "r3") { if (statsActive()) toggleStats(); }
+      else if (b === "l3") togglePvp();
+      else if (b === "rt") sendPartnerAtAim();
+    });
+    setInterval(function () {
+      var box = padActive() ? padPopup() : null;
+      D.input.padMenu = !!box;
+      if (box && !(box._padSel && box.contains(box._padSel) && box._padSel.offsetParent)) padMark(box, 0);
+      if (!box) Array.prototype.forEach.call(document.querySelectorAll(".is-padsel"), function (n) { n.classList.remove("is-padsel"); });
+    }, 120);
+
+    /* ---- what the phone buttons need to know, and what they do ---- */
+    D.hud = {
+      act: function (what) {
+        if (what === "burst") doBurst();
+        else if (what === "farm") askFarm();
+        else if (what === "feed") toggleFeedMenu();
+        else if (what === "skills") { if (skillsActive()) toggleSkills(); }
+        else if (what === "stats") { if (statsActive()) toggleStats(); }
+        else if (what === "pvp") togglePvp();
+        else if (what === "shop") { if (state === "playing" || state === "farm") openShop(); }
+        else if (what === "interact") interactNow();
+      },
+      info: function () {
+        var o = { on: !!(run && !run.ended && state === "playing"), egg: true }, ct, T;
+        if (!o.on) return o;
+        o.egg = isEggForm(run.form);
+        T = myUlt();
+        o.burstName = T ? T.name : "Warp";
+        o.burstPct = run.burstLeft > 0 ? Math.round(100 * run.burstLeft / ((D.BURST && D.BURST.time) || 1)) : Math.floor(run.burst || 0);
+        o.burstLive = run.burstLeft > 0;
+        o.burstOn = !!D.BURST && !o.egg;
+        o.farmOn = farmOnDemand() && !o.egg;
+        o.farmGoing = farmGo ? Math.max(0, farmGo.left) : 0;
+        o.act = merchantInRange() ? "Shop" : usableProp() ? "Use" : null;
+        if (!o.act) { ct = captureTarget(); if (ct && chargeReadyFor(ct)) o.act = "Catch"; }
+        if (!o.act && !dnaBox && dnaMate()) o.act = "DNA";
+        o.feedOn = !o.egg;
+        o.down = !!(run.downed || run.faint > 0);
+        o.pvp = !!D.PVP;
+        o.pvpUp = !!run.pvpFlag;
+        return o;
+      }
+    };
     window.addEventListener("keydown", function (ev) {
       if (ev.repeat || state !== "playing") return;
       var tg = ev.target && ev.target.tagName;

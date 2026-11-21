@@ -1152,3 +1152,128 @@ was logged with what stood next to it, which showed why a fresh Baby kept dying 
   partner beaten within 30 s of hatching makes no nemesis.
 Deaths in the same 75-minute run: 36 before, 10 after (all but two out in the world, where they
 belong). Tests updated for the start rules.
+
+## 2026-11-17z15 — A first-time tour with Jijimon
+- `js/tour.js`. The first time a new player reaches the front page (after making a profile), Jijimon
+  walks them through it: five welcome cards on what makes Digi Night different (one open world,
+  biomes at war for land, nemeses, respawning), then the front page one button at a time, everything
+  else dimmed and the button ringed in gold with a speech bubble: Play, Hatchery, Eggs, Discoveries,
+  Online, DigiBits, Lab, Items, DigiBank, Cabinet, Badges, League, How to Play.
+- The first time they open the run setup screen: projection, egg, mode, who is coming, then three
+  cards on how to play (moving and the partner, food and the farm with G, levelling, digivolving, R
+  for warp or a Mega's ultimate), ending on Start.
+- Next / Back / Skip tour (skip skips both parts); Enter, arrows and Esc work too. It shows once
+  (localStorage), and How to Play has a "Replay the tour" button. Not shown to someone arriving
+  through an invite link until they reach the front page. Works on phone-sized screens.
+
+## 2026-11-17z16 — Phones and controllers
+- **Phone layout** (`css/touch.css`, `js/touch-ui.js`): on a touch screen the run's HUD is cut to the
+  essentials (Pal / XP / food / joy bars, minimap, season, timer, Pause). Keyboard hints like [K] [T] [G]
+  are gone on touch. Taps no longer flip the hints back to keyboard (phones send a fake mouse event
+  after each tap). Everything folded away is in a ☰ run menu: Skills, Status, Shop, PvP flag,
+  music, sound, and the run's numbers. A gold dot shows when there are points to spend.
+- **Thumb controls:** a floating stick that appears wherever the left thumb lands, low on the left
+  (above the panel at the farm). Four round buttons bottom right:
+  - Warp / the Mega's ultimate, with a charge ring
+  - Feed
+  - Farm, with a countdown
+  - Act, shown only when something is in reach (Shop, Use, Catch, DNA)
+
+  Skills / Status chips show only when there are points to spend. The windows over the run get
+  bigger buttons.
+- **Front page and run setup on phones:** a one-row front page when the phone is on its side, shorter
+  tiles upright. The setup screen becomes one scrolling column (it used to overlap itself). The tour
+  scrolls to the button it's pointing at.
+- **Controller:**
+  - New buttons: LB feed, RB warp / ultimate, LT farm, RT sends the partner at whatever the right stick
+    points to, View skills, R3 status, L3 PvP flag.
+  - The level-up cards, digivolve offer, DNA pick, feed menu and status window are steered with the
+    D-pad + A, and B closes them (the stick stops walking you meanwhile). The selection is ringed gold.
+  - Fixed: View/Select used to pause and unpause in the same press.
+  - The tour works on a pad (A next, B back, Start skip), and its how-to-play cards describe the device
+    you're using.
+  - The hint bar shows the new buttons, and How to Play lists the full mapping for all three.
+
+## 2026-11-17z17 — Terrain you can read without colour; the rival's tamer walks
+- A colour-blind tester couldn't tell plateaus from grass and kept running into them. Blocked ground
+  now reads by shape and contrast, not hue (`js/world.js`):
+  - every open edge of a plateau has a near-black outline
+  - plateau tops have a regular diagonal hatch (grass is only ever random speckle)
+  - each cliff face has a dark foot and outlined sides
+  - water and lava have a solid dark shoreline
+  Checked in a simulated deuteranopia view.
+- The rival's tamer used to follow its Digimon in a straight line, over water, lava and cliffs. It now
+  walks like you do: steered round blocked ground with the same pathing the Digimon use, and it never
+  stands on a cliff or in the water. When its partner flies or swims somewhere it can't follow, it
+  catches up on the near bank (`_rivalTamerStep`, `scripts/rival-terrain-test.js`).
+
+## 2026-11-17z18 — Water that reads as water without colour
+- With colour taken away, water's bright random specks looked like gravel.
+- **New water look:** a calm, dark tone with soft bands (`js/world.js` waterColorBase). Any biome's
+  water, such as swamp sludge or a desert oasis, is darkened until it sits well below the
+  ground's brightness.
+- **Movement:** small white "~" ripple lines drift across every open-water tile and breathe in and
+  out, with an occasional glint. Lava swells with dark-rimmed bubbles that pop in a ring. Gravel
+  never moves, so even in grey it reads as water (`game.js` drawWaterFx, `world.js` waterInView:
+  each chunk lists its open-water and lava tiles once). Frozen water gets none of this, since you
+  can walk on ice.
+- Checked in plains, swamp, desert and volcano, in colour and in a simulated deuteranopia view.
+
+## 2026-11-17z19 — Busier lava
+- Every lava tile now has a cluster of small bubbles (five in open lava, three near the bank) that
+  swell a pixel or two, brighten and pop in a little burst, each on its own clock. They're drawn
+  alongside the big bubbles (`game.js` drawWaterFx).
+
+## 2026-11-17z20 — Lightning fires, night and storms no longer tank the frame rate
+Measured, not guessed: a scripted run with frame timing and a CPU profile across clear day / night /
+night storm / night storm with lightning setting grass alight (`tools/perf.py`). Software-GL numbers,
+so real devices are much faster in absolute terms; what matters is the ratio.
+
+| | before | after |
+|---|---|---|
+| day, clear | 29 ms, 261 batches | 28 ms, 78 batches |
+| night, clear | 33 ms, 355 | 25 ms, 90 |
+| night, storm | 39 ms, 387 | 28 ms, 101 |
+| night, storm, lightning fires | **96 ms, 1,130** | **35 ms, 109** |
+
+- **The big one, fire flames:** each flame is a curved shape, and the WebGL layer could not draw
+  curves. It drew every one on a scratch canvas and uploaded it as a new texture, with two pipeline
+  flushes: about 250 times a frame in a grass fire. Curves are now cut into short straight segments
+  and go down the normal fast path (`renderer.js` `_flattenQuads`). This also helps the flames on
+  burning enemies.
+- **Night lights:** each light was 4–8 stacked translucent ellipses (heavy overdraw where fires
+  overlap). It is now one pre-baked soft-glow sprite per colour, skipped when off screen, with only
+  the nearest dozen fires lighting the dark.
+- **Fire patches** are skipped when off screen, and all flames draw in one additive pass. Scorch
+  marks draw in two passes, so they don't flip textures per tile.
+- **Sleeping Digimon's "Zzz"** (half the field sleeps at night) was six text textures per sleeper. It
+  is now one baked strip.
+- **Trees, rocks and their shadows** now come from one shared sprite sheet (`sprites.js`
+  `atlasOf`). New props are sent to the GPU as just their own rectangle (`renderer.subUpload`). This
+  removes ~180 batch breaks a frame all the time, not just in storms.
+
+## 2026-11-17z21 — No fire on water
+- Fire could sit on water: fire moves and ultimates landing in a lake lit it, and a fire patch (~44 px)
+  lit on the bank spilled its flames over the water, as did grass fire creeping along a shore. Only
+  lightning checked the ground, and only at one point.
+- All fire now goes through one rule (`mission-sim.js` `_addPatch`):
+  - on water or lava it becomes steam
+  - next to water the patch shrinks until it stays on the bank, and right at the edge it doesn't
+    light at all
+  - no single flame is drawn over water (`game.js`)
+- `scripts/fire-water-test.js` checks 30 real lake shores: fire aimed at water, fire lit on the bank,
+  a minute of spreading grass fire, and lightning into a lake. The previous build failed 3 of the 5
+  checks (2,100 frames of fire on water); this one passes all 5.
+
+## 2026-11-17z22 — Puddles keep off cliffs and water, and soak in
+- Rain ponds (up to ~4 tiles across) were drawn over cliff edges, the walls under them and
+  riverbanks. That hid the outline, so a pond read as a ramp up a plateau or a bridge across a river.
+  Walking never actually changed (checked: 4,000 spots identical wet or dry), but it looked as if
+  it should. Each puddle now has a maximum size, worked out once per spot (`world.js`
+  `puddleRoom`), that keeps its whole drawn outline (wobble and damp halo included) 6 px clear of
+  cliff tops, cliff walls and water/lava. A spot with no room grows no puddle.
+- They soak in instead of sitting on top as perfect ovals (`game.js` `puddleBlob`): an irregular
+  wobbly rim (the same wobble every frame for each puddle), a damp halo fading into the ground, and
+  a couple of faint wet spots seeping past the edge.
+- `scripts/puddle-terrain-test.js`: 1,911 puddles across three fully soaked maps, 602 of them next to a
+  cliff or water. None touches one (the previous build had 462 that did).

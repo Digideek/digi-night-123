@@ -46,6 +46,7 @@
     return !!(k || touchReviveHeld || yHeld);
   }
   var padConnected = false;
+  var padMenu = false;
   var aimX = 0, aimY = 0, aimAngle = 0, aimStick = false;
   var pointer = { x: 0, y: 0, inCanvas: false, worldReady: false };
   var clicks = [];
@@ -55,32 +56,51 @@
   var pointers = Object.create(null);
   var pinch = { active: false, dist: 0, angle: 0, zoom0: 1, rot0: 0 };
   var GLYPHS = {
-    keyboard: { move: "WASD", aim: "Mouse", interact: "E", feed: "F", capture: "E", shop: "Q", pause: "Esc", menu: "Tab", confirm: "Enter", back: "Esc", punch: "Space", slots: "1–9", dash: "Shift" },
-    mouse:    { move: "WASD", aim: "Mouse", interact: "E", feed: "F", capture: "E", shop: "Q", pause: "Esc", menu: "Tab", confirm: "Enter", back: "Esc", punch: "Space", slots: "1–9", dash: "Shift" },
-    gamepad:  { move: "LS", aim: "RS", interact: "Y", capture: "X", shop: "Y", pause: "Start", menu: "Back", confirm: "A", back: "B", punch: "A", slots: "LB/RB", dash: "RT" },
-    touch:    { move: "Stick", aim: "Drag", interact: "Tap", capture: "Capture", shop: "Shop", pause: "❚❚", menu: "Menu", confirm: "Tap", back: "Back", punch: "Punch", slots: "Slots", dash: "Dash", camera: "Pinch / twist" }
+    keyboard: { move: "WASD", aim: "Mouse", interact: "E", feed: "F", capture: "E", shop: "Q", pause: "Esc", menu: "Tab", confirm: "Enter", back: "Esc", punch: "Space", slots: "1–9", dash: "Shift", burst: "R", farm: "G", skills: "K", stats: "T", pvp: "V", send: "Click", yes: "Y", no: "N" },
+    mouse:    { move: "WASD", aim: "Mouse", interact: "E", feed: "F", capture: "E", shop: "Q", pause: "Esc", menu: "Tab", confirm: "Enter", back: "Esc", punch: "Space", slots: "1–9", dash: "Shift", burst: "R", farm: "G", skills: "K", stats: "T", pvp: "V", send: "Click", yes: "Y", no: "N" },
+    gamepad:  { move: "LS", aim: "RS", interact: "Y", capture: "X", feed: "LB", shop: "Y", pause: "Start", menu: "Start", confirm: "A", back: "B", punch: "A", slots: "LB/RB", dash: "RT", burst: "RB", farm: "LT", skills: "View", stats: "R3", pvp: "L3", send: "RT", yes: "A", no: "B" },
+    touch:    { move: "", aim: "", interact: "", feed: "", capture: "", shop: "", pause: "", menu: "", confirm: "", back: "", punch: "", slots: "", dash: "", burst: "", farm: "", skills: "", stats: "", pvp: "", send: "", yes: "", no: "", camera: "Pinch / twist" }
   };
   var listeners = { confirm: [], back: [], pause: [], nav: [], shop: [], capture: [], useMedicine: [], interact: [], slot: [], slotDelta: [], menu: [], source: [] };
 
+  /* Something on top (the tour) can take an input before the game sees it. */
+  var gate = null;
+  function setGate(fn) { gate = fn || null; }
   function emit(name, detail) {
     var list = listeners[name] || [];
     var i;
+    if (gate && name !== "source" && gate(name, detail)) return;
     for (i = 0; i < list.length; i++) list[i](detail);
   }
 
+  /* Phone layout: on while the last thing used was a finger; a controller or
+   * keyboard turns it off again (a phone with a pad wants the clean screen). */
+  function setTouchUi(on) {
+    if (typeof document === "undefined" || !document.body) return;
+    document.body.classList.toggle("touch-ui", !!on);
+  }
   function setSource(src) {
     var changed = lastSource !== src;
     lastSource = src;
+    if (typeof document !== "undefined" && document.body) document.body.classList.toggle("pad-ui", src === "gamepad");
+    if (src === "touch") setTouchUi(true);
+    else if (src === "gamepad" || src === "keyboard") setTouchUi(false);
     if (changed) emit("source", src);
   }
 
   function glyph(action) {
     var set = GLYPHS[lastSource] || GLYPHS.keyboard;
-    return set[action] || action;
+    return set[action] != null ? set[action] : action;
   }
 
   function prompt(action, label) {
-    return (label || action) + " [" + glyph(action) + "]";
+    var g = glyph(action);
+    return g ? (label || action) + " [" + g + "]" : (label || action);
+  }
+  /* " [K]" on a keyboard, " [View]" on a controller, nothing on a touch screen */
+  function hint(action) {
+    var g = glyph(action);
+    return g ? " [" + g + "]" : "";
   }
 
   function applyGlyphs(root) {
@@ -204,7 +224,7 @@
     edge("b", pressed(1));
     edge("x", pressed(2));
     edge("y", pressed(3));
-    edge("start", pressed(9) || pressed(8));
+    edge("start", pressed(9));
     edge("left", pressed(14) || ax < -0.6);
     edge("right", pressed(15) || ax > 0.6);
     edge("up", pressed(12) || ay < -0.6);
@@ -212,15 +232,23 @@
     edge("lb", pressed(4));
     edge("rb", pressed(5));
     edge("select", pressed(8));
+    edge("lt", pressed(6) || (found.buttons[6] && found.buttons[6].value > 0.6));
+    edge("rt", pressed(7) || (found.buttons[7] && found.buttons[7].value > 0.6));
+    edge("l3", pressed(10));
+    edge("r3", pressed(11));
 
     if (padEdge.a) { setSource("gamepad"); emit("confirm"); }
     if (padEdge.b) { setSource("gamepad"); emit("back"); }
     if (padEdge.start) { setSource("gamepad"); emit("pause"); }
     if (padEdge.x) { setSource("gamepad"); emit("capture"); }
     if (padEdge.y) { setSource("gamepad"); if (!reviveHoldEligible) emit("shop"); emit("interact"); }
-    if (padEdge.select) { setSource("gamepad"); emit("menu"); }
-    if (padEdge.lb) { setSource("gamepad"); emit("slotDelta", -1); }
-    if (padEdge.rb) { setSource("gamepad"); emit("slotDelta", 1); }
+    if (padEdge.select) { setSource("gamepad"); emit("padButton", "select"); }
+    if (padEdge.lb) { setSource("gamepad"); emit("padButton", "lb"); emit("slotDelta", -1); }
+    if (padEdge.rb) { setSource("gamepad"); emit("padButton", "rb"); emit("slotDelta", 1); }
+    if (padEdge.lt) { setSource("gamepad"); emit("padButton", "lt"); }
+    if (padEdge.rt) { setSource("gamepad"); emit("padButton", "rt"); }
+    if (padEdge.l3) { setSource("gamepad"); emit("padButton", "l3"); }
+    if (padEdge.r3) { setSource("gamepad"); emit("padButton", "r3"); }
     if (padEdge.left || padEdge.up) emit("nav", -1);
     if (padEdge.right || padEdge.down) emit("nav", 1);
 
@@ -240,6 +268,8 @@
     }
 
     if (len > 0.25) setSource("gamepad");
+    /* a menu on top of the run is being steered with the pad: don't walk too */
+    if (padMenu) return { x: 0, y: 0 };
     return { x: ax, y: ay };
   }
 
@@ -350,6 +380,9 @@
     }
 
     function hideKnob() {
+      el.classList.remove("is-held");
+      el.style.removeProperty("--jx");
+      el.style.removeProperty("--jy");
       joy.active = false;
       joy.pointerId = null;
       joy.dx = 0;
@@ -362,11 +395,21 @@
     }
 
     function startAt(id, x, y) {
-      var rect = baseEl.getBoundingClientRect();
+      var rect = baseEl.getBoundingClientRect(), zr;
       joy.active = true;
       joy.pointerId = id;
-      joy.originX = rect.left + rect.width / 2;
-      joy.originY = rect.top + rect.height / 2;
+      if (document.body.classList.contains("touch-ui")) {
+        /* floating stick: it appears wherever the thumb lands */
+        zr = el.getBoundingClientRect();
+        el.style.setProperty("--jx", (x - zr.left) + "px");
+        el.style.setProperty("--jy", (y - zr.top) + "px");
+        el.classList.add("is-held");
+        joy.originX = x;
+        joy.originY = y;
+      } else {
+        joy.originX = rect.left + rect.width / 2;
+        joy.originY = rect.top + rect.height / 2;
+      }
       show();
       joySet(x, y);
       if (knobEl) {
@@ -404,6 +447,7 @@
     global.addEventListener("pointerdown", function (e) {
       if (e.pointerType === "touch") {
         touchMode = true;
+        setSource("touch");
         show();
       }
     }, { passive: true });
@@ -438,7 +482,21 @@
     return c;
   }
 
+  /* phones send a mouse event after every tap; that isn't a mouse */
+  var lastTouchAt = -1e9;
+  function fakeMouse(e) {
+    if (e && e.sourceCapabilities && e.sourceCapabilities.firesTouchEvents) return true;
+    return Date.now() - lastTouchAt < 1500;
+  }
   function setup() {
+    /* a phone or tablet starts in the touch layout before the first tap */
+    try {
+      if (global.matchMedia && global.matchMedia("(pointer: coarse)").matches && navigator.maxTouchPoints > 0) {
+        touchMode = true;
+        setSource("touch");
+        setTouchUi(true);
+      }
+    } catch (err) {}
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
     window.addEventListener("mousemove", function (e) {
@@ -448,10 +506,10 @@
       pointer.x = e.clientX - r.left;
       pointer.y = e.clientY - r.top;
       pointer.inCanvas = pointer.x >= 0 && pointer.y >= 0 && pointer.x <= r.width && pointer.y <= r.height;
-      if (pointer.inCanvas) setSource("mouse");
+      if (pointer.inCanvas && !fakeMouse(e)) setSource("mouse");
     });
     window.addEventListener("mousedown", function (e) {
-      if (e.button === 0) setSource("mouse");
+      if (e.button === 0 && !fakeMouse(e)) setSource("mouse");
     });
     window.addEventListener("wheel", function (e) {
       var canvas = document.getElementById("game");
@@ -471,6 +529,7 @@
       emit("slotDelta", e.deltaY > 0 ? 1 : -1);
     }, { passive: false });
     window.addEventListener("pointerdown", function (e) {
+      if (e.pointerType === "touch") { lastTouchAt = Date.now(); setSource("touch"); }
       trackPointer(e, true);
       /* Click / tap directly on the game canvas: queue it so the game can
        * send the partner after the enemy under the cursor. HUD buttons sit
@@ -534,11 +593,16 @@
     pointer: pointer,
     consumeClick: function () { return clicks.length ? clicks.shift() : null; },
     clearClicks: function () { clicks.length = 0; },
+    pushClick: function (c) { clicks.push(c); if (clicks.length > 4) clicks.shift(); },
     camera: camera,
     setCamZoom: setCamZoom,
     resetCamera: resetCamera,
     glyph: glyph,
     prompt: prompt,
+    hint: hint,
+    setGate: setGate,
+    get padMenu() { return padMenu; },
+    set padMenu(v) { padMenu = !!v; },
     applyGlyphs: applyGlyphs,
     setSource: setSource,
     GLYPHS: GLYPHS,

@@ -1,0 +1,240 @@
+/* Digi Night — phone layout (Nov 21). Everything here is under body.touch-ui, which
+ * input.js turns on for a finger and off for a controller or keyboard. */
+
+/* ---------- a lighter HUD: the essentials only ---------- */
+body.touch-ui #hud { z-index: 4; padding: max(8px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left)); }
+body.touch-ui #prompt-bar,
+body.touch-ui #btn-shop,
+body.touch-ui #btn-capture,
+body.touch-ui .hud-snd,
+body.touch-ui #hud-farm,
+body.touch-ui #hud-pvp,
+body.touch-ui #burst-chip,
+body.touch-ui #hud-kills,
+body.touch-ui #hud-form,
+body.touch-ui #hud-level,
+body.touch-ui #hud-capture:not(.is-ready),
+body.touch-ui .mood-strip,
+body.touch-ui #ally-chip,
+body.touch-ui .evo-strip:not(.is-ready),
+body.touch-ui kbd,
+body.pad-ui #evo-offer kbd,
+body.pad-ui #dna-box kbd { display: none !important; }
+
+body.touch-ui .hud-top { gap: 8px; }
+body.touch-ui .hud-left, body.touch-ui .hud-right { gap: 4px; }
+body.touch-ui .bars { width: min(190px, 40vw); gap: 3px; }
+body.touch-ui .bar-row { gap: 4px; }
+body.touch-ui .bar-label { min-width: 0; font-size: 0; }
+body.touch-ui .bar-label .hud-ico { width: 16px; height: 16px; }
+body.touch-ui .bar { height: 9px; }
+body.touch-ui .bar-num { font-size: 8px; }
+body.touch-ui .carry-row { min-height: 0; }
+
+/* the level-up chips only show when there's something to spend */
+body.touch-ui #skills-chip:has(#skills-chip-badge[hidden]),
+body.touch-ui #stats-chip:has(#stats-chip-badge[hidden]) { display: none !important; }
+body.touch-ui #skills-chip, body.touch-ui #stats-chip { font-size: 12px; padding: 6px 10px; min-height: 36px; align-self: flex-start; }
+body.touch-ui #skills-chip-text, body.touch-ui #stats-chip-text { font-size: 12px; }
+
+body.touch-ui .evo-strip.is-ready { font-size: 10px; padding: 5px 8px; max-width: min(260px, 46vw); }
+body.touch-ui #hud-capture.is-ready { font-size: 10px; max-width: 46vw; }
+
+body.touch-ui .hud-buttons { gap: 6px; }
+body.touch-ui #btn-pause { width: 44px; height: 44px; font-size: 16px; border-radius: 12px; }
+body.touch-ui .minimap-wrap { width: 96px; height: 96px; border-radius: 10px; }
+body.touch-ui .chip { font-size: 11px; padding: 3px 9px; }
+body.touch-ui #hud-timer { font-size: 13px; }
+body.touch-ui #hud-season { font-size: 10px; max-width: 46vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+body.touch-ui #hud-season-bar { display: none; }
+body.touch-ui .trust-box { font-size: 10px; max-width: 40vw; }
+
+/* the bag sits in the middle at the bottom, clear of both thumbs */
+body.touch-ui .bag-row {
+  position: fixed; left: 50%; transform: translateX(-50%);
+  bottom: max(8px, env(safe-area-inset-bottom)); margin: 0;
+  max-width: 40vw; justify-content: center; pointer-events: auto; z-index: 6;
+}
+body.touch-ui .bag-chip { font-size: 11px; min-height: 28px; }
+
+/* ---------- menu button (by Pause) ---------- */
+#tp-menu { display: none; }
+body.touch-ui #tp-menu {
+  display: inline-flex; flex-direction: column; justify-content: center; align-items: center; gap: 4px;
+  position: relative; width: 44px; height: 44px; border-radius: 12px; pointer-events: auto;
+  border: 1px solid rgba(255,255,255,0.18); background: rgba(8, 14, 24, 0.78); cursor: pointer;
+}
+#tp-menu span { display: block; width: 18px; height: 2px; border-radius: 2px; background: #e8eef8; }
+#tp-menu b { position: absolute; top: -4px; right: -4px; width: 14px; height: 14px; border-radius: 50%; background: #ffc840; border: 2px solid #1a1230; animation: tpdot 1s ease-in-out infinite; }
+#tp-menu b[hidden] { display: none; }
+@keyframes tpdot { 50% { transform: scale(1.25); } }
+
+/* ---------- floating stick: anywhere low on the left ---------- */
+body.touch-ui #joystick {
+  left: 0; bottom: 0; width: 46vw; height: 62vh; z-index: 3;
+  background: transparent;
+}
+body.touch-ui #joy-base {
+  inset: auto; width: 120px; height: 120px;
+  left: var(--jx, calc(max(18px, env(safe-area-inset-left)) + 64px)); top: var(--jy, calc(100% - 80px));
+  transform: translate(-50%, -50%);
+  opacity: 0.35; transition: opacity 0.15s;
+}
+body.touch-ui #joy-knob {
+  left: var(--jx, calc(max(18px, env(safe-area-inset-left)) + 64px)); top: var(--jy, calc(100% - 80px));
+  width: 54px; height: 54px; opacity: 0.45; transition: opacity 0.15s;
+}
+body.touch-ui #joystick.is-held #joy-base { opacity: 1; }
+body.touch-ui #joystick.is-held #joy-knob { opacity: 0.95; }
+
+/* ---------- thumb buttons, bottom right ---------- */
+#touch-pad { position: absolute; inset: 0; pointer-events: none; z-index: 5; }
+#touch-pad[hidden] { display: none; }
+.tp-btn {
+  position: absolute; pointer-events: auto; touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+  border-radius: 50%; border: 2px solid rgba(255, 255, 255, 0.28);
+  background: rgba(10, 16, 30, 0.72); color: #f4efe4; cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
+  font: 800 11px/1.05 system-ui, sans-serif; letter-spacing: 0.04em; text-transform: uppercase;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.45); user-select: none; -webkit-user-select: none;
+}
+.tp-btn[hidden] { display: none; }
+.tp-btn:active { transform: scale(0.93); filter: brightness(1.3); }
+.tp-btn b { font-weight: 800; }
+.tp-big {
+  right: max(14px, env(safe-area-inset-right)); bottom: max(14px, env(safe-area-inset-bottom));
+  width: 86px; height: 86px; border: 0; background: rgba(10, 16, 30, 0.78); overflow: visible;
+}
+.tp-big .tp-ring {
+  position: absolute; inset: -3px; border-radius: 50%; pointer-events: none; z-index: -1;
+  background: conic-gradient(#7ad8ff var(--fill, 0deg), rgba(255,255,255,0.14) 0);
+  -webkit-mask: radial-gradient(circle, transparent 38px, #000 39px); mask: radial-gradient(circle, transparent 38px, #000 39px);
+}
+.tp-big b { font-size: 11px; }
+.tp-big span { font-size: 15px; color: #9fe4ff; }
+.tp-big.is-ready { background: radial-gradient(circle at 50% 40%, #3b6fd0, #18306a); animation: tpready 0.9s ease-in-out infinite; }
+.tp-big.is-ready .tp-ring { background: #ffd34a; }
+.tp-big.is-ready span { color: #ffe27a; }
+.tp-big.is-live { background: radial-gradient(circle at 50% 40%, #ffb040, #a04010); }
+@keyframes tpready { 50% { box-shadow: 0 0 22px rgba(255, 211, 74, 0.8); } }
+.tp-mid { width: 58px; height: 58px; font-size: 11px; }
+.tp-act { right: max(112px, calc(env(safe-area-inset-right) + 100px)); bottom: max(12px, env(safe-area-inset-bottom)); border-color: #7cf0c0; color: #b8ffe4; background: rgba(10, 40, 34, 0.82); animation: tpready 1.2s ease-in-out infinite; }
+.tp-farm { right: max(100px, calc(env(safe-area-inset-right) + 88px)); bottom: max(92px, calc(env(safe-area-inset-bottom) + 80px)); border-color: rgba(122, 255, 176, 0.5); color: #b8ffd0; }
+.tp-farm.is-going { background: rgba(20, 70, 40, 0.9); }
+.tp-feed { right: max(20px, calc(env(safe-area-inset-right) + 8px)); bottom: max(114px, calc(env(safe-area-inset-bottom) + 102px)); border-color: rgba(255, 160, 80, 0.55); color: #ffd2a8; }
+#touch-pad.is-down .tp-btn:not(.tp-act) { opacity: 0.4; }
+/* the revive button sits above the cluster */
+body.touch-ui #btn-revive { bottom: max(186px, calc(env(safe-area-inset-bottom) + 174px)); }
+
+/* ---------- the run menu sheet ---------- */
+#touch-sheet { position: absolute; inset: 0; z-index: 30; background: rgba(4, 8, 16, 0.55); display: flex; align-items: flex-start; justify-content: flex-end; padding: max(60px, calc(env(safe-area-inset-top) + 56px)) max(10px, env(safe-area-inset-right)) 10px 10px; }
+#touch-sheet[hidden] { display: none; }
+.ts-card { width: min(340px, 92vw); max-height: calc(100% - 4px); overflow: auto; background: #0f1830; border: 2px solid #f0c040; border-radius: 14px; padding: 12px; color: #eef2fa; box-shadow: 0 10px 30px rgba(0,0,0,0.6); }
+.ts-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.ts-head b { color: #ffd34a; font-size: 15px; letter-spacing: 0.06em; text-transform: uppercase; }
+#ts-close { width: 40px; height: 40px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.2); background: #1a2440; color: #fff; font-size: 22px; }
+.ts-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.ts-grid button { position: relative; min-height: 48px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.18); background: #1a2646; color: #eef2fa; font: 700 14px system-ui, sans-serif; }
+.ts-grid button[hidden] { display: none; }
+.ts-grid button.is-on { border-color: #ff7a5a; color: #ffc0b0; }
+.ts-grid button i { position: absolute; top: -6px; right: -6px; min-width: 22px; height: 22px; padding: 0 5px; border-radius: 11px; background: #ffc840; color: #1a1230; font: 800 12px/22px system-ui, sans-serif; font-style: normal; }
+.ts-grid button i[hidden] { display: none; }
+.ts-info { margin-top: 10px; display: flex; flex-direction: column; gap: 4px; font-size: 12px; line-height: 1.35; color: #c8d2e8; }
+.ts-info > div { background: rgba(255,255,255,0.04); border-radius: 8px; padding: 5px 8px; }
+.ts-info .ts-evo b { color: #ffd34a; }
+.ts-info .ts-evo .ok { color: #7cf0c0; }
+.ts-info .ts-evo .no { color: #ff9a8a; }
+
+/* ---------- windows over the run: bigger to tap ---------- */
+body.touch-ui #evo-offer button, body.touch-ui #dna-row button { min-height: 48px; font-size: 15px; padding: 0 18px; }
+body.touch-ui #feed-menu-list button { min-height: 48px; }
+body.touch-ui .skill-card { min-height: 120px; }
+body.touch-ui .stats-head button { width: 40px; height: 40px; font-size: 22px; }
+body.touch-ui .stat-row button { min-width: 44px; min-height: 40px; }
+
+/* ---------- a controller's selection inside those windows ---------- */
+.is-padsel { outline: 3px solid #ffd34a !important; outline-offset: 2px; box-shadow: 0 0 16px rgba(255, 211, 74, 0.6) !important; }
+
+/* ---------- menus on a phone: bigger targets ---------- */
+@media (pointer: coarse) {
+  .btn, button.btn { min-height: 48px; }
+  .px-btn { min-height: 46px; }
+  .party-step { min-width: 46px; min-height: 46px; }
+  .setup-mode, .lb2-mode { min-height: 52px; }
+  .tour-btns button { min-height: 44px; padding-left: 16px; padding-right: 16px; }
+}
+
+/* the stick zone only exists while the run's HUD is up */
+body.touch-ui:has(#hud.is-on) #joystick { display: block; }
+body.touch-ui:not(:has(#hud.is-on)) #joystick { display: none !important; }
+body.touch-ui .trust-box:empty { display: none !important; }
+/* a phone on its side is short: fold Bits into the menu and shrink the map */
+@media (orientation: landscape) and (max-height: 500px) {
+  body.touch-ui #hud-bits { display: none; }
+  body.touch-ui .minimap-wrap { width: 84px; height: 84px; }
+  body.touch-ui .tp-big { width: 78px; height: 78px; }
+  body.touch-ui .tp-big .tp-ring { -webkit-mask: radial-gradient(circle, transparent 34px, #000 35px); mask: radial-gradient(circle, transparent 34px, #000 35px); }
+  body.touch-ui .tp-mid { width: 54px; height: 54px; }
+  body.touch-ui .tp-feed { bottom: max(104px, calc(env(safe-area-inset-bottom) + 92px)); }
+  body.touch-ui .tp-farm { bottom: max(84px, calc(env(safe-area-inset-bottom) + 72px)); }
+  body.touch-ui #joystick { height: 70vh; }
+}
+
+/* ---------- the front page on a phone ---------- */
+@media (max-width: 760px) and (orientation: portrait) {
+  #hub .hub-tile { height: clamp(96px, 15vh, 140px); }
+  #hub .hub-tile.is-play { height: clamp(130px, 20vh, 180px); }
+  .hub-foot { gap: 7px; }
+  button.btn.hub-mini { padding: 9px 10px; min-height: 44px; }
+}
+@media (orientation: landscape) and (max-height: 500px) {
+  .has-hub .title-brand { top: 6px; width: min(190px, 24vw); }
+  .has-hub .profile-chip { left: 8px; top: 6px; padding: 3px 10px 3px 4px; gap: 8px; }
+  .has-hub .profile-chip canvas { width: 34px; height: 34px; }
+  .has-hub .profile-chip b { font-size: 14px; }
+  .has-hub .profile-chip small { display: none; }
+  #hub-top { right: 8px; top: 6px; }
+  .has-hub .title-sky, .has-hub .title-layout .disclaimer { display: none; }
+  #hub { top: 62px; width: 96vw; }
+  .hub-tiles, #hub .hub-tiles { grid-template-columns: 1.4fr 1fr 1fr 1fr 1fr; gap: 8px; }
+  #hub .hub-tile, #hub .hub-tile.is-play { height: calc(100vh - 62px - 70px); grid-column: auto; }
+  .hub-ttl { --px: 2; } .is-play .hub-ttl { --px: 3; }
+  .hub-art { height: calc(100% - 40px); }
+  .hub-foot { bottom: 8px; gap: 6px; flex-wrap: nowrap; width: 96vw; }
+  button.btn.hub-mini { padding: 7px 8px; min-height: 42px; --px: 2; }
+}
+
+/* ---------- the run setup screen on a phone: one scrolling column ---------- */
+@media (max-width: 760px), (orientation: landscape) and (max-height: 500px) {
+  #setup-screen.screen.is-on { overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; }
+  #setup-screen .setup { position: relative; inset: auto; min-height: 100%; display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 8px 0 18px; box-sizing: border-box; }
+  #setup-screen .setup-head { position: static; transform: none; margin: 4px auto 0; flex-shrink: 0; }
+  #setup-screen .setup-back { position: static; align-self: flex-start; margin: 0 0 0 10px; flex-shrink: 0; }
+  #setup-screen .setup-cards, #setup-screen .setup-modes, #setup-screen .setup-strip { position: static; transform: none; left: auto; top: auto; bottom: auto; flex-shrink: 0; }
+  #setup-screen .setup-modes { flex-wrap: wrap; width: 95vw; }
+  #setup-screen .setup-mode-cap { flex-basis: 100%; }
+  #setup-screen .setup-strip { width: 95vw; height: auto; flex-wrap: wrap; padding-bottom: 10px; }
+  #setup-screen button.btn.setup-go { margin: 6px auto 0; }
+}
+@media (max-width: 760px) and (orientation: portrait) {
+  #setup-screen .setup-mode-row { display: grid; grid-template-columns: 1fr 1fr; width: 100%; }
+  #setup-screen .setup-scene { width: 100%; max-width: 100%; height: 70px; }
+  #setup-screen .setup-mid { flex-basis: 100%; }
+  #setup-screen button.btn.setup-go { width: calc(100% - 20px); justify-content: center; }
+}
+@media (orientation: landscape) and (max-height: 500px) {
+  #setup-screen .setup-head { --px: 3; margin-top: -40px; }
+  #setup-screen .setup-cards { width: 95vw; gap: 10px; }
+  #setup-screen .setup-card { height: calc(100vh - 80px); min-height: 220px; }
+  #setup-screen .setup-strip { flex-wrap: nowrap; }
+  #setup-screen .setup-scene { height: 96px; max-width: 34%; }
+  #setup-screen button.btn.setup-go { margin: 0 12px 0 0; }
+}
+/* at the farm the panel fills the bottom: the stick lives in the open ground above it */
+body.touch-ui:has(#farm-screen.is-on) #joystick { z-index: 5; top: 14vh; bottom: auto; height: 40vh; }
+body.touch-ui:has(#farm-screen.is-on) #joy-base,
+body.touch-ui:has(#farm-screen.is-on) #joy-knob { top: var(--jy, calc(100% - 64px)); }
+@media (orientation: landscape) and (max-height: 500px) {
+  body.touch-ui:has(#farm-screen.is-on) #joystick { top: 12vh; height: 44vh; }
+}
+body.touch-ui #tp-menu[hidden] { display: none; }
