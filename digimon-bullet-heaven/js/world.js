@@ -73,19 +73,21 @@
   }
 
   /* ---------- Biomes (js/biomes.js): three slow noise fields pick one per tile ---------- */
-  var BIOME_F = 0.014;            /* lower = bigger biomes (about 70 tiles across at this setting) */
+  var BIOME_F = 0.0075;           /* lower = bigger biomes (about 130 tiles across at this setting; 0.014 before Nov 20) */
   var B = null;                   /* the biome being painted right now */
   var matCache = {}, matCount = 0, bioCache = {}, bioCount = 0;
   function tkey(tx, ty) { return (tx + 1048576) * 2097152 + (ty + 1048576); }
   function spread(n) { n = (n - 0.5) * 2 + 0.5; return n < 0 ? 0 : (n > 1 ? 1 : n); }
   function defs() { return (D.biomes && D.biomes.DEFS) || null; }
-  function biomeId(tx, ty) {
+  /* the biome the land was born as: it shapes the cliffs, water and lairs, and never changes */
+  function nativeId(tx, ty) {
     var BI = D.biomes;
     if (!BI) return "plains";
     var k = tkey(tx, ty), v = bioCache[k];
     if (v) return v;
-    /* a little per-tile jitter makes the borders ragged instead of ruled */
-    var j = (hash2(tx, ty, seed + 777) - 0.5) * 0.05;
+    /* a little jitter makes the borders ragged instead of ruled: mostly a smooth wobble (with the
+     * bigger biomes a per-tile scatter alone left a wide band of checkered tiles), a pinch per tile */
+    var j = (valueNoise(tx * 0.21, ty * 0.21, seed + 777) - 0.5) * 0.06 + (hash2(tx, ty, seed + 778) - 0.5) * 0.006;
     var t = spread(fbm(tx * BIOME_F + 11.3, ty * BIOME_F - 7.7, seed + 500)) + j;
     var m = spread(fbm(tx * BIOME_F - 31.9, ty * BIOME_F + 23.1, seed + 600)) - j;
     var w = spread(fbm(tx * BIOME_F * 0.8 + 57.2, ty * BIOME_F * 0.8 + 91.4, seed + 700)) + j;
@@ -94,13 +96,69 @@
     bioCache[k] = v; bioCount++;
     return v;
   }
+  function nativeDef(tx, ty) { var d = defs(); return d ? d[nativeId(tx, ty)] : null; }
+
+  /* ---------- Territory (Nov 20): who holds the land now ----------
+   * The map is cut into TERR x TERR tile cells. Each starts held by the biome
+   * it was born as (its middle's native biome); the biome wars (war-sim.js)
+   * hand cells from one biome to another. A tile belongs to the holder of the
+   * cell it falls in after a wobble of a few tiles (land nobody has taken
+   * keeps its native borders), so borders stay ragged instead of following
+   * the grid. The holder decides the look, the
+   * props, the tall grass, what the water is (a conquered lake can turn to
+   * lava or to ice), and which Digimon live there. The shape of the land
+   * (cliffs, water, lairs) is the native biome's and stays put. Every run
+   * starts again from the native map (reset). */
+  var TERR = 8, terr = {}, terrN = 0, terrVer = 0, ownCache = {}, ownCount = 0;
+  function cellNative(cx, cy) { return nativeId(cx * TERR + (TERR >> 1), cy * TERR + (TERR >> 1)); }
+  function cellOwner(cx, cy) { return terr[cx + "," + cy] || cellNative(cx, cy); }
+  function biomeId(tx, ty) {
+    var k = tkey(tx, ty), v = ownCache[k], jx, jy;
+    if (v) return v;
+    if (!terrN) v = nativeId(tx, ty);
+    else {
+      /* land nobody has taken keeps its own ragged native borders; a taken cell reaches out a
+       * wobbly few tiles past its edges, so a conquest looks like a spreading stain, not a grid */
+      jx = (valueNoise(tx * 0.13 + 3.1, ty * 0.13, seed + 870) - 0.5) * 7 + (valueNoise(tx * 0.45, ty * 0.45 + 9.7, seed + 872) - 0.5) * 3;
+      jy = (valueNoise(tx * 0.13, ty * 0.13 - 5.3, seed + 871) - 0.5) * 7 + (valueNoise(tx * 0.45 + 4.4, ty * 0.45, seed + 873) - 0.5) * 3;
+      v = terr[Math.floor((tx + jx) / TERR) + "," + Math.floor((ty + jy) / TERR)] || nativeId(tx, ty);
+    }
+    if (ownCount > 120000) { ownCache = {}; ownCount = 0; }
+    ownCache[k] = v; ownCount++;
+    return v;
+  }
   function biomeDef(tx, ty) { var d = defs(); return d ? d[biomeId(tx, ty)] : null; }
+  /* hand a cell to a biome; the ground round it is redrawn and paths worked out afresh */
+  function setOwner(cx, cy, id) {
+    var k = cx + "," + cy, nat = cellNative(cx, cy), had = terr[k] || nat, i, j;
+    if (!id || had === id) return false;
+    if (id === nat) { if (terr[k]) { delete terr[k]; terrN--; } }
+    else { if (!terr[k]) terrN++; terr[k] = id; }
+    ownCache = {}; ownCount = 0; propCache = {}; propCount = 0;
+    for (j = -1; j <= 1; j++) for (i = -1; i <= 1; i++) delete cache[chunkKey(cx + i, cy + j)];
+    terrVer++; iceVer++;
+    return true;
+  }
+  /* the cells that have changed hands, as one short string ("cx,cy,biome;..."), and back */
+  function territoryString() {
+    var out = [], k;
+    for (k in terr) out.push(k + "," + terr[k]);
+    out.sort();
+    return out.join(";");
+  }
+  function applyTerritory(str) {
+    var want = {}, parts = str ? str.split(";") : [], i, p, k, changed = 0;
+    for (i = 0; i < parts.length; i++) { p = parts[i].split(","); if (p.length === 3) want[p[0] + "," + p[1]] = p[2]; }
+    for (k in terr) if (!want[k]) { p = k.split(","); if (setOwner(+p[0], +p[1], cellNative(+p[0], +p[1]))) changed++; }
+    for (k in want) { p = k.split(","); if (setOwner(+p[0], +p[1], want[k])) changed++; }
+    return changed;
+  }
 
   /* ---------- Lairs: where a biome's lord stands ----------
    * One candidate spot per LAIR_CELL x LAIR_CELL tiles. It is kept only if
    * it is open ground with the same biome all around it (so it sits inside
    * its country, not on a border) and well away from the start. */
-  var LAIR_CELL = 56, LAIR_MIN = 38, lairCache = {};
+  var LAIR_CELL = 84, LAIR_MIN = 38, lairCache = {};   /* 56 before the biomes grew (Nov 20) */
   var LAIR_STONES = [[-3, -2], [3, -2], [-4, 1], [4, 1], [-2, 3], [2, 3]];
   function lairOfCell(cx, cy) {
     var key = cx + ":" + cy, v = lairCache[key], t, tx, ty, id, okk, a, i;
@@ -110,8 +168,8 @@
       tx = cx * LAIR_CELL + Math.floor(LAIR_CELL * (0.2 + 0.6 * hash2(cx * 7 + t, cy * 13, seed + 901)));
       ty = cy * LAIR_CELL + Math.floor(LAIR_CELL * (0.2 + 0.6 * hash2(cx * 11, cy * 5 + t, seed + 902)));
       if (distT(tx, ty) < LAIR_MIN) continue;
-      id = biomeId(tx, ty); okk = true;
-      for (i = 0; i < 8 && okk; i++) { a = (Math.PI * 2 * i) / 8; if (biomeId(Math.round(tx + Math.cos(a) * 8), Math.round(ty + Math.sin(a) * 8)) !== id) okk = false; }
+      id = nativeId(tx, ty); okk = true;
+      for (i = 0; i < 8 && okk; i++) { a = (Math.PI * 2 * i) / 8; if (nativeId(Math.round(tx + Math.cos(a) * 8), Math.round(ty + Math.sin(a) * 8)) !== id) okk = false; }
       for (i = -1; i <= 1 && okk; i++) for (a = -1; a <= 1 && okk; a++) if (materialAt(tx + i, ty + a) === MAT.CLIFF || materialAt(tx + i, ty + a) === MAT.WATER) okk = false;
       if (okk) v = { key: key, tx: tx, ty: ty, biome: id };
     }
@@ -124,7 +182,8 @@
     var span = LAIR_CELL * TILE, c0 = Math.floor((x - r) / span), c1 = Math.floor((x + r) / span), d0 = Math.floor((y - r) / span), d1 = Math.floor((y + r) / span), out = [], cx, cy, l;
     for (cy = d0; cy <= d1; cy++) for (cx = c0; cx <= c1; cx++) {
       l = lairOfCell(cx, cy);
-      if (l) out.push({ key: l.key, x: (l.tx + 0.5) * TILE, y: (l.ty + 0.5) * TILE, biome: l.biome });
+      /* whoever holds the lair now: a conquered lair gets the conqueror's lord */
+      if (l) out.push({ key: l.key, x: (l.tx + 0.5) * TILE, y: (l.ty + 0.5) * TILE, biome: biomeId(l.tx, l.ty), native: l.biome });
     }
     return out;
   }
@@ -152,7 +211,7 @@
     var nCliff = fbm(tx * 0.08 + 40, ty * 0.08, seed + 21);
     var nWater = fbm(tx * 0.1 - 17, ty * 0.1 + 9, seed + 33);
     var path = pathField(tx, ty);
-    var bd = biomeDef(tx, ty), M = (bd && bd.mat) || { cliff: 0.64, water: 0.70, path: 0.032 };
+    var bd = nativeDef(tx, ty), M = (bd && bd.mat) || { cliff: 0.64, water: 0.70, path: 0.032 };
 
     /* Calm spawn clearing — no path until a tongue may enter past the core. */
     if (d < 4.6) return MAT.GRASS;
@@ -162,9 +221,36 @@
     }
     /* Screen-edge ring on a 720p view (~9–13 tiles on the sides): ledges and pools. */
     if (d >= 8.8 && nCliff > M.cliff) return MAT.CLIFF;
-    if (d >= 8.6 && nWater > M.water) return MAT.WATER;
+    /* Rivers (Nov 20): long winding ribbons nobody can wade across. Where the
+     * path meets one there is a ford, and fords also turn up at a regular
+     * stride along every river, so no stretch of bank is ever a dead end. */
+    var rv = d >= RIVER_FREE ? riverField(tx, ty) : 1, RW = M.river == null ? RIVER_W : M.river;
+    if (rv < RW) return isFord(tx, ty) ? MAT.PATH : MAT.WATER;
+    if (d >= 8.6 && nWater > M.water + LAKE_TRIM) return isFord(tx, ty) ? MAT.GRASS : MAT.WATER;   /* lakes get land bridges at the same stride */
     if (path < M.path) return MAT.PATH;
     return MAT.GRASS;
+  }
+
+  /* RIVER_W: half a river's width in tiles (biomes can set their own as mat.river) */
+  var LAKE_TRIM = 0.02;            /* lakes a little smaller now that nobody can wade them */
+  var RIVER_W = 1.45, RIVER_FREE = 13, FORD_STRIDE = 30, FORD_W = 2;
+  function riverNoise(tx, ty) { return fbm(tx * 0.022 + 71.3, ty * 0.022 - 44.9, seed + 41); }
+  /* Roughly how many tiles this one is from the middle of a river: the noise's
+   * distance from its midline over how steeply it is changing here, so a river
+   * keeps an even width instead of pinching to nothing or pooling into a lake. */
+  function riverField(tx, ty) {
+    var n = riverNoise(tx, ty) - 0.5, gx, gy, g;
+    if (n > 0.09 || n < -0.09) return 99;
+    gx = riverNoise(tx + 0.5, ty) - riverNoise(tx - 0.5, ty);
+    gy = riverNoise(tx, ty + 0.5) - riverNoise(tx, ty - 0.5);
+    g = Math.sqrt(gx * gx + gy * gy);
+    return Math.abs(n) / Math.max(0.004, g) - (valueNoise(tx * 0.07, ty * 0.07, seed + 45) - 0.5) * 0.9;
+  }
+  /* A crossing band every FORD_STRIDE tiles each way, nudged block by block so they don't line up. */
+  function isFord(tx, ty) {
+    var ox = Math.floor(hash2(Math.floor(ty / 34), 7, seed + 43) * FORD_STRIDE);
+    var oy = Math.floor(hash2(9, Math.floor(tx / 34), seed + 44) * FORD_STRIDE);
+    return (((tx - ox) % FORD_STRIDE) + FORD_STRIDE) % FORD_STRIDE < FORD_W || (((ty - oy) % FORD_STRIDE) + FORD_STRIDE) % FORD_STRIDE < FORD_W;
   }
 
   function neighborCount(tx, ty, mat) {
@@ -321,6 +407,19 @@
     return col;
   }
 
+  /* Water frozen over: pale, a little of the water's own colour showing through,
+   * long scratches and a few bright glints. */
+  var frozenLook = false;
+  function iceColor(x, y, tx, ty, cov, variant) {
+    var speck = hash2(tx * 13 + x, ty * 11 + y, seed + 115), deep = mixHex(B ? B.w0 : "#1c6874", "#9fd0e6", 0.55);
+    /* broad bands of clearer and cloudier ice, so the water's blue still shows through in streaks */
+    var band = Math.max(0, Math.sin((x * 0.7 + y * 0.45 + variant * 3) * 0.6)), col = mixHex(deep, "#d8eef8", 0.25 + 0.45 * band + speck * 0.1);
+    if ((x * 2 + y + variant * 5) % 11 === 0 && y > 2 && y < 13) col = mixHex(col, "#ffffff", 0.6);       /* skate scratches */
+    if ((x + y * 3 + variant) % 17 === 0) col = mixHex(col, "#5a8eae", 0.5);                                /* hairline cracks */
+    if (speck > 0.97) col = "#ffffff";
+    return col;
+  }
+
   function cliffTopColor(x, y, tx, ty, mask) {
     return sz(cliffTopColorBase(x, y, tx, ty, mask), "cliff", x, y, tx, ty);
   }
@@ -377,7 +476,11 @@
         } else if (mat === MAT.WATER) {
           cov = coverage(x, y, mask);
           if (cov <= 0.001) col = grassColor(x, y, tx, ty, variant);
-          else {
+          else if (frozenLook) {
+            g = grassColor(x, y, tx, ty, variant);
+            col = mixHex(g, iceColor(x, y, tx, ty, cov, variant), Math.min(1, cov * 1.2));
+            if (cov > 0.2 && cov < 0.55) col = mixHex(col, "#f4fbff", 0.45);   /* a frosted rim where it meets the bank */
+          } else {
             g = grassColor(x, y, tx, ty, variant);
             col = mixHex(g, waterColor(x, y, tx, ty, cov), Math.min(1, cov * 1.15));
             if (cov > 0.2 && cov < 0.62) col = mixHex(col, B ? B.foam : "#9af0ea", 0.4);
@@ -422,10 +525,10 @@
     return mat + ":" + mask + ":" + variant;
   }
 
-  function getTile(mat, mask, variant, tx, ty) {
+  function getTile(mat, mask, variant, tx, ty, frozen) {
     /* Unique speckles per world cell would explode the cache; use variant only (3 grass looks). */
-    var key = (B ? B.id : "") + "/" + tileKey(mat, mask, variant);
-    if (!tileCache[key]) tileCache[key] = rasterTile(mat, mask, variant, variant * 3, variant * 5);
+    var key = (B ? B.id : "") + "/" + tileKey(mat, mask, variant) + (frozen ? "/ice" : "");
+    if (!tileCache[key]) { frozenLook = !!frozen; tileCache[key] = rasterTile(mat, mask, variant, variant * 3, variant * 5); frozenLook = false; }
     return tileCache[key];
     /* tx,ty unused on purpose — cached by mask/variant for performance. */
   }
@@ -536,7 +639,8 @@
         mask = neighborMask(tx, ty, mat);
         variant = (hash2(tx, ty, seed + 40) * 6) | 0;   /* 0-2 plain looks, 3-5 the same ground with fewer digital touches */
         d = distT(tx, ty);
-        tile = getTile(mat, mask, variant, tx, ty);
+        /* frozen water gets the ice look (Freezeland keeps its own: its lakes were always ice) */
+        tile = getTile(mat, mask, variant, tx, ty, mat === MAT.WATER && B && B.id !== "snow" && isFrozenTile(tx, ty));
         px = ix * TILE;
         py = iy * TILE;
         ctx.drawImage(tile, px, py);
@@ -563,7 +667,8 @@
             kind: kind,
             x: (tx + 0.5) * TILE,
             y: (ty + 0.9) * TILE,
-            key: USABLE[kind] ? tx + "," + ty : null
+            key: USABLE[kind] ? tx + "," + ty : null,
+            fk: TREES[kind] ? tx + "," + ty : null      /* a tree a blast can knock flat (fallOf) */
           });
         }
       }
@@ -702,7 +807,7 @@
    * burn, nothing to hide in). The map is seeded, so the same spot is still
    * there when you come back, and so is its scorch mark. */
   var burnt = {}, clock = 0;
-  function setTime(t) { clock = t || 0; }
+  function setTime(t) { clock = t || 0; if (ready) iceTick(); }
   function burnableTile(tx, ty) {
     if (materialAt(tx, ty) !== MAT.GRASS) return false;
     var b = biomeDef(tx, ty);
@@ -763,14 +868,261 @@
     B = keep;
     return !!r;
   }
+  /* ---------- Ice (Nov 20) ----------
+   * Water is a wall unless it is frozen. Three things freeze it:
+   *   Freezeland lakes are always ice;
+   *   winter freezes the seasonal country's rivers and lakes, shallows first,
+   *     over its first ICE.freezeSec, and spring thaws them over ICE.thawSec;
+   *   an ice move or an ice ultimate freezes the water it lands on for a while
+   *     (freezeArea / freezeTest), which is how you bridge a river.
+   * Lava never freezes. Anything left standing on water when it thaws is put
+   * back on the nearest bank (moveSlide). */
+  var ICE = { freezeSec: 50, thawSec: 70, shotR: 40, bridgeSec: 30 };
+  var iced = {}, icedN = 0, iceNext = 1e15, iceVer = 0, iceQ = -1, thrCache = {}, thrCount = 0;
+  function seasonIce() {
+    var S = D.seasons, si, into;
+    if (!S || !S.info) return 0;
+    si = S.info(clock); into = si.progress * (S.CFG ? S.CFG.lengthSec : 360);
+    if (si.id === "winter") return Math.min(1, into / ICE.freezeSec);
+    if (si.id === "spring" && si.index > 0) return Math.max(0, 1 - into / ICE.thawSec);
+    return 0;
+  }
+  /* when this tile freezes in the season's ramp: 0 = first (the shallows by the bank), 1 = last */
+  function freezeAt(tx, ty) {
+    var k = tkey(tx, ty), v = thrCache[k], i, j, n = 0;
+    if (v !== undefined) return v;
+    for (j = -2; j <= 2; j++) for (i = -2; i <= 2; i++) if (materialAt(tx + i, ty + j) === MAT.WATER) n++;
+    v = 0.05 + 0.75 * (n / 25) + 0.15 * hash2(tx, ty, seed + 811);
+    if (thrCount++ > 60000) { thrCache = {}; thrCount = 0; }
+    thrCache[k] = v;
+    return v;
+  }
+  var iceLevel = 0;
+  function isFrozenTile(tx, ty) {
+    if (materialAt(tx, ty) !== MAT.WATER) return false;
+    var b = biomeDef(tx, ty), u;
+    if (b && b.solidWater) return false;                       /* lava */
+    if (b && b.id === "snow") return true;
+    u = iced[tx + "," + ty];
+    if (u && u > clock) return true;
+    return !!(b && b.seasonal && iceLevel > 0 && iceLevel >= freezeAt(tx, ty));
+  }
+  function openWater(tx, ty) {
+    return materialAt(tx, ty) === MAT.WATER && !solidLiquidT(tx, ty) && !isFrozenTile(tx, ty);
+  }
+  function solidLiquidT(tx, ty) { var b = biomeDef(tx, ty); return !!(b && b.solidWater); }
+  /* drop the baked look of the chunk holding this tile, so it is redrawn frozen or thawed */
+  function dirtyTile(tx, ty) { delete cache[chunkKey(Math.floor(tx / CHUNK), Math.floor(ty / CHUNK))]; }
+  function iceTick() {
+    var q = Math.floor(seasonIce() * 24), k, u, b, tx, ty;
+    if (q !== iceQ) {
+      if (iceQ >= 0 || q > 0) { iceVer++; cache = {}; cacheOrder = []; }
+      iceQ = q; iceLevel = q / 24;
+    }
+    if (clock >= iceNext) {
+      iceNext = 1e15;
+      for (k in iced) {
+        u = iced[k];
+        if (u <= clock) { delete iced[k]; icedN--; b = k.split(","); tx = +b[0]; ty = +b[1]; dirtyTile(tx, ty); iceVer++; }
+        else if (u < iceNext) iceNext = u;
+      }
+    }
+  }
+  /* freeze the water inside a test (px, py) => bool over a box, until `until` (battle time) */
+  function freezeTest(test, x0, y0, x1, y1, until) {
+    if (!ready || !TILE) return 0;
+    var a = Math.floor(x0 / TILE), b = Math.floor(y0 / TILE), c = Math.floor(x1 / TILE), d = Math.floor(y1 / TILE), tx, ty, k, n = 0;
+    for (ty = b; ty <= d; ty++) for (tx = a; tx <= c; tx++) {
+      if (materialAt(tx, ty) !== MAT.WATER || solidLiquidT(tx, ty)) continue;
+      if (!test((tx + 0.5) * TILE, (ty + 0.5) * TILE)) continue;
+      k = tx + "," + ty;
+      if (!iced[k]) icedN++;
+      if (!iced[k] || iced[k] < until) { iced[k] = until; n++; dirtyTile(tx, ty); }
+      if (until < iceNext) iceNext = until;
+    }
+    if (n) iceVer++;
+    return n;
+  }
+  function freezeArea(x, y, r, until) {
+    var rr = (r + TILE * 0.35) * (r + TILE * 0.35);
+    return freezeTest(function (px, py) { return (px - x) * (px - x) + (py - y) * (py - y) <= rr; }, x - r - TILE, y - r - TILE, x + r + TILE, y + r + TILE, until);
+  }
+  /* is there water we could freeze here? (so a move knows a bridge is worth making) */
+  function waterNear(x, y, r) {
+    if (!ready || !TILE) return false;
+    var a = Math.floor((x - r) / TILE), b = Math.floor((y - r) / TILE), c = Math.floor((x + r) / TILE), d = Math.floor((y + r) / TILE), tx, ty;
+    for (ty = b; ty <= d; ty++) for (tx = a; tx <= c; tx++) if (materialAt(tx, ty) === MAT.WATER && !solidLiquidT(tx, ty)) return true;
+    return false;
+  }
+  /* move-made ice in view that is about to give (for the cracks drawn over it) */
+  function thinIceInView(camX, camY, viewW, viewH, within) {
+    var out = [], k, u, p, x, y, pad = TILE;
+    if (!icedN) return out;
+    for (k in iced) {
+      u = iced[k]; if (u - clock > within || u <= clock) continue;
+      p = k.split(","); x = (+p[0] + 0.5) * TILE; y = (+p[1] + 0.5) * TILE;
+      if (x < camX - viewW / 2 - pad || x > camX + viewW / 2 + pad || y < camY - viewH / 2 - pad || y > camY + viewH / 2 + pad) continue;
+      if (seasonFrozenOnly(+p[0], +p[1])) continue;
+      out.push({ x: x, y: y, left: u - clock });
+    }
+    return out;
+  }
+  function seasonFrozenOnly(tx, ty) {
+    var b = biomeDef(tx, ty);
+    return !!(b && (b.id === "snow" || (b.seasonal && iceLevel > 0 && iceLevel >= freezeAt(tx, ty))));
+  }
+
+  /* ---------- Felled trees (Nov 20) ----------
+   * A big enough blast knocks trees flat. One lies where it fell for
+   * FELL.log seconds, then rots to a stump, then grows back over FELL.grow. */
+  var FELL = { log: 150, stump: 300, grow: 60 }, TREES = { tree: 1, snowtree: 1, deadtree: 1, cactus: 1 };
+  var felled = {};
+  function fellTest(test, x0, y0, x1, y1, cx, cy, at) {
+    if (!ready || !TILE) return 0;
+    var a = Math.floor(x0 / TILE), b = Math.floor(y0 / TILE) - 1, c = Math.floor(x1 / TILE), d = Math.floor(y1 / TILE), tx, ty, k, px, py, n = 0, f;
+    for (ty = b; ty <= d; ty++) for (tx = a; tx <= c; tx++) {
+      if (!TREES[propAt(tx, ty)]) continue;
+      px = (tx + 0.5) * TILE; py = (ty + 0.9) * TILE;
+      if (!test(px, py - 6)) continue;
+      k = tx + "," + ty; f = felled[k];
+      if (f && fellState(f) && fellState(f) !== 3) continue;   /* already down */
+      felled[k] = { at: at, dir: (Math.abs(px - cx) < 6 ? (hash2(tx, ty, seed + 820) < 0.5 ? -1 : 1) : (px < cx ? -1 : 1)) };
+      n++;
+    }
+    return n;
+  }
+  function fellArea(x, y, r, at) {
+    var rr = r * r;
+    return fellTest(function (px, py) { return (px - x) * (px - x) + (py - y) * (py - y) <= rr; }, x - r, y - r, x + r, y + r + TILE, x, y, at);
+  }
+  /* 0 standing, 1 lying where it fell, 2 a stump, 3 growing back */
+  function fellState(f) {
+    if (!f) return 0;
+    var age = clock - f.at;
+    if (age < -1 || age >= FELL.stump + FELL.grow) return 0;
+    if (age < FELL.log) return 1;
+    if (age < FELL.stump) return 2;
+    return 3;
+  }
+  function fallOf(key) {
+    var f = felled[key], st = fellState(f);
+    if (!st) { if (f) delete felled[key]; return null; }
+    return { state: st, at: f.at, age: clock - f.at, dir: f.dir, left: st === 1 ? FELL.log - (clock - f.at) : 0, grow: st === 3 ? (clock - f.at - FELL.stump) / FELL.grow : 0 };
+  }
+
+  /* ---------- Puddles and ponds (Nov 20) ----------
+   * Rain soaks the ground (soak 0..1: a couple of minutes of rain to fill,
+   * longer to dry, quicker in summer). Low spots, one candidate per
+   * PUD.cell tiles, fill into puddles as it rises; the deepest of them
+   * spread into ponds. Standing in one soaks you (wet), which carries on into
+   * the element rules: fire hisses out, ice freezes, lightning conducts. */
+  var PUD = { cell: 5, fill: 110, dry: 220, drySummer: 120, minR: 12, maxR: 44, pondR: 96, pondAt: 0.86 };
+  var soak = 0;
+  function stepSoak(wet, dt) {
+    var S = D.seasons, sum = S && S.info && S.info(clock).id === "summer";
+    if (wet > 0.05) soak = Math.min(1, soak + (wet * dt) / PUD.fill);
+    else soak = Math.max(0, soak - dt / (sum ? PUD.drySummer : PUD.dry));
+    return soak;
+  }
+  function puddleOfCell(cx, cy) {
+    var depth = hash2(cx * 3 + 1, cy * 5 + 2, seed + 840), tx, ty, m, b, fullR, r, need;
+    if (depth < 0.25) return null;
+    tx = cx * PUD.cell + 1 + Math.floor(hash2(cx, cy, seed + 841) * (PUD.cell - 2));
+    ty = cy * PUD.cell + 1 + Math.floor(hash2(cx, cy, seed + 842) * (PUD.cell - 2));
+    if (distT(tx, ty) < 7) return null;
+    m = materialAt(tx, ty);
+    if (m !== MAT.GRASS && m !== MAT.PATH) return null;
+    b = biomeDef(tx, ty);
+    if (b && (b.solidWater || b.id === "glitch" || b.id === "circuit" || b.id === "snow")) return null;
+    need = (1 - depth) * 0.9;                       /* deeper spots fill first */
+    if (soak <= need) return null;
+    fullR = depth >= PUD.pondAt ? PUD.pondR : PUD.minR + (PUD.maxR - PUD.minR) * (depth - 0.25) / (PUD.pondAt - 0.25);
+    r = fullR * Math.min(1, (soak - need) / 0.35);
+    if (r < 6) return null;
+    return { x: (tx + 0.5) * TILE + (hash2(cx, cy, seed + 843) - 0.5) * TILE * 0.6, y: (ty + 0.5) * TILE, r: r, pond: depth >= PUD.pondAt, key: cx + "," + cy, biome: b ? b.id : "plains" };
+  }
+  function puddlesIn(x0, y0, x1, y1) {
+    var out = [], span = PUD.cell * TILE, a, b, cx, cy, p;
+    if (!ready || !TILE || soak <= 0.02) return out;
+    for (cy = Math.floor(y0 / span) - 1; cy <= Math.floor(y1 / span) + 1; cy++) for (cx = Math.floor(x0 / span) - 1; cx <= Math.floor(x1 / span) + 1; cx++) {
+      p = puddleOfCell(cx, cy);
+      if (p && p.x + p.r > x0 && p.x - p.r < x1 && p.y + p.r > y0 && p.y - p.r < y1) out.push(p);
+    }
+    return out;
+  }
+  function inPuddle(x, y) {
+    if (!ready || !TILE || soak <= 0.02) return null;
+    var span = PUD.cell * TILE, cx0 = Math.floor(x / span), cy0 = Math.floor(y / span), cx, cy, p, dx, dy;
+    for (cy = cy0 - 1; cy <= cy0 + 1; cy++) for (cx = cx0 - 1; cx <= cx0 + 1; cx++) {
+      p = puddleOfCell(cx, cy); if (!p) continue;
+      dx = (x - p.x) / p.r; dy = (y - p.y) / (p.r * 0.62);
+      if (dx * dx + dy * dy <= 1) return p;
+    }
+    return null;
+  }
+
+  /* ---------- Snow underfoot (Nov 20): where feet leave prints ---------- */
+  function snowAt(x, y) {
+    if (!ready || !TILE) return false;
+    var tx = Math.floor(x / TILE), ty = Math.floor(y / TILE), m = materialAt(tx, ty), b;
+    if (m === MAT.CLIFF) return false;
+    b = biomeDef(tx, ty);
+    if (m === MAT.WATER) return false;
+    return !!(b && (b.id === "snow" || (b.seasonal && season === "winter")));
+  }
+
+  /* ---------- Nests (Nov 20): where a biome's Digimon live ----------
+   * One candidate spot per NEST_CELL x NEST_CELL tiles, kept if it lands on
+   * open ground away from the start. Its kind is fixed by the seed:
+   * "herd" (the biome's Digimon of the season's stage), "nursery" (Babies and
+   * In-Training, all run long) or "alpha" (a herd led by a boss). Whose nest it
+   * is follows the territory (war-sim.js). The population lives in nest-sim.js. */
+  var NEST_CELL = 15, NEST_CHANCE = 0.68;
+  function nestOfCell(cx, cy) {
+    var h = hash2(cx * 5 + 3, cy * 7 + 1, seed + 950), tx, ty, i, j, k, ok = false, t, a, r;
+    /* the four cells that meet at the start always have one, in their own quarter, 12-19 tiles
+     * out: there is life nearby from the first minute */
+    var home = (cx === -1 || cx === 0) && (cy === -1 || cy === 0);
+    if (h >= NEST_CHANCE && !home) return null;
+    /* a few tries for a dry, open spot in the cell */
+    for (t = 0; t < (home ? 8 : 5) && !ok; t++) {
+      if (home) {
+        a = (cx === 0 ? 0 : Math.PI / 2) + (cy === 0 ? 0 : (cx === 0 ? -Math.PI / 2 : Math.PI / 2)) + (0.15 + 0.7 * hash2(cx + t * 29, cy, seed + 954)) * Math.PI / 2;
+        r = 12 + hash2(cx, cy + t * 31, seed + 955) * 7;
+        tx = Math.round(Math.cos(a) * r); ty = Math.round(Math.sin(a) * r);
+      } else {
+        tx = cx * NEST_CELL + 3 + Math.floor(hash2(cx + t * 131, cy, seed + 951) * (NEST_CELL - 6));
+        ty = cy * NEST_CELL + 3 + Math.floor(hash2(cx, cy + t * 137, seed + 952) * (NEST_CELL - 6));
+      }
+      if (distT(tx, ty) < 11) continue;
+      ok = true;
+      for (j = -1; j <= 1 && ok; j++) for (i = -1; i <= 1 && ok; i++) { k = materialAt(tx + i, ty + j); if (k === MAT.CLIFF || k === MAT.WATER) ok = false; }
+      if (ok && pointRaised((tx + 0.5) * TILE, (ty + 0.5) * TILE)) ok = false;
+    }
+    if (!ok) return null;
+    k = hash2(cx * 11, cy * 3 + 5, seed + 953);
+    return { key: cx + ":" + cy, tx: tx, ty: ty, x: (tx + 0.5) * TILE, y: (ty + 0.5) * TILE, kind: k < 0.3 ? "nursery" : (k > 0.86 && !home ? "alpha" : "herd"), biome: biomeId(tx, ty) };
+  }
+  function nestsNear(x, y, r) {
+    if (!ready || !TILE) return [];
+    var span = NEST_CELL * TILE, out = [], cx, cy, n;
+    /* one cell of margin: the start's own nests may sit just outside their cell */
+    for (cy = Math.floor((y - r) / span) - 1; cy <= Math.floor((y + r) / span) + 1; cy++) for (cx = Math.floor((x - r) / span) - 1; cx <= Math.floor((x + r) / span) + 1; cx++) {
+      n = nestOfCell(cx, cy);
+      if (n && (n.x - x) * (n.x - x) + (n.y - y) * (n.y - y) <= r * r) out.push(n);
+    }
+    return out;
+  }
+
   function markUsed(key) { used[key] = 1; }
   function isUsed(key) { return !!used[key]; }
 
-  function pointRaised(x, y) {
+  /* cross: 0 walks, 1 swims (open water is no wall), 2 flies (nor is lava) — biomes.js crossOf */
+  function pointRaised(x, y, cross) {
     if (!ready || !TILE) return false;
     var tx = Math.floor(x / TILE);
     var ty = Math.floor(y / TILE);
-    if (materialAt(tx, ty) === MAT.CLIFF || solidLiquid(tx, ty)) return true;
+    if (materialAt(tx, ty) === MAT.CLIFF || (solidLiquid(tx, ty) && !(cross >= 2)) || (!cross && openWater(tx, ty))) return true;
     if (solidProp(x, y, tx, ty)) return true;
     var ly = y - ty * TILE;
     if (ly < faceH && materialAt(tx, ty - 1) === MAT.CLIFF) return true;
@@ -778,30 +1130,33 @@
   }
 
   /* Raised plateaus and the hanging south face of a cliff are solid. */
-  function isRaised(x, y, rad) {
+  function isRaised(x, y, rad, cross) {
     rad = rad == null ? 8 : rad;
-    if (pointRaised(x, y)) return true;
+    if (pointRaised(x, y, cross)) return true;
     if (rad <= 0) return false;
     var d = rad * 0.72;
-    return pointRaised(x - d, y) || pointRaised(x + d, y)
-      || pointRaised(x, y - d) || pointRaised(x, y + d)
-      || pointRaised(x - d, y - d) || pointRaised(x + d, y - d)
-      || pointRaised(x - d, y + d) || pointRaised(x + d, y + d);
+    return pointRaised(x - d, y, cross) || pointRaised(x + d, y, cross)
+      || pointRaised(x, y - d, cross) || pointRaised(x, y + d, cross)
+      || pointRaised(x - d, y - d, cross) || pointRaised(x + d, y - d, cross)
+      || pointRaised(x - d, y + d, cross) || pointRaised(x + d, y + d, cross);
   }
 
-  function moveSlide(x, y, dx, dy, rad) {
+  function moveSlide(x, y, dx, dy, rad, cross) {
+    /* standing in open water (the ice went out from under it): back to the nearest bank */
+    /* (or a conquering biome put a boulder where it stood) */
+    if (ready && TILE && pointRaised(x, y, cross)) return nearestWalkable(x, y, 260, rad == null ? 8 : rad, cross);
     var nx = x + dx;
     var ny = y;
-    if (!isRaised(nx, ny, rad)) x = nx;
+    if (!isRaised(nx, ny, rad, cross)) x = nx;
     ny = y + dy;
-    if (!isRaised(x, ny, rad)) y = ny;
+    if (!isRaised(x, ny, rad, cross)) y = ny;
     return { x: x, y: y };
   }
 
-  function nearestWalkable(x, y, maxR, rad) {
+  function nearestWalkable(x, y, maxR, rad, cross) {
     rad = rad == null ? 8 : rad;
     maxR = maxR == null ? 240 : maxR;
-    if (!isRaised(x, y, rad)) return { x: x, y: y };
+    if (!isRaised(x, y, rad, cross)) return { x: x, y: y };
     var step = Math.max(8, TILE / 4);
     var r, a, n, ang, px, py, best = null, bd = 1e15, d;
     for (r = step; r <= maxR; r += step) {
@@ -810,7 +1165,7 @@
         ang = (a / n) * Math.PI * 2;
         px = x + Math.cos(ang) * r;
         py = y + Math.sin(ang) * r;
-        if (!isRaised(px, py, rad)) {
+        if (!isRaised(px, py, rad, cross)) {
           d = (px - x) * (px - x) + (py - y) * (py - y);
           if (d < bd) { bd = d; best = { x: px, y: py }; }
         }
@@ -828,6 +1183,8 @@
     tileCache = {};
     matCache = {}; matCount = 0; bioCache = {}; bioCount = 0; lairCache = {};
     propCache = {}; propCount = 0; used = {}; burnt = {}; clock = 0;
+    terr = {}; terrN = 0; terrVer++; ownCache = {}; ownCount = 0;
+    iced = {}; icedN = 0; iceNext = 1e15; iceVer++; iceQ = -1; iceLevel = 0; thrCache = {}; thrCount = 0; felled = {}; soak = 0;
     ready = true;
   }
 
@@ -848,6 +1205,17 @@
     propsInView: propsInView,
     elevationAt: elevationAt,
     materialAt: materialAt,
+    _river: riverField,
+    TERR: TERR,
+    nativeIdAt: nativeId,
+    cellOf: function (x, y) { return { cx: Math.floor(x / (TERR * TILE)), cy: Math.floor(y / (TERR * TILE)) }; },
+    cellOwner: cellOwner,
+    cellNative: cellNative,
+    setOwner: setOwner,
+    territoryString: territoryString,
+    applyTerritory: applyTerritory,
+    territoryVersion: function () { return terrVer; },
+    mapVersion: function () { return iceVer; },
     biomeIdAt: biomeId,                                    /* by tile */
     biomeAt: function (x, y) { return ready && TILE ? biomeDef(Math.floor(x / TILE), Math.floor(y / TILE)) : null; },   /* by world position */
     isRaised: isRaised,
@@ -863,6 +1231,30 @@
     burntInView: burntInView,
     usableNear: usableNear,
     markUsed: markUsed,
+    nestsNear: nestsNear,
+    /* Nov 20: the living map */
+    isFrozen: function (x, y) { return ready && TILE ? isFrozenTile(Math.floor(x / TILE), Math.floor(y / TILE)) : false; },
+    isFrozenTile: isFrozenTile,
+    openWaterAt: function (x, y) { return ready && TILE ? openWater(Math.floor(x / TILE), Math.floor(y / TILE)) : false; },
+    iceVersion: function () { return iceVer; },
+    iceLevel: function () { return iceLevel; },
+    freezeArea: freezeArea,
+    freezeTest: freezeTest,
+    waterNear: waterNear,
+    thinIceInView: thinIceInView,
+    fellArea: fellArea,
+    fellTest: fellTest,
+    fallOf: fallOf,
+    TREES: TREES,
+    FELL: FELL,
+    stepSoak: stepSoak,
+    setSoak: function (v) { soak = Math.max(0, Math.min(1, v || 0)); },
+    soak: function () { return soak; },
+    puddlesIn: puddlesIn,
+    inPuddle: inPuddle,
+    snowAt: snowAt,
+    ICE: ICE,
+    PUD: PUD,
     isUsed: isUsed,
     SOLID: SOLID,
     moveSlide: moveSlide,

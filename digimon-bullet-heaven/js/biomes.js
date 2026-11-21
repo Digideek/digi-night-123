@@ -244,6 +244,26 @@
   }
   function homeName(id) { var h = homeOf(id); return DEFS[h] ? DEFS[h].name : ""; }
 
-  D.biomes = { DEFS: DEFS, pick: pick, customProp: customProp, SPREAD: SPREAD, ART: ART, homeOf: homeOf, homeName: homeName };
+  /* ---------- Who can cross water (Nov 20) ----------
+   * 0 walks (stopped by water, like the tamer), 1 swims (crosses water, not lava),
+   * 2 flies (crosses water and lava). By body type, plus the winged ones whose type doesn't say so. */
+  var FLY_TYPE = /bird|angel|seraph|ghost|pixie|sky dragon|evil dragon|little devil|mythical/i;
+  var SWIM_TYPE = /aquatic|amphibian|crustacean|mollusk|sea animal|sea beast/i;
+  var FLY_IDS = { patamon: 1, tentomon: 1, kabuterimon: 1, megakabuterimon: 1, herculeskabuterimon: 1, kokabuterimon: 1, kuwagamon: 1, okuwamon: 1,
+    flymon: 1, hudiemon: 1, stingmon: 1, roachmon: 1, dinobeemon: 1, pegasusmon: 1, nefertimon: 1, phoenixmon: 1, halsemon: 1, megadramon: 1,
+    gigadramon: 1, magnadramon: 1, exveemon: 1, paildramon: 1, imperialdramon_dragonmode: 1, imperialdramon_fightermode: 1, silphymon: 1,
+    chiropmon_beatbreak: 1, cupimon: 1, poromon: 1, lillymon: 1, lilamon: 1, rosemon: 1, piximon: 1 };
+  var SWIM_IDS = { bukamon: 1, pichimon: 1, syakomon: 1, otamamon: 1, gomamon: 1 };
+  var crossCache = {};
+  function crossOf(id) {
+    if (!id) return 0;
+    if (crossCache[id] !== undefined) return crossCache[id];
+    var T = global.EVO_TREE, sp = T && T.species && T.species[id], t = (sp && sp.type) || "", en = D.ENEMIES && D.ENEMIES[id], v = 0;
+    if (FLY_IDS[id] || (en && en.fly) || (t && FLY_TYPE.test(t) && !/flightless/i.test(t))) v = 2;
+    else if (SWIM_IDS[id] || (t && SWIM_TYPE.test(t))) v = 1;
+    return (crossCache[id] = v);
+  }
+
+  D.biomes = { DEFS: DEFS, pick: pick, customProp: customProp, SPREAD: SPREAD, ART: ART, homeOf: homeOf, homeName: homeName, crossOf: crossOf };
   if (typeof module !== "undefined" && module.exports) module.exports = D.biomes;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));

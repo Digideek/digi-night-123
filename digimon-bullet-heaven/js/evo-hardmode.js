@@ -24,10 +24,11 @@
   var STAGE_GATES = {
     "Baby I":   { minFormTime: 120,  minLevel: 3 },   /* was 3 min / level 4 */
     "Baby II":  { minFormTime: 300,  minLevel: 8 },
-    "Rookie":   { minFormTime: 480,  minLevel: 14 },
-    "Armor":    { minFormTime: 600,  minLevel: 18 },
-    "Champion": { minFormTime: 720,  minLevel: 20 },
-    "Ultimate": { minFormTime: 900,  minLevel: 28 },
+    /* minRunTime (Nov 20): the run must have gone on this long first, so a Mega is never under an hour */
+    "Rookie":   { minFormTime: 480,  minLevel: 14, minRunTime: 600 },
+    "Armor":    { minFormTime: 600,  minLevel: 18, minRunTime: 1500 },
+    "Champion": { minFormTime: 720,  minLevel: 20, minRunTime: 1800 },
+    "Ultimate": { minFormTime: 900,  minLevel: 28, minRunTime: 3600 },
     "Mega":     { minFormTime: 1200, minLevel: 36 },
     "Mega+":    { minFormTime: 1500, minLevel: 45 }
   };
@@ -63,6 +64,7 @@
     if ((stats.level || 0) < g.minLevel) return false;
     /* Older callers that do not track time in form are not blocked by time. */
     if (stats.formTime != null && stats.formTime < g.minFormTime) return false;
+    if (g.minRunTime && stats.runTime != null && stats.runTime < g.minRunTime) return false;
     return true;
   }
 

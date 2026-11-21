@@ -235,15 +235,16 @@
     return Math.max(6, base);
   };
 
-  MissionSim.prototype._slide = function (x, y, dx, dy, rad) {
+  /* cross: 0 walks, 1 swims, 2 flies (biomes.js crossOf: who can go over water) */
+  MissionSim.prototype._slide = function (x, y, dx, dy, rad, cross) {
     var w = this.data && this.data.world;
-    if (w && w.moveSlide) return w.moveSlide(x, y, dx, dy, rad);
+    if (w && w.moveSlide) return w.moveSlide(x, y, dx, dy, rad, cross);
     return { x: x + dx, y: y + dy };
   };
 
-  MissionSim.prototype._snap = function (x, y, rad, maxR) {
+  MissionSim.prototype._snap = function (x, y, rad, maxR, cross) {
     var w = this.data && this.data.world;
-    if (w && w.nearestWalkable) return w.nearestWalkable(x, y, maxR || 240, rad == null ? 8 : rad);
+    if (w && w.nearestWalkable) return w.nearestWalkable(x, y, maxR || 240, rad == null ? 8 : rad, cross);
     return { x: x, y: y };
   };
 
@@ -461,6 +462,8 @@
     this.kills = run.kills || 0;
     this.seed = run.worldSeed || this.seed;
     this.rng = mulberry(this.seed);
+    this.runMode = run.mode || this.runMode || "survival";   /* modes-sim.js; game.js always sends one */
+    this.week = run.week || null;
     if (!this.player(localId)) {
       this.join({
         id: localId,
@@ -824,7 +827,7 @@
         p.mfacing = bt.x < p.mx ? -1 : 1;
       }
     }
-    var dest = this._snap(desiredX, desiredY, rad, 160);
+    var dest = this._snap(desiredX, desiredY, rad, 160, this._crossOf(p.form));
     var vx = dest.x - p.mx, vy = dest.y - p.my;
     var vd = Math.sqrt(vx * vx + vy * vy);
     var spd = 90;
@@ -840,10 +843,34 @@
     }
     if (vd > 4) {
       var step = Math.min(vd, spd * dt);
-      var pos = this._slide(p.mx, p.my, vx / vd * step, vy / vd * step, rad);
+      var pcr = this._crossOf(p.form), pos = this._slide(p.mx, p.my, vx / vd * step, vy / vd * step, rad, pcr);
+      if (pcr && this._leashed(p, pos)) pos = { x: p.mx, y: p.my };
       p.monMoving = Math.abs(pos.x - p.mx) + Math.abs(pos.y - p.my) > 0.2;
       p.mx = pos.x; p.my = pos.y;
     } else p.monMoving = false;
+  };
+
+  /* A partner that can fly or swim may go out over the water, but not further than
+   * LIVING.leash from its tamer while it is over it (the tamer still needs a ford or ice). */
+  MissionSim.prototype._leashed = function (p, pos) {
+    var w = this.data.world, L = (this.data.LIVING && this.data.LIVING.leash) || 220;
+    if (!p.hasTamer || !w || !w.openWaterAt || !(w.openWaterAt(pos.x, pos.y) || (w.hazardNear && w.hazardNear(pos.x, pos.y, 2)))) return false;
+    var dNew = dist2(pos.x, pos.y, p.x, p.y), dOld = dist2(p.mx, p.my, p.x, p.y);
+    return dNew > L * L && dNew > dOld;
+  };
+
+  /* Is anything that would fight this tamer within r of them or their partner? (asleep, trusting or
+   * fighting at their side doesn't count) — the farm can't be reached with one this close. */
+  MissionSim.prototype._hostileNear = function (p, r) {
+    var i, e, fac, r2 = r * r;
+    for (i = 0; i < this.enemies.length; i++) {
+      e = this.enemies[i];
+      if (e.dead || e.zz || e.rally === p.id) continue;
+      fac = this._factionOf ? this._factionOf(e) : null;
+      if (fac && this._trusts && this._trusts(p, fac)) continue;
+      if (dist2(e.x, e.y, p.x, p.y) < r2 || dist2(e.x, e.y, p.mx, p.my) < r2) return e;
+    }
+    return null;
   };
 
   MissionSim.prototype._moveCpu = function (c, dt) {
@@ -870,7 +897,7 @@
     var sp = this.data && this.data.SPECIES && this.data.SPECIES[c.form] && this.data.SPECIES[c.form].base;
     if (sp && sp.speed) spd = sp.speed * 1.02;
     if (l > 4) {
-      var pos = this._slide(c.x, c.y, (vx / l) * spd * dt, (vy / l) * spd * dt, rad);
+      var pos = this._slide(c.x, c.y, (vx / l) * spd * dt, (vy / l) * spd * dt, rad, this._crossOf(c.form));
       c.moving = Math.abs(pos.x - c.x) + Math.abs(pos.y - c.y) > 0.2;
       c.x = pos.x; c.y = pos.y;
     } else c.moving = false;
@@ -913,10 +940,10 @@
   };
 
   MissionSim.prototype._nearestEnemy = function (x, y) {
-    var i, e, best = null, bestD = 1e15, d;
+    var i, e, best = null, bestD = 1e15, d, me = this._actor;
     for (i = 0; i < this.enemies.length; i++) {
       e = this.enemies[i];
-      if (e.dead) continue;
+      if (e.dead || (me && this._spares && this._spares(me.id, e))) continue;
       d = dist2(x, y, e.x, e.y);
       if (d < bestD) { bestD = d; best = e; }
     }
@@ -1190,10 +1217,10 @@
 
   /* Nearest live enemy to (x, y) whose edge is within `reach`. */
   MissionSim.prototype._nearestInReach = function (x, y, reach) {
-    var i, e, best = null, bestD = 1e15, d, rr;
+    var i, e, best = null, bestD = 1e15, d, rr, me = this._actor;
     for (i = 0; i < this.enemies.length; i++) {
       e = this.enemies[i];
-      if (e.dead) continue;
+      if (e.dead || (me && this._spares && this._spares(me.id, e))) continue;
       d = dist2(x, y, e.x, e.y);
       rr = reach + (e.radius || 10);
       if (d <= rr * rr && d < bestD) { bestD = d; best = e; }
@@ -1314,11 +1341,14 @@
       b.x += b.vx * dt;
       b.y += b.vy * dt;
       b.life -= dt;
+      if (b._el === undefined) b._el = this._shotElement(b);
+      if (b._el === "ice") this._iceTrail(b, dt);
       hit = false;
       for (j = 0; j < this.enemies.length; j++) {
         e = this.enemies[j];
         if (e.dead) continue;
         if (e.rival && b.ownerId === "rival") continue;
+        if (this._spares && this._spares(b.ownerId, e)) continue;   /* passes through a biome that trusts you */
         if (b.miss && b.miss[e._id]) continue;
         if (b.once && b.once[e._id]) continue;
         if (dist2(b.x, b.y, e.x, e.y) <= (b.radius + e.radius) * (b.radius + e.radius)) {
@@ -1363,6 +1393,7 @@
 
   MissionSim.prototype._explode = function (x, y, radius, damage, knock, ownerId, wid) {
     var i, e, dx, dy, d;
+    this._fellTrees(x, y, radius);
     for (i = 0; i < this.enemies.length; i++) {
       e = this.enemies[i];
       if (e.dead) continue;
@@ -1416,7 +1447,7 @@
     var d = Math.sqrt(d2);
     if (d < 0.001) { var a = (e._id || 1) * 2.399; dx = Math.cos(a); dy = Math.sin(a); d = 1; }
     var nx = dx / d, ny = dy / d;
-    var pos = this._slide(e.x, e.y, x + nx * min - e.x, y + ny * min - e.y, Math.max(4, (e.radius || 10) * 0.6));
+    var pos = this._slide(e.x, e.y, x + nx * min - e.x, y + ny * min - e.y, Math.max(4, (e.radius || 10) * 0.6), this._crossOf(e.type));
     e.x = pos.x; e.y = pos.y;
   };
 
@@ -1500,6 +1531,52 @@
     e.st[name] = { t: Math.max(time, cur ? cur.t : 0), dps: Math.max(opt.dps || 0, cur ? cur.dps || 0 : 0), owner: opt.owner || (cur && cur.owner) || null };
     if (fresh && !opt.quiet) this.emit({ type: "fx", k: "st", s: name, x: e.x, y: e.y - (e.radius || 10) - 8 });
   };
+  /* ---------- The living map (Nov 20, world.js) ---------- */
+  MissionSim.prototype._shotElement = function (b) {
+    var E = this.data && this.data.ELEMENTS, o = b.ownerId != null && this.player(b.ownerId);
+    return (E && E.moveElement && o && o.form) ? E.moveElement(b.wid, o.form) : null;
+  };
+  /* an ice shot over open water leaves a strip of ice behind it: a bridge for a while */
+  MissionSim.prototype._iceTrail = function (b, dt) {
+    var w = this.data.world, I = w && w.ICE;
+    if (!w || !w.openWaterAt || !I) return;
+    b._iceT = (b._iceT || 0) - dt;
+    if (b._iceT > 0 || !w.openWaterAt(b.x, b.y)) return;
+    b._iceT = 0.1;
+    this._freezeWater(b.x, b.y, I.shotR || 40, this.time + (I.bridgeSec || 30));
+  };
+  MissionSim.prototype._freezeWater = function (x, y, r, until) {
+    var w = this.data.world;
+    if (!w || !w.freezeArea) return 0;
+    var n = w.freezeArea(x, y, r, until);
+    if (n) this.emit({ type: "fx", k: "icewater", x: Math.round(x), y: Math.round(y), r: Math.round(r), until: Math.round(until * 10) / 10 });
+    return n;
+  };
+  /* a big blast knocks the trees round it flat (data.js FELL_R: how big is big) */
+  MissionSim.prototype._fellTrees = function (x, y, r) {
+    var w = this.data.world;
+    if (!w || !w.fellArea || !(r >= ((this.data.LIVING && this.data.LIVING.fellR) || 64))) return 0;
+    var n = w.fellArea(x, y, r, this.time);
+    if (n) this.emit({ type: "fx", k: "fell", x: Math.round(x), y: Math.round(y), r: Math.round(r), at: this.time });
+    return n;
+  };
+  /* Rain fills the low spots (world.js PUD); whatever stands in a puddle is soaked */
+  MissionSim.prototype._updatePuddles = function (dt) {
+    var w = this.data.world, i, e, SN = this.data.seasons, winter;
+    if (!w || !w.stepSoak) return;
+    w.stepSoak(this._wet(), dt);
+    this._pudT = (this._pudT || 0) - dt;
+    if (this._pudT > 0 || !(w.soak() > 0.05)) return;
+    this._pudT = 0.5;
+    winter = SN && SN.info && SN.info(this.time).id === "winter";
+    if (winter) return;                                   /* frozen over: nothing to splash in */
+    for (i = 0; i < this.enemies.length; i++) {
+      e = this.enemies[i];
+      if (e.dead || (this._enemies()[e.type] || {}).fly) continue;
+      if (w.inPuddle(e.x, e.y)) this._setStatus(e, "wet", 1.5, { quiet: true });
+    }
+  };
+
   MissionSim.prototype._steam = function (x, y, k) { this.emit({ type: "fx", k: k || "steam", x: x, y: y }); };
   /* the hit's element meets the enemy: reactions first, then the element's own mark. Returns the knockback multiplier. */
   MissionSim.prototype._applyElement = function (e, el, dmg, owner) {
@@ -1602,13 +1679,16 @@
         if (q.kind === "fire") { list.splice(i, 1); this._steam(q.x, q.y); }
         else if (q.kind === "goo") list.splice(i, 1);
       } else if (kind === "ice") {
-        if (q.kind === "wet") { q.kind = "ice"; q.t = q.max = P.life.ice * 1.3; this._steam(q.x, q.y, "frost"); kind = null; }
+        if (q.kind === "wet") { q.kind = "ice"; q.t = q.max = P.life.ice * 1.3; this._steam(q.x, q.y, "frost"); if (w && w.waterNear && w.waterNear(q.x, q.y, q.r + 24)) this._freezeWater(q.x, q.y, q.r * 1.25, this.time + ((this.data.LIVING && this.data.LIVING.patchIceSec) || 30)); kind = null; }
         else if (q.kind === "fire") { list.splice(i, 1); this._steam(q.x, q.y); kind = null; }
       } else if (kind === "goo") {
         if (q.kind === "fire") { q.t = Math.min(q.max, q.t + 1.5); kind = null; }
       }
     }
     if (!kind) return null;
+    var LV = this.data.LIVING || {};
+    if (kind === "ice" && w && w.waterNear && w.waterNear(x, y, r + 24)) this._freezeWater(x, y, r * 1.25, this.time + (LV.patchIceSec || 30));
+    if (kind === "fire" && w && w.inPuddle && w.inPuddle(x, y) && !this._boltFire) { this._steam(x, y); return null; }
     life = P.life[kind] || 4;
     q = { id: (this._patchSeq = (this._patchSeq || 0) + 1), kind: kind, x: x, y: y, r: r, t: life, max: life, dps: dps || 0, owner: owner || null, gen: gen || 0, tick: 0, sp: 0 };
     if (kind === "fire" && w && w.isGrass && w.isGrass(x, y)) {
@@ -1700,8 +1780,21 @@
   };
   MissionSim.prototype._strike = function (x, y, ST) {
     ST = ST || this.data.STORM;
-    var i, e, p, dmg, big, rr, hits = 0, w = this.data.world;
+    var i, e, p, dmg, big, rr, hits = 0, w = this.data.world, pud = w && w.inPuddle ? w.inPuddle(x, y) : null;
     this.emit({ type: "fx", k: "bolt", x: x, y: y, r: ST.radius });
+    this._fellTrees(x, y, Math.max(ST.radius, ((this.data.LIVING && this.data.LIVING.fellR) || 64)));
+    /* a bolt into a puddle runs through the whole of it */
+    if (pud) {
+      for (i = 0; i < this.enemies.length; i++) {
+        e = this.enemies[i];
+        if (e.dead || dist2(x, y, e.x, e.y) <= ST.radius * ST.radius) continue;
+        if (w.inPuddle(e.x, e.y) === null || dist2(pud.x, pud.y, e.x, e.y) > pud.r * pud.r) continue;
+        this._setStatus(e, "shock", ST.shock, {});
+        e.hp -= Math.max(ST.minDamage, e.maxHp * ST.enemy * 0.5); e.flash = 0.15;
+        if (e.hp <= 0) this._killEnemy(e, null);
+      }
+      this.emit({ type: "fx", k: "pudzap", x: Math.round(pud.x), y: Math.round(pud.y), r: Math.round(pud.r) });
+    }
     for (i = 0; i < this.enemies.length; i++) {
       e = this.enemies[i]; if (e.dead) continue;
       rr = ST.radius + (e.radius || 10) * 0.5;
@@ -1716,7 +1809,7 @@
     /* a partner standing under it is hurt too, though never finished off; tamers are never struck */
     for (i = 0; i < this.players.length; i++) {
       p = this.players[i];
-      if (this._isEgg(p.form) || p.faint > 0 || p.downed || !(p.hp > 1) || p.monInvuln > 0) continue;
+      if (p.atFarm || this._isEgg(p.form) || p.faint > 0 || p.downed || !(p.hp > 1) || p.monInvuln > 0) continue;
       if (dist2(x, y, p.mx, p.my) > ST.partnerRadius * ST.partnerRadius) continue;
       dmg = Math.min(p.hp - 1, Math.max(1, (p.maxHp || 1) * ST.partner));
       if (dmg <= 0) continue;
@@ -1736,6 +1829,11 @@
   MissionSim.prototype.hurtEnemy = function (e, dmg, kbX, kbY, knock, owner, rolled, wid) {
     if (e.rival && owner && owner.id === "rival") return false;        /* its own moves pass through it */
     if (!e || e.dead) return false;
+    /* a biome that trusts you is left alone by your side's shots and blasts, unless you clicked it (faction-sim.js) */
+    var hitter = owner && !owner.wild && owner.id != null ? this.player(owner.id) : null;
+    if (hitter && this._spares && this._spares(owner.id, e)) return false;
+    if (hitter && this._trustHit) this._trustHit(hitter, e);
+    if (e.war && owner && !owner.wild) e.warHit = true;               /* a soldier you hit turns on you (war-sim.js) */
     if (rolled == null) {
       rolled = this._roll(e, owner && owner.id);
       if (!rolled) return false;
@@ -1771,6 +1869,8 @@
   };
 
   MissionSim.prototype._killEnemy = function (e, owner) {
+    if (this._warLossOf) this._warLossOf(e);                          /* its biome feels the loss at the front */
+    if (this._nestLoss) this._nestLoss(e);                            /* and its nest is one fewer */
     /* the rival's kills are its own: its XP, nothing dropped for you */
     if (owner && owner.id === "rival" && this._rivalKill) return this._rivalKill(e);
     /* a wild Digimon's kill (an infected one's, or one fighting it off) is nobody's: nothing dropped */
@@ -1780,6 +1880,9 @@
     e.hp = 0;
     this.kills += 1;
     var p = (owner && this.player(owner.id)) || this.player(this.localId) || this.players[0];
+    this._lootFor = p;                                                            /* whose level the XP is measured against (_xpGap) */
+    if (p && this._trustKill && !(owner && owner.wild)) this._trustKill(p, e);     /* faction-sim.js: who is glad of it, who isn't */
+    if (p && this._allyShare && !(owner && owner.wild)) this._allyShare(p, e);     /* pvp-sim.js: the Digimon at your side learn from it */
     if (p) {
       p.kills = (p.kills || 0) + 1;
       p.captureKills = (p.captureKills || 0) + 1;
@@ -1804,6 +1907,8 @@
       var Rk = rarityApi();
       if (Rk && Rk.noteKill) Rk.noteKill(p);
     }
+    if (e.lord && p) p.lordsBeaten = (p.lordsBeaten || 0) + 1;   /* for the boards (modes-sim.js) */
+    if (e.nemesis && this._nemesisDown) this._nemesisDown(e, p);  /* a nemesis beaten at last (nemesis-sim.js) */
     if (e.lord) {
       /* the lord of the land is down: gone for this run, and it pays well */
       var LD = this.data.LORD || {}, ldef = this._enemies()[e.type] || { xp: 20 }, oi, oa;
@@ -1828,6 +1933,9 @@
     var def = this._enemies()[e.type] || { xp: 6 };
     var rng = this.rng;
     var xp = Math.round((def.xp || 6) * (0.85 + rng() * 0.3) * (e.boss && !def.boss ? 5 : 1));
+    /* Ragnarok-style: more for the field's toughness, scaled by how far it was above or below the one who beat it */
+    var LVd = this.data.LEVELS;
+    if (LVd) xp = Math.max(1, Math.round(xp * LVd.xpMul * this._xpGap(e, this._lootFor || this.player(this.localId) || this.players[0])));
     if (weatherApi()) xp = weatherApi().xpValue(xp, this, this.data);
     this._spawnOrb("xp", e.x, e.y, xp);
     var bits = 3;
@@ -1958,9 +2066,50 @@
       spdMul: flags.fieldMega ? (megaCfg.spdMul || 1) : 1
     };
     if (weatherApi()) weatherApi().applySpawnStats(e, this, this.data);
+    this._levelUp(e, def, flags);
     this.enemies.push(e);
     if ((isBoss || flags.fieldMega) && !flags.quiet) this.emit({ type: "spawn", enemyId: e._id, enemyType: type, boss: isBoss, mega: !!flags.fieldMega, x: sx, y: sy });
     return e;
+  };
+
+  /* A wild Digimon's level (data.js LEVELS): inside its stage's band, higher further from the start,
+   * bosses, lords and field Megas above; and the toughness that comes with it. */
+  MissionSim.prototype._levelUp = function (e, def, flags) {
+    var L = this.data && this.data.LEVELS, b, far, lv;
+    if (!L || e.rival) return;
+    b = (def && L.band[def.stageDisplay]) || [1, 4];
+    far = Math.min(1, Math.sqrt(e.x * e.x + e.y * e.y) / L.farPx);
+    lv = b[0] + (b[1] - b[0]) * (L.farFrac * far + (1 - L.farFrac) * this.rng());
+    if (flags && flags.fieldMega) lv = b[1] + L.bossLv;
+    else if (e.boss) lv += L.bossLv;
+    e.lv = Math.max(1, Math.round(lv));
+    /* the gentle start (playtest, Nov 20): in the Baby zone round the start (RESPAWN.zone) the wild ones
+     * are low level and not toughened, so a partner that has just hatched (again) can find its feet */
+    var Z = this._startZone ? this._startZone(e.x, e.y) : 0, R = this.data.RESPAWN;
+    e.z0 = Z;                                                   /* where it came from: an outsider does not follow anyone into the start */
+    if (Z >= 2 && !e.boss && !(flags && flags.fieldMega)) {
+      e.lv = Math.min(e.lv, Z === 3 ? 2 : ((R && R.startLv) || 3));
+      /* and the run clock does not make them tougher either (the field's growth is for out in the world) */
+      e.hp = e.maxHp = Math.round(((def && def.hp) || e.maxHp) * ((R && R.startHp) || 1));
+      return;
+    }
+    e.hp = e.maxHp = Math.round(e.maxHp * L.hpMul * (1 + L.hpPerLv * Math.max(0, e.lv - b[0])));
+    e.dmgMul = (e.dmgMul || 1) * L.dmgMul;
+  };
+  /* the gap between a Digimon's level and a partner's job level (data.js LEVELS) */
+  MissionSim.prototype._xpGap = function (e, p) {
+    var L = this.data && this.data.LEVELS, d;
+    if (!L || !p || !e) return 1;
+    d = (e.lv || 1) - (p.level || 1);
+    if (d >= 0) return 1 + Math.min(L.xpCapAbove, d * L.xpPerLvAbove);
+    d = -d - L.freeBelow;
+    return d <= 0 ? 1 : Math.max(L.xpFloor, 1 - d * L.xpPerLvBelow);
+  };
+  MissionSim.prototype._dmgGap = function (e, p) {
+    var L = this.data && this.data.LEVELS, d;
+    if (!L || !p || !e) return 1;
+    d = (e.lv || 1) - (p.level || 1);
+    return d > 0 ? 1 + Math.min(L.dmgCapAbove, d * L.dmgPerLvAbove) : 1;
   };
 
   /* Enemies arrive a few at a time (data.js PACING.group): each one that
@@ -1988,77 +2137,16 @@
 
   MissionSim.prototype._updateSpawns = function (dt) {
     var wave = this._wave(this.time);
-    var type, acc, rate, nonBoss = 0, fodderN = 0, i, e;
-    for (i = 0; i < this.enemies.length; i++) {
-      e = this.enemies[i];
-      if (e.pack) continue;                 /* idle packs sit outside the limits */
-      if (e.fodder) fodderN += 1;
-      else if (!e.boss && !(this._enemies()[e.type] && this._enemies()[e.type].boss)) nonBoss += 1;
-    }
     var host = this.player(this.localId) || this.players[0];
     var combatReady = this._spawnsOpen();
-    if (combatReady && !this.openingSpawned) {
-      this.openingSpawned = true;
-      var hcfg = (this.data && this.data.HATCH) || {};
-      var opening = hcfg.openingFlood || 6;
-      var openTypes = Object.keys(wave.rates || {}).sort(function (a, b) { return wave.rates[a] - wave.rates[b]; });
-      for (i = 0; i < opening; i++) { this.spawnEnemy(openTypes.length ? openTypes[i % Math.min(3, openTypes.length)] : "pagumon"); nonBoss += 1; }
-    }
-    var rates = {};
-    if (wave.rates) {
-      for (type in wave.rates) if (Object.prototype.hasOwnProperty.call(wave.rates, type)) rates[type] = wave.rates[type];
-    }
-    if (this.data && this.data.waveAt && host) {
-      /* already from wave.rates */
-    }
     if (combatReady) {
-    for (type in rates) {
-      if (!Object.prototype.hasOwnProperty.call(rates, type)) continue;
-      rate = rates[type];
-      var spawnMul = weatherApi() ? weatherApi().spawnIntervalScale(this, this.data) : 1;
-      var capMul = weatherApi() ? weatherApi().spawnCapScale(this, this.data) : 1;
-      acc = (this.spawnAcc[type] || 0) + dt * spawnMul * (this.coopScale || 1);
-      var cap = Math.floor((wave.cap || 14) * capMul * (this.coopScale || 1));
-      while (acc >= rate) {
-        acc -= rate;
-        nonBoss += this._queueSpawn(type, cap - nonBoss);
-      }
-      this.spawnAcc[type] = acc;
-    }
-    /* Baby swarms: their own trickle and their own limit, outside the normal one */
-    var fod = wave.fodder;
-    if (fod && fod.rates) {
-      for (type in fod.rates) {
-        if (!Object.prototype.hasOwnProperty.call(fod.rates, type)) continue;
-        acc = (this.spawnAcc["~" + type] || 0) + dt * (this.coopScale || 1);
-        while (acc >= fod.rates[type]) {
-          acc -= fod.rates[type];
-          if (fodderN < Math.round(fod.cap * (this.coopScale || 1))) { e = this.spawnEnemy(type, { fodder: true }); if (e) { e.fodder = true; fodderN += 1; } }
-        }
-        this.spawnAcc["~" + type] = acc;
-      }
-    }
-    var bosses = this._bosses();
-    /* a word of warning before each boss */
-    var PB = this.data.PACING, nextBoss = this.lastBoss < 0 ? (bosses.firstAt || 90) : this.lastBoss + (bosses.every || 90);
-    if (PB && PB.beatBoss && !this.bossWarned && nextBoss - this.time <= PB.beatBoss && nextBoss - this.time > 1) {
-      this.bossWarned = true;
-      this.emit({ type: "beat", k: "boss", in: Math.round(nextBoss - this.time) });
-    }
-    if (this.time >= (bosses.firstAt || 90)) {
-      if (this.lastBoss < 0 || this.time - this.lastBoss >= (bosses.every || 90)) {
-        this.bossCount = (this.bossCount || 0) + 1;
-        if (this.data && this.data.stageBoss) {
-          this.spawnEnemy(this.data.stageBoss(this._partnerStageIdx(), this.seed, this.bossCount, this.time), { boss: true });
-        } else {
-          this.spawnEnemy(bosses.type || "pagumon");
-        }
-        this.lastBoss = this.time;
-        this.bossWarned = false;
-      }
-    }
+    /* Nov 20: no more waves, Baby swarms or timed bosses. Every wild Digimon now lives in a nest
+     * (nest-sim.js) and comes onto the map from there; bosses lead the alpha nests. */
+    this._updateNests(dt, wave, host);
+    if (this._updateWanderers) this._updateWanderers(dt, wave, host);
     this._updateFieldMega(dt);
     this._updatePacks(dt, wave, host);
+    if (this._updateWar) this._updateWar(dt, wave, host);
     this._updateLords(dt, host);
     }
     this._updateMerchant();
@@ -2169,6 +2257,12 @@
     return false;
   }
   MissionSim.inPolys = inPolys;
+  /* the box round a set of outlines (also used by game.js for the guests' copy of the world) */
+  MissionSim.polyBox = MissionSim.prototype._polyBox = function (polys) {
+    var b = [1e9, 1e9, -1e9, -1e9], k, i, q;
+    for (k = 0; k < polys.length; k++) { q = polys[k].pts; for (i = 0; i < q.length; i += 2) { b[0] = Math.min(b[0], q[i]); b[1] = Math.min(b[1], q[i + 1]); b[2] = Math.max(b[2], q[i]); b[3] = Math.max(b[3], q[i + 1]); } }
+    return b;
+  };
   MissionSim.prototype._startUlt = function (p, U) {
     var t = this._nearestInReach(p.mx, p.my, U.r * 1.3), a = t ? Math.atan2(t.y - p.my, t.x - p.mx) : (p.facing < 0 ? Math.PI : 0);
     if (p.ultLock) return { ok: false, reason: "active" };
@@ -2222,6 +2316,12 @@
             if (q && q.max != null) { q.t = q.max = U.patch.life; }
           }
         }
+        /* the living map: trees inside go down; an ice mark freezes every bit of water it covers */
+        var wld = this.data.world, uB = this._polyBox(u.polys), upol = u.polys;
+        if (wld && wld.fellTest && wld.fellTest(function (px, py) { return inPolys(upol, px, py, 1); }, uB[0], uB[1], uB[2], uB[3], u.x, u.y, this.time))
+          this.emit({ type: "fx", k: "fellp", polys: upol, x: Math.round(u.x), y: Math.round(u.y), at: this.time });
+        if (U.mark && U.mark.k === "ice" && wld && wld.freezeTest && wld.freezeTest(function (px, py) { return inPolys(upol, px, py, 1.05); }, uB[0], uB[1], uB[2], uB[3], this.time + U.mark.time))
+          this.emit({ type: "fx", k: "icepoly", polys: upol, until: this.time + U.mark.time });
         if (U.zone) { this._zones = zs; zs.push({ polys: u.polys, status: U.zone[0], t: 0, max: U.zone[1], tick: 0.5, ownerId: u.ownerId }); if (zs.length > 6) zs.shift(); }
         if (p && U.heal && p.hp > 0) p.hp = Math.min(p.maxHp, p.hp + p.maxHp * U.heal);
         /* its own shot, fired outward in every direction (Fire Tornado) */
@@ -2304,7 +2404,7 @@
     if (!L || !w || !w.hazardNear) return;
     for (i = 0; i < this.players.length; i++) {
       p = this.players[i];
-      if (this._isEgg(p.form) || p.faint > 0 || p.downed || !(p.hp > 1)) continue;
+      if (p.atFarm || this._isEgg(p.form) || p.faint > 0 || p.downed || !(p.hp > 1)) continue;
       if (!w.hazardNear(p.mx, p.my, L.edge)) { p.burnT = 0; continue; }
       p.burnT = (p.burnT || 0) + dt;
       if (p.burnT < L.every) continue;
@@ -2351,6 +2451,7 @@
       e = this.spawnEnemy(type, { x: l.x, y: l.y, boss: true, keepType: true, quiet: true });
       if (!e) continue;
       e.lord = true; e.lairKey = l.key; e.lairBiome = l.biome;
+      if (this.data.LEVELS) e.lv += this.data.LEVELS.lordLv - this.data.LEVELS.bossLv;   /* a lord is the top of its country */
       e.radius *= L.size;
       e.maxHp = e.hp = e.maxHp * L.hpMul * (1 + L.hpPerYear * year);
       e.dmgMul = (e.dmgMul || 1) * (L.dmgMul + L.dmgPerYear * year);
@@ -2360,37 +2461,68 @@
     }
   };
 
-  /* Idle packs (data.js PACKS): spawned out of sight, standing about until
-   * someone comes close. */
+  /* Herds (nests and lords' packs) standing about until someone comes close: drop the ones that
+   * are gone, and let the rest live their day (_packRoutine). Packs no longer appear on a timer:
+   * every herd comes out of a nest (nest-sim.js). */
   MissionSim.prototype._updatePacks = function (dt, wave, host) {
-    var P = this.data && this.data.PACKS, i, e, alive = {}, n = 0, k;
-    if (!P || !host || this.time < P.firstAt) return;
+    var i, e, alive = {}, k;
+    if (!host) return;
     this.packs = this.packs || {};
-    for (i = 0; i < this.enemies.length; i++) { e = this.enemies[i]; if (e.pack && !e.dead && !alive[e.pack]) { alive[e.pack] = 1; if (!e.lord) n++; } }
+    for (i = 0; i < this.enemies.length; i++) { e = this.enemies[i]; if (e.pack && !e.dead) alive[e.pack] = 1; }
     for (k in this.packs) if (!alive[k]) delete this.packs[k];
-    if (this.packNext == null) this.packNext = this.time + 5;
-    if (this.time < this.packNext) return;
-    this.packNext = this.time + P.every[0] + this.rng() * (P.every[1] - P.every[0]);
-    if (n >= P.maxAlive) return;
-    var types = [], t, defs = this._enemies();
-    for (t in (wave.rates || {})) if (defs[t] && !defs[t].boss) types.push(t);
-    if (!types.length) return;
-    types.sort();
-    var type = types[(this.rng() * types.length) | 0];
-    type = this._nativeFor(type) || type;                    /* packs are mostly locals too */
-    var ang = this.rng() * Math.PI * 2, r = P.dist[0] + this.rng() * (P.dist[1] - P.dist[0]);
-    var c = this._snap(host.x + Math.cos(ang) * r, host.y + Math.sin(ang) * r, 14, 300);
-    var size = Math.round((P.size[0] + this.rng() * (P.size[1] - P.size[0])) * Math.min(1.6, this.coopScale || 1));
-    var id = "pk" + (this.packSeq = (this.packSeq || 0) + 1), a2, r2, s;
-    this.packs[id] = { awake: false, x: c.x, y: c.y };
-    for (i = 0; i < size; i++) {
-      a2 = this.rng() * Math.PI * 2; r2 = Math.sqrt(this.rng()) * P.scatter;
-      s = this._snap(c.x + Math.cos(a2) * r2, c.y + Math.sin(a2) * r2, 12, 160);
-      e = this.spawnEnemy(type, { x: s.x, y: s.y, keepType: true });
-      if (!e) continue;
-      e.pack = id; e.homeX = s.x; e.homeY = s.y; e.wx = s.x; e.wy = s.y; e.wT = this.rng() * 3;
+    for (k in this.packs) if (!this.packs[k].awake && !this.packs[k].lord) this._packRoutine(this.packs[k], dt);
+  };
+
+  /* ---------- Wild routines (Nov 20) ----------
+   * A pack nobody has disturbed lives its day: it grazes about as one herd,
+   * wanders down to the nearest open water to drink, and beds down when
+   * night falls (Zzz: it notices you from much closer, so you can sneak by).
+   * Virus packs are the exception: they stay up and prowl wider after dark. */
+  MissionSim.prototype._packRoutine = function (PK, dt) {
+    var L = (this.data.LIVING && this.data.LIVING.routine) || {}, SN = this.data.seasons, w = this.data.world;
+    var dark = SN && SN.darkOf ? SN.darkOf(this) : 0, spd, d, n, nx, ny, spot;
+    if (PK.cx == null) { PK.cx = PK.hx = PK.tx = PK.x; PK.cy = PK.hy = PK.ty = PK.y; PK.task = "graze"; PK.tT = 3; }
+    if (!PK.night && dark > 0.5) { if (PK.task !== "sleep") { PK.task = "sleep"; PK.tx = PK.cx; PK.ty = PK.cy; } return; }
+    if (PK.task === "sleep") { PK.task = "graze"; PK.tT = 2 + this.rng() * 4; }
+    PK.tT -= dt;
+    if (PK.tT <= 0) {
+      spot = this.rng() < (L.drinkChance || 0.45) ? this._drinkSpot(PK) : null;
+      if (spot) { PK.task = "drink"; PK.tx = spot.x; PK.ty = spot.y; PK.tT = (L.drinkSec || 22) + this.rng() * 10; }
+      else {
+        PK.task = "graze";
+        var roam = (L.roam || 220) * (PK.night && dark > 0.5 ? (L.prowl || 2) : 1), a = this.rng() * Math.PI * 2, r = roam * (0.3 + 0.7 * this.rng());
+        nx = PK.hx + Math.cos(a) * r; ny = PK.hy + Math.sin(a) * r;
+        if (!this._navReady() || this._lineClear(PK.cx, PK.cy, nx, ny, 14)) { PK.tx = nx; PK.ty = ny; }
+        PK.tT = (L.grazeSec || 18) + this.rng() * 14;
+      }
     }
-    this.emit({ type: "pack", x: c.x, y: c.y, enemyType: type, size: size });
+    /* the herd's middle walks on, slowly; its members follow it about */
+    d = Math.sqrt((PK.tx - PK.cx) * (PK.tx - PK.cx) + (PK.ty - PK.cy) * (PK.ty - PK.cy));
+    if (d > 4) {
+      spd = (L.herdSpeed || 9) * (PK.night && dark > 0.5 ? (L.prowlSpeed || 1.6) : 1) * dt;
+      n = Math.min(1, spd / d);
+      nx = PK.cx + (PK.tx - PK.cx) * n; ny = PK.cy + (PK.ty - PK.cy) * n;
+      if (w && w.isRaised && w.isRaised(nx, ny, 12)) { PK.tx = PK.cx; PK.ty = PK.cy; PK.tT = Math.min(PK.tT, 1); }
+      else { PK.cx = nx; PK.cy = ny; }
+    }
+  };
+  /* the nearest bank of open water within reach of the herd, if any */
+  MissionSim.prototype._drinkSpot = function (PK) {
+    var w = this.data.world, L = (this.data.LIVING && this.data.LIVING.routine) || {}, reach = L.drinkReach || 420, r, k, a, x, y, b, bx, by;
+    if (!w || !w.openWaterAt || !this._navReady()) return null;
+    var off = this.rng() * Math.PI * 2;
+    for (r = 90; r <= reach; r += 55) {
+      for (k = 0; k < 16; k++) {
+        a = off + (Math.PI * 2 * k) / 16; x = PK.cx + Math.cos(a) * r; y = PK.cy + Math.sin(a) * r;
+        if (!w.openWaterAt(x, y)) continue;
+        /* step back toward the herd until there is ground to stand on */
+        for (b = 30; b < r; b += 18) {
+          bx = x - Math.cos(a) * b; by = y - Math.sin(a) * b;
+          if (!w.isRaised(bx, by, 12)) return this._lineClear(PK.cx, PK.cy, bx, by, 14) ? { x: bx, y: by } : null;
+        }
+      }
+    }
+    return null;
   };
 
   MissionSim.prototype._pickMegaType = function (cfg) {
@@ -2438,6 +2570,8 @@
     for (i = 0; i < this.enemies.length; i++) if (this.enemies[i].mega && !this.enemies[i].dead) n += 1;
     if (n >= maxN) return;
     if (this.lastMegaAt != null && this.lastMegaAt >= 0 && this.time - this.lastMegaAt < cd) return;
+    var hp0 = this.player(this.localId) || this.players[0];
+    if (hp0 && this._startZone && this._startZone(hp0.x, hp0.y)) return;   /* the start stays low (modes-sim.js / nest-sim.js) */
     var type = this._pickMegaType(cfg);
     if (!type) return;
     this.spawnEnemy(type, { fieldMega: true });
@@ -2472,6 +2606,7 @@
     var frozen = this.enemyFreeze > 0;
     if (frozen) this.enemyFreeze -= dt;
     /* after dark they notice you from further off and bite more often (seasons.js DAY) */
+    if (this._updateNemeses) this._updateNemeses(dt);
     var SN = this.data.seasons, nightAggro = SN && SN.aggroScale ? SN.aggroScale(this) : 1, nightRate = SN && SN.atkRateScale ? SN.atkRateScale(this) : 1;
     for (i = this.enemies.length - 1; i >= 0; i--) {
       e = this.enemies[i];
@@ -2488,11 +2623,13 @@
       if (e.slowTime > 0) e.slowTime -= dt;
       else e.slow = 1;
       var wSpd = weatherApi() ? weatherApi().enemySpeedScale(this, this.data) : 1;
-      spd = (def.speed || 40) * (wave.spdMul || 1) * (e.slow || 1) * wSpd * (e.stSlow == null ? 1 : e.stSlow) * (e.rivalSpd || 1) * (e.vSpd || 1);
+      spd = (def.speed || 40) * (e.z0 >= 2 ? 1 : (wave.spdMul || 1)) * (e.slow || 1) * wSpd * (e.stSlow == null ? 1 : e.stSlow) * (e.rivalSpd || 1) * (e.vSpd || 1);
       closest = 1e15; ax = e.x; ay = e.y;
       var tamerSafe = !!this._tamer().invulnerable, tKey = null, fbD = 1e15, fbX = e.x, fbY = e.y, fbKey = null;
+      var eFac = this._factionOf ? this._factionOf(e) : null;
       for (p = 0; p < this.players.length; p++) {
         var pl = this.players[p];
+        if (pl.atFarm || (eFac && this._trusts(pl, eFac))) continue;  /* away at the farm, or trusted (faction-sim.js): not a target */
         if (tamerSafe) {
           /* nothing to fight: mill around the nearest tamer instead */
           if (pl.hasTamer && !pl.away) { tDist = dist2(e.x, e.y, pl.x, pl.y); if (tDist < fbD) { fbD = tDist; fbX = pl.x; fbY = pl.y; fbKey = "t:" + pl.id; } }
@@ -2518,26 +2655,36 @@
       /* A pack that has not noticed anyone mills about its spot. One of
        * them seeing a tamer or partner, or being hit, wakes them all. */
       var milling = false, PK = e.pack && this.packs && this.packs[e.pack], PC = this.data.PACKS;
-      if (e.pack && PK && !PK.awake && PC) {
+      if (e.pack && PK && !PK.awake && PC && !e.rally) {
         var near = Math.min(closest, fbD);
         if (e.lord && this.data.LORD) PC = { aggro: this.data.LORD.aggro, wander: this.data.LORD.wander, idleSpeed: PC.idleSpeed, forgetAt: this.data.LORD.forgetAt };
-        if (near < PC.aggro * PC.aggro * nightAggro * nightAggro || e.hp < e.maxHp) {
+        var LR = (this.data.LIVING && this.data.LIVING.routine) || {}, asleep = PK.task === "sleep", agR = PC.aggro * (asleep ? (LR.sleepAggro || 0.45) : nightAggro);
+        if (near < agR * agR || e.hp < e.maxHp) {
           PK.awake = true;
           this.emit({ type: "fx", k: "alert", x: e.x, y: e.y - (e.radius || 10) - 10 });
         } else if (near > PC.forgetAt * PC.forgetAt) {
+          if (this._allyHome) this._allyHome(e);   /* a veteran is remembered by its nest */
           e.dead = true;                      /* left far behind: quietly gone */
           continue;
         } else {
           milling = true;
+          e.zz = asleep ? 1 : 0;
           e.wT = (e.wT || 0) - dt;
           if (e.wT <= 0) {
             e.wT = 1.5 + this.rng() * 3;
             var wa = this.rng() * Math.PI * 2, wr = this.rng() * PC.wander;
-            e.wx = e.homeX + Math.cos(wa) * wr; e.wy = e.homeY + Math.sin(wa) * wr;
+            if (PK.cx != null && !PK.lord) {
+              /* keep its place in the herd, closer in round a watering hole */
+              var tight = PK.task === "drink" ? 0.45 : 0.8;
+              wr *= PK.task === "drink" ? 0.35 : 0.5;
+              e.wx = PK.cx + (e.ox || 0) * tight + Math.cos(wa) * wr; e.wy = PK.cy + (e.oy || 0) * tight + Math.sin(wa) * wr;
+            } else { e.wx = e.homeX + Math.cos(wa) * wr; e.wy = e.homeY + Math.sin(wa) * wr; }
           }
+          if (asleep) { e.wx = e.x; e.wy = e.y; }
         }
       }
       var idle = false;
+      if (!milling && e.zz) e.zz = 0;
       if (milling) {
         ax = e.wx; ay = e.wy; spd *= PC.idleSpeed;
         idle = dist2(e.x, e.y, ax, ay) < 36;
@@ -2548,9 +2695,21 @@
       }
       /* An infected Digimon picks its own fight (virus-sim.js): null means a tamer's side is in
        * sight and it comes for them like anything else. One it has hit turns on it for a while. */
+      /* the start is the Babies' (playtest, Nov 20): a Digimon from out in the world does not follow a
+       * tamer's side into the Baby zone (a whole pack chased a freshly hatched partner in, again and again);
+       * it stops at the edge, and one that wandered in walks back out */
+      var Zs = this.data.RESPAWN && this.data.RESPAWN.zone;
+      if (Zs && this._startZone && e.z0 != null && e.z0 < 2 && !e.rally && !e.rival && !e.nemesis && !e.virus) {
+        if (this._startZone(e.x, e.y) >= 2) { var dz0 = Math.sqrt(e.x * e.x + e.y * e.y) || 1, rz0 = Zs.baby + 120; ax = e.x / dz0 * rz0; ay = e.y / dz0 * rz0; tKey = null; milling = false; idle = false; }
+        else if (tKey != null && this._startZone(ax, ay) >= 2) { tKey = null; idle = true; }
+      }
       var bite = null;
-      if (e.virus && this._virusTarget) { bite = this._virusTarget(e, closest, dt); if (e.dead) continue; }
+      if (e.rally && this._rallyAct) bite = this._rallyAct(e, dt);    /* fighting at a tamer's side (faction-sim.js) */
+      else if (e.nemesis && this._nemesisAct) { e.vCd = Math.max(0, (e.vCd || 0) - dt); bite = this._nemesisAct(e, closest, dt); }   /* nemesis-sim.js */
+      else if (e.nemLead != null && this._nemFollow) { e.vCd = Math.max(0, (e.vCd || 0) - dt); bite = this._nemFollow(e, closest, dt); }
+      else if (e.virus && this._virusTarget) { bite = this._virusTarget(e, closest, dt); if (e.dead) continue; }
       else if (e.foeT > 0 && this._wildFoe) bite = this._wildFoe(e, dt);
+      else if (e.war && this._warAct) { bite = this._warAct(e, closest, dt); if (e.dead) continue; }
       if (bite) { milling = false; idle = !!bite.idle; ax = bite.x; ay = bite.y; tKey = null; }
       /* Enemies obey the terrain like the tamer does: they walk around
        * cliffs (flow field when the straight line is blocked). */
@@ -2558,11 +2717,11 @@
       /* A freshly hit enemy is shoved back and briefly stops advancing. */
       if (e.kbStun > 0) e.kbStun -= dt;
       else if (!idle) {
-        var mv = this._slide(e.x, e.y, n.x * spd * dt, n.y * spd * dt, this._navRad(e));
+        var mv = this._slide(e.x, e.y, n.x * spd * dt, n.y * spd * dt, this._navRad(e), this._crossOf(e.type));
         e.x = mv.x; e.y = mv.y;
       }
       if (e.kvx || e.kvy) {
-        var kpos = this._slide(e.x, e.y, e.kvx * dt, e.kvy * dt, Math.max(4, (e.radius || 10) * 0.6));
+        var kpos = this._slide(e.x, e.y, e.kvx * dt, e.kvy * dt, Math.max(4, (e.radius || 10) * 0.6), this._crossOf(e.type));
         e.x = kpos.x; e.y = kpos.y;
         var kd = Math.exp(-(((this.data && this.data.KNOCKBACK) || {}).decay || 11) * dt);
         e.kvx *= kd; e.kvy *= kd;
@@ -2583,8 +2742,8 @@
         if (cm && cm.hp > 0 && !this._isEgg(cm.form)) this._separateFrom(e, cm.x, cm.y, this._actorRad(cm.form));
       }
       var wAtk = weatherApi() ? weatherApi().enemyAtkScale(this, this.data) : 1;
-      dmg = (def.damage || 7) * (wave.dmgMul || 1) * (e.dmgMul || 1) * wAtk * (e.st && e.st.daze && this.data.STATUS ? this.data.STATUS.holy.dealt : 1);
-      if (bite) { if (!bite.wander) this._wildBite(e, bite, dmg, dt); }
+      dmg = (def.damage || 7) * (e.z0 >= 2 ? 1 : (wave.dmgMul || 1)) * (e.dmgMul || 1) * wAtk * (e.st && e.st.daze && this.data.STATUS ? this.data.STATUS.holy.dealt : 1);
+      if (bite) { if (!bite.wander) this._wildBite(e, bite, dmg * (e.war && this.data.WAR ? this.data.WAR.fightMul : 1), dt); }
       else this._contactHits(e, def, dmg, dt);
     }
     this._resolveBodies();
@@ -2617,18 +2776,23 @@
 
   /* ---------- Terrain steering and body collision (Nov 15) ---------- */
   MissionSim.prototype._navRad = function (e) { return Math.max(4, (e.radius || 10) * 0.6); };
+  /* can this kind go over water? (by kind; a Digimon that digivolves takes its new body's) */
+  MissionSim.prototype._crossOf = function (id) {
+    var BI = this.data && this.data.biomes;
+    return BI && BI.crossOf ? BI.crossOf(id) : 0;
+  };
 
   MissionSim.prototype._tileSize = function () {
     var w = this.data && this.data.world;
     return (w && w.TILE && w.TILE()) || 0;
   };
 
-  /* Is this tile solid? Cached per world seed (the map never changes). */
-  MissionSim.prototype._solid = function (tx, ty) {
-    var w = this.data.world, T = this._navT, nav = this._nav, key = tx + "," + ty, v;
+  /* Is this tile solid? Cached per world seed and ice state. */
+  MissionSim.prototype._solid = function (tx, ty, cross) {
+    var w = this.data.world, T = this._navT, nav = this._nav, key = tx + "," + ty + (cross ? "|" + cross : ""), v;
     v = nav.solid[key];
     if (v !== undefined) return v;
-    v = w.isRaised((tx + 0.5) * T, (ty + 0.5) * T, T * 0.34) ? 1 : 0;
+    v = w.isRaised((tx + 0.5) * T, (ty + 0.5) * T, T * 0.34, cross) ? 1 : 0;
     if (nav.count++ > 40000) { nav.solid = {}; nav.count = 0; }
     nav.solid[key] = v;
     return v;
@@ -2637,17 +2801,19 @@
   MissionSim.prototype._navReady = function () {
     var w = this.data && this.data.world, T = this._tileSize();
     if (!w || !w.isRaised || !T) return false;
-    var seed = w.getSeed ? w.getSeed() : 0;
-    if (!this._nav || this._nav.seed !== seed || this._navT !== T) {
-      this._nav = { seed: seed, solid: {}, count: 0, fields: {} };
+    var seed = w.getSeed ? w.getSeed() : 0, ice = w.iceVersion ? w.iceVersion() : 0;
+    /* the map only changes when water freezes or thaws (world.js ICE): then what is solid is worked out afresh */
+    if (!this._nav || this._nav.seed !== seed || this._navT !== T || this._nav.ice !== ice) {
+      this._nav = { seed: seed, ice: ice, solid: {}, count: 0, fields: {} };
       this._navT = T;
     }
     return true;
   };
 
   /* Breadth-first distance field around a target, R tiles each way. */
-  MissionSim.prototype._flowField = function (key, x, y) {
+  MissionSim.prototype._flowField = function (key, x, y, cross) {
     var T = this._navT, nav = this._nav, R = 20, W = R * 2 + 1;
+    if (cross) key += "|" + cross;
     var tx = Math.floor(x / T), ty = Math.floor(y / T);
     var f = nav.fields[key];
     if (f && f.tx === tx && f.ty === ty && this.time - f.at < 1.5) return f;
@@ -2659,10 +2825,10 @@
     /* start from the target's tile, or the nearest open one if it stands
      * tight against a cliff */
     var sx = R, sy = R;
-    if (this._solid(tx, ty)) {
+    if (this._solid(tx, ty, cross)) {
       var best = -1, bx, by;
       for (by = -1; by <= 1; by++) for (bx = -1; bx <= 1; bx++) {
-        if (!this._solid(tx + bx, ty + by) && best < 0) { best = 1; sx = R + bx; sy = R + by; }
+        if (!this._solid(tx + bx, ty + by, cross) && best < 0) { best = 1; sx = R + bx; sy = R + by; }
       }
     }
     d[sy * W + sx] = 0; q[tail++] = sy * W + sx;
@@ -2674,9 +2840,9 @@
         if (nx < 0 || ny < 0 || nx >= W || ny >= W) continue;
         i = ny * W + nx;
         if (d[i] !== -1) continue;
-        if (this._solid(tx - R + nx, ty - R + ny)) { d[i] = -2; continue; }
+        if (this._solid(tx - R + nx, ty - R + ny, cross)) { d[i] = -2; continue; }
         /* no cutting corners between two cliff tiles */
-        if (k >= 4 && (this._solid(tx - R + cx + DX[k], ty - R + cy) || this._solid(tx - R + cx, ty - R + cy + DY[k]))) continue;
+        if (k >= 4 && (this._solid(tx - R + cx + DX[k], ty - R + cy, cross) || this._solid(tx - R + cx, ty - R + cy + DY[k], cross))) continue;
         d[i] = nd; q[tail++] = i;
       }
     }
@@ -2684,29 +2850,29 @@
   };
 
   /* Clear straight line? Sampled every half tile. */
-  MissionSim.prototype._lineClear = function (x0, y0, x1, y1, rad) {
+  MissionSim.prototype._lineClear = function (x0, y0, x1, y1, rad, cross) {
     var w = this.data.world, T = this._navT;
     var dx = x1 - x0, dy = y1 - y0, len = Math.sqrt(dx * dx + dy * dy);
     var n = Math.min(60, Math.ceil(len / (T * 0.5))), i, t;
     for (i = 1; i < n; i++) {
       t = i / n;
-      if (w.isRaised(x0 + dx * t, y0 + dy * t, rad)) return false;
+      if (w.isRaised(x0 + dx * t, y0 + dy * t, rad, cross)) return false;
     }
     return true;
   };
 
   /* Unit direction an enemy should walk to reach (ax, ay). */
   MissionSim.prototype._steer = function (e, ax, ay, key, dt) {
-    var direct = norm(ax - e.x, ay - e.y);
+    var direct = norm(ax - e.x, ay - e.y), cross = this._crossOf(e.type);
     if (!key || !this._navReady()) return direct;
     e.navT = (e.navT || 0) - dt;
     if (e.navT <= 0 || e.navKey !== key) {
       e.navT = 0.22 + ((e._id || 0) % 7) * 0.02;
       e.navKey = key;
-      e.navDirect = this._lineClear(e.x, e.y, ax, ay, this._navRad(e));
+      e.navDirect = this._lineClear(e.x, e.y, ax, ay, this._navRad(e), cross);
     }
     if (e.navDirect) return direct;
-    var T = this._navT, f = this._flowField(key, ax, ay), W = f.W, R = f.R;
+    var T = this._navT, f = this._flowField(key, ax, ay, cross), W = f.W, R = f.R;
     var cx = Math.floor(e.x / T) - f.tx + R, cy = Math.floor(e.y / T) - f.ty + R;
     if (cx < 0 || cy < 0 || cx >= W || cy >= W) return direct;
     var here = f.d[cy * W + cx], k, nx, ny, v, best = here < 0 ? 32767 : here, bx = 0, by = 0, found = false;
@@ -2745,8 +2911,8 @@
         else { nx = dx / d; ny = dy / d; }
         push = (min - d) * 0.5;
         wa = (a.radius || 10) * (a.radius || 10); wb = (b.radius || 10) * (b.radius || 10);
-        pa = this._slide(a.x, a.y, -nx * push * 2 * wb / (wa + wb), -ny * push * 2 * wb / (wa + wb), this._navRad(a));
-        pb = this._slide(b.x, b.y, nx * push * 2 * wa / (wa + wb), ny * push * 2 * wa / (wa + wb), this._navRad(b));
+        pa = this._slide(a.x, a.y, -nx * push * 2 * wb / (wa + wb), -ny * push * 2 * wb / (wa + wb), this._navRad(a), this._crossOf(a.type));
+        pb = this._slide(b.x, b.y, nx * push * 2 * wa / (wa + wb), ny * push * 2 * wa / (wa + wb), this._navRad(b), this._crossOf(b.type));
         a.x = pa.x; a.y = pa.y; b.x = pb.x; b.y = pb.y;
       }
     }
@@ -2754,15 +2920,17 @@
 
   MissionSim.prototype._contactHits = function (e, def, dmg, dt) {
     var tR = this._tamer().radius || 10;
-    var p, pl, ci, cm, d;
+    var p, pl, ci, cm, d, fac = this._factionOf ? this._factionOf(e) : null;
     for (p = 0; p < this.players.length; p++) {
       pl = this.players[p];
+      if (pl.atFarm || (fac && this._trusts(pl, fac))) continue;      /* away at the farm, or a biome that trusts you: no bite */
+      var gdmg = dmg * this._dmgGap(e, pl);                            /* one above your level hits harder (data.js LEVELS) */
       if (pl.hasTamer && !this._tamer().invulnerable && e.hitCd <= 0 && dist2(e.x, e.y, pl.x, pl.y) < Math.pow(e.radius + tR, 2)) {
-        this.hurtTamer(pl, dmg);
+        this.hurtTamer(pl, gdmg);
         e.hitCd = def.contactCd || 0.7;
       }
       if (pl.faint <= 0 && !this._isEgg(pl.form) && e.hitCdM <= 0 && dist2(e.x, e.y, pl.mx, pl.my) < Math.pow(e.radius + this._actorRad(pl.form) + 5, 2)) {
-        this.hurtMon(pl, dmg, e);
+        this.hurtMon(pl, gdmg, e);
         e.hitCdM = def.contactCd || 0.7;
       }
     }
@@ -2797,6 +2965,7 @@
     this.emit({ type: "hurt", who: "tamer", id: p.id, amount: dmg, hp: p.tamerHp });
     if (p.tamerHp <= 0) {
       p.tamerHp = 0;
+      if (this._mode && !this._oneLife() && this._respawn(p)) return;   /* Open World: back near the start */
       var R = partyRules();
       var canSelf = R && !R.isPartyMode(this) && (this.partyReviveCharge || 0) > 0;
       if (canSelf) {
@@ -2871,6 +3040,10 @@
       p.faint = 999;
       p.monMoving = false;
       p.monTarget = null;
+      /* whoever landed that blow remembers it (nemesis-sim.js) */
+      if (from && from._id != null && this._nemesisKill) this._nemesisKill(from, p);
+      /* Open World (modes-sim.js): nobody is out; the partner starts over as an egg near the start */
+      if (this._mode && !this._oneLife() && this._respawn(p)) return;
       if (this.coop) {
         p.downed = true;
         this.emit({ type: "downed", id: p.id, coop: true });
@@ -2946,12 +3119,12 @@
         var xi, xp2;
         for (xi = 0; xi < this.players.length; xi++) {
           xp2 = this.players[xi];
-          xp2.xp = (xp2.xp || 0) + (o.value || 0) * this._lab(xp2).xp * (this.time < this._gear(xp2).earlyUntil ? this._gear(xp2).earlyXp : 1);
+          xp2.xp = (xp2.xp || 0) + (o.value || 0) * this._lab(xp2).xp * (this.time < this._gear(xp2).earlyUntil ? this._gear(xp2).earlyXp : 1) * this._catchUp(xp2);
           this._tryLevel(xp2);
           this._tamerXp(xp2, (o.value || 0) * this._lab(xp2).bxp);
         }
       } else {
-        p.xp = (p.xp || 0) + (o.value || 0) * this._lab(p).xp * (this.time < this._gear(p).earlyUntil ? this._gear(p).earlyXp : 1);
+        p.xp = (p.xp || 0) + (o.value || 0) * this._lab(p).xp * (this.time < this._gear(p).earlyUntil ? this._gear(p).earlyXp : 1) * this._catchUp(p);
         this._tamerXp(p, (o.value || 0) * this._lab(p).bxp);
         this._tryLevel(p);
       }
@@ -3122,15 +3295,19 @@
       inp = this._takeInput(p);
       if (p.hasTamer && (!p.downed || this._tamer().invulnerable)) this._moveTamer(p, inp, dt);
       else if (p.hasTamer) p.tamerInvuln = Math.max(0, (p.tamerInvuln || 0) - dt);
+      if (p.atFarm) continue;             /* at the farm (Nov 20): out of the world, the farm screen looks after them */
+      this._actor = p;                    /* whose partner is picking targets now (faction-sim.js: it passes over trusted biomes) */
       this._movePartner(p, dt);
       this._updateBurst(p, dt);
       if ((p.skillPoints || 0) > 0 && !(p.skillOffer && p.skillOffer.length)) this._rollOffer(p);
       if (!p.downed) this._updateWeapons(p, dt);
+      this._actor = null;
       this._updateCare(p, dt);
       this._tickRarity(p, dt);
       this._tickRevive(p, inp, dt);
     }
     for (i = 0; i < this.cpus.length; i++) this._moveCpu(this.cpus[i], dt);
+    if (this._updatePvp) this._updatePvp(dt);                         /* players at war (pvp-sim.js) */
     if (this.ally && this.ally.hp > 0) {
       /* Ally keeps pace with the local partner; full AI stays a later pass. */
       var host = this.player(this.localId) || this.players[0];
@@ -3138,7 +3315,7 @@
         var adx = (host.mx + 24) - this.ally.x, ady = (host.my + 8) - this.ally.y;
         var al = len(adx, ady);
         if (al > 6) {
-          var ap = this._slide(this.ally.x, this.ally.y, (adx / al) * 80 * dt, (ady / al) * 80 * dt, this._actorRad(this.ally.form));
+          var ap = this._slide(this.ally.x, this.ally.y, (adx / al) * 80 * dt, (ady / al) * 80 * dt, this._actorRad(this.ally.form), this._crossOf(this.ally.form));
           this.ally.x = ap.x; this.ally.y = ap.y;
         }
         /* a helper: one attack every few seconds, at a fraction of the damage */
@@ -3164,6 +3341,8 @@
     this._updateBullets(dt);
     this._updateEnemies(dt);
     this._updatePatches(dt);
+    this._updatePuddles(dt);
+    if (this._updateFactions) this._updateFactions(dt);
     this._updateStorm(dt);
     this._updateRival(dt);
     this._updateLava(dt);
@@ -3205,7 +3384,8 @@
         hp: p.hp, maxHp: p.maxHp, monInvuln: p.monInvuln, faint: p.faint,
         fullness: p.fullness, happiness: p.happiness,
         bits: p.bits, xp: p.xp, xpNext: p.xpNext, level: p.level, kills: p.kills,
-        aim: p.aim, ack: p.seqAck, desperation: p.desperation, atkBoost: p.atkBoost, focusId: p.focusId || null,
+        aim: p.aim, ack: p.seqAck, desperation: p.desperation, atkBoost: p.atkBoost, focusId: p.focusId || null, trust: p.trust || null, allied: p.allied || null, atFarm: !!p.atFarm, pvpFlag: !!p.pvpFlag, pvpOffAt: p.pvpOffAt || 0,
+        md: { pk: p.peakLevel || 0, rs: p.respawns || 0, bo: p.bounty || 0, st: p.pvpStreak || 0, mg: p.megaAt || 0, pw: p.pvpWins || 0, lo: p.lordsBeaten || 0 },
         weapons: p.weapons, bag: p.bag, items: p.items, shopBought: p.shopBought, garden: p.garden || [],
         captureKills: p.captureKills, killsBy: p.killsBy || null, trainStats: p.trainStats, trainVisits: p.trainVisits,
         bondTrain: p.bondTrain, careMistakes: p.careMistakes, foodEaten: p.foodEaten,
@@ -3236,7 +3416,7 @@
     for (i = 0; i < this.enemies.length; i++) {
       e = this.enemies[i];
       if (e.dead) continue;
-      outE.push({ _id: e._id, type: e.type, x: e.x, y: e.y, hp: e.hp, maxHp: e.maxHp, facing: e.facing, flash: e.flash, radius: e.radius, dead: false, boss: e.boss, mega: e.mega, lord: !!e.lord, rival: !!e.rival, virus: !!e.virus, dmgMul: e.dmgMul, st: stBits(e) });
+      outE.push({ _id: e._id, type: e.type, x: e.x, y: e.y, hp: e.hp, maxHp: e.maxHp, facing: e.facing, flash: e.flash, radius: e.radius, dead: false, boss: e.boss, mega: e.mega, lord: !!e.lord, rival: !!e.rival, virus: !!e.virus, dmgMul: e.dmgMul, st: stBits(e), zz: e.zz ? 1 : 0, war: e.war || null, fac: this._factionOf ? this._factionOf(e) : null, rally: e.rally || null, alv: e.alv || 0, lv: e.lv || 1, nem: e.nem || 0, nemTitle: e.nemTitle || null, nemScale: e.nemScale || 1 });
     }
     for (i = 0; i < this.orbs.length; i++) {
       o = this.orbs[i];
@@ -3284,6 +3464,11 @@
       startingPartySize: this.startingPartySize || 0,
       partyReviveCharge: this.partyReviveCharge,
       reviveHold: this.reviveHold || null,
+      soak: (this.data && this.data.world && this.data.world.soak) ? Math.round(this.data.world.soak() * 100) / 100 : 0,
+      terr: (this.data && this.data.world && this.data.world.territoryString) ? this.data.world.territoryString() : "",
+      fronts: this._frontList ? this._frontList() : null,
+      nests: this._nestList ? this._nestList() : null,
+      nems: this._nemList ? this._nemList() : null,
       weather: weatherApi() ? weatherApi().snapshot(this) : (this.weather || null)
     };
   };
@@ -3298,6 +3483,18 @@
   else if (root.DBH && root.DBH.installRival) root.DBH.installRival(MissionSim, { dist2: dist2, norm: norm });
   if (isNode) require("./virus-sim.js")(MissionSim, { dist2: dist2, norm: norm });
   else if (root.DBH && root.DBH.installVirus) root.DBH.installVirus(MissionSim, { dist2: dist2, norm: norm });
+  if (isNode) require("./pvp-sim.js")(MissionSim, { dist2: dist2, norm: norm });
+  else if (root.DBH && root.DBH.installPvp) root.DBH.installPvp(MissionSim, { dist2: dist2, norm: norm });
+  if (isNode) require("./faction-sim.js")(MissionSim, { dist2: dist2, norm: norm });
+  else if (root.DBH && root.DBH.installFactions) root.DBH.installFactions(MissionSim, { dist2: dist2, norm: norm });
+  if (isNode) require("./nest-sim.js")(MissionSim, { dist2: dist2, norm: norm });
+  else if (root.DBH && root.DBH.installNests) root.DBH.installNests(MissionSim, { dist2: dist2, norm: norm });
+  if (isNode) require("./war-sim.js")(MissionSim, { dist2: dist2, norm: norm });
+  else if (root.DBH && root.DBH.installWar) root.DBH.installWar(MissionSim, { dist2: dist2, norm: norm });
+  if (isNode) require("./nemesis-sim.js")(MissionSim, { dist2: dist2, norm: norm });
+  else if (root.DBH && root.DBH.installNemesis) root.DBH.installNemesis(MissionSim, { dist2: dist2, norm: norm });
+  if (isNode) require("./modes-sim.js")(MissionSim, { dist2: dist2, norm: norm });
+  else if (root.DBH && root.DBH.installModes) root.DBH.installModes(MissionSim, { dist2: dist2, norm: norm });
   var api = { MissionSim: MissionSim, isIllegal: MissionSim.isIllegal };
   D.net = D.net || {};
   D.net.mission = api;

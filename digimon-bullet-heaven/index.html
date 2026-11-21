@@ -59,10 +59,11 @@
             <canvas id="minimap" width="168" height="168" aria-label="Minimap"></canvas>
           </div>
           <div class="chip chip-season" id="hud-season" data-season="spring"><b id="hud-season-year">Year 1</b> · <span id="hud-season-name">Spring</span><i id="hud-season-bar"></i></div>
+          <div class="trust-box" id="hud-trust" hidden></div>
           <div class="chip chip-bits" id="hud-bits">0 Bits</div>
           <div class="chip" id="hud-timer">00:00</div>
-          <div class="chip" id="hud-farm" hidden>Farm in 03:00</div>
-          <div class="chip is-warn" id="hud-beat" hidden>Boss in 0:30</div>
+          <button type="button" class="chip chip-farm" id="hud-farm" hidden title="Go to the Digi Farm (G). Not with enemies close; the world goes on while you're there.">Farm [G]</button>
+          <button type="button" class="chip chip-pvp" id="hud-pvp" hidden title="PvP flag (V): when two tamers both have it up, their partners fight. Lowering it takes 10 seconds.">PvP off [V]</button>
           <div class="chip" id="hud-weather" hidden></div>
           <div class="chip" id="hud-level" hidden style="display:none">Lv 1</div>
           <div class="chip" id="hud-kills">0 KOs</div>
@@ -178,7 +179,7 @@
         <div class="how-to" id="help-box" hidden>
           <button type="button" class="px-close" id="btn-help-close">Close</button>
           <p><b>Move</b> with WASD or arrow keys, a left stick / D-pad, or the on-screen joystick.</p>
-          <p><b>Attacks fire on their own.</b> After you pick a tamer and a Digitama, the run starts with an egg. It hatches after 20 seconds, and the enemies arrive right before it does. Then your Digimon fights on its own. Click (or tap) an enemy to send your partner after it. Collect teal XP gems and food; food goes in your bag and you feed your partner at the Digi Farm.</p>
+          <p><b>Attacks fire on their own.</b> After you pick a tamer and a Digitama, the run starts with an egg. It hatches after 8 seconds, and the enemies arrive right before it does. Then your Digimon fights on its own. Click (or tap) an enemy to send your partner after it. Collect teal XP gems and food; food goes in your bag and you feed your partner at the Digi Farm.</p>
           <p><b>Care:</b> hunger mainly drains during battle, and only a faint trickle on the <b>Digifarm</b> (tunable, default 0.05×). It does not drain in a brawl, and an empty belly has no combat penalties. Feeding is farm-only. Leaving the farm hungry without having fed (a refused meal does not count against you) is a care mistake. Shop food, vitamins, medicine, toys, and evolution items go to your farm bag. In battle, defeated foes drop instant ground heals — walk over the green cross to recover.</p>
           <p><b>Evolution</b> needs a level plus feeding, happiness, and health thresholds (shown in the HUD). Neglect can branch into Numemon; good care can still recover.</p>
           <p><b>High happiness</b> speeds up attacks and can add extra projectiles. Below 25% HP you enter <b>Desperation</b> — stronger, but you take more damage and drain joy.</p>
@@ -220,29 +221,45 @@
     </div>
 
     <div id="lobby-screen" class="screen">
-      <div class="panel px-panel" id="lobby-panel">
-        <h2 class="px-head"><span id="lobby-title" data-px="ONLINE LOBBY"></span></h2>
-        <p class="sub" id="lobby-sub">Send the invite link to your friends. They open it in a browser — nothing to download.</p>
-        <div class="lobby-invite" id="lobby-invite">
-          <div class="lobby-code-box">
-            <span class="lobby-code-label">Room code</span>
-            <span class="lobby-code" id="lobby-code" data-px="----"></span>
-          </div>
-          <div class="lobby-link-box">
-            <span class="lobby-code-label">Invite link</span>
-            <input type="text" id="lobby-link" readonly value="" aria-label="Invite link">
-            <div class="lobby-link-actions">
-              <button type="button" class="btn px-btn px-online" id="btn-lobby-copy" data-px="COPY LINK">Copy link</button>
-              <button type="button" class="btn ghost px-btn" id="btn-lobby-share" data-px="SHARE" hidden>Share</button>
-            </div>
-            <p class="lobby-note" id="lobby-note"></p>
-          </div>
+      <!-- Nov 20: one screen for picking and inviting (js/online-ui.js) -->
+      <div class="lobby2" id="lobby-panel">
+        <div class="lobby2-top">
+          <button type="button" class="btn hub-mini lobby2-back" id="btn-lobby-leave" data-px="LEAVE">Leave</button>
+          <h2 class="lobby2-head"><span id="lobby-title" data-px="YOUR ROOM"></span></h2>
+          <div class="lobby2-code" title="Room code"><small>ROOM</small><span class="lobby-code" id="lobby-code" data-px="----"></span></div>
         </div>
-        <div class="lobby-players" id="lobby-players" aria-live="polite"></div>
-        <p class="lobby-status" id="lobby-status"></p>
-        <div class="row center">
-          <button type="button" class="btn px-btn px-primary" id="btn-lobby-start" data-px="START GAME">Start game</button>
-          <button type="button" class="btn ghost px-btn" id="btn-lobby-leave" data-px="LEAVE">Leave</button>
+        <div class="lobby2-main">
+          <section class="lobby2-me">
+            <canvas id="lobby-stage" width="360" height="250"></canvas>
+            <div class="lobby2-pick">
+              <button type="button" class="btn lobby2-arrow" id="lobby-tamer-prev" aria-label="Previous projection">&lsaquo;</button>
+              <div class="lobby2-pickname"><small>PROJECTION</small><b id="lobby-tamer-name">Cyan</b></div>
+              <button type="button" class="btn lobby2-arrow" id="lobby-tamer-next" aria-label="Next projection">&rsaquo;</button>
+            </div>
+            <div class="lobby2-pick">
+              <button type="button" class="btn lobby2-arrow" id="lobby-egg-prev" aria-label="Previous egg">&lsaquo;</button>
+              <div class="lobby2-pickname"><small>DIGI EGG</small><b id="lobby-egg-name">Agumon Line</b></div>
+              <button type="button" class="btn lobby2-arrow" id="lobby-egg-next" aria-label="Next egg">&rsaquo;</button>
+            </div>
+            <p class="lobby2-blurb" id="lobby-egg-blurb"></p>
+            <label class="lobby2-name"><small>NAME</small><input type="text" id="lobby-name" maxlength="14" autocomplete="off" spellcheck="false"></label>
+          </section>
+          <section class="lobby2-side">
+            <div class="lobby2-invite" id="lobby-invite">
+              <button type="button" class="btn lobby2-copy" id="btn-lobby-copy"><b>COPY INVITE LINK</b><span id="lobby-link-short"></span></button>
+              <button type="button" class="btn lobby2-share" id="btn-lobby-share" hidden>Share</button>
+              <input type="text" id="lobby-link" readonly value="" aria-label="Invite link" class="lobby2-linkfield">
+              <p class="lobby-note" id="lobby-note"></p>
+            </div>
+            <h3 class="lobby2-sub"><span id="lobby-sub">Tamers</span><small id="lobby-count"></small></h3>
+            <div class="lobby2-players" id="lobby-players" aria-live="polite"></div>
+          </section>
+        </div>
+        <div class="lobby2-foot">
+          <div class="lobby2-mode" id="lobby-mode"></div>
+          <p class="lobby-status" id="lobby-status"></p>
+          <button type="button" class="btn lobby2-ready" id="btn-lobby-ready">READY</button>
+          <button type="button" class="btn lobby2-start" id="btn-lobby-start">START</button>
         </div>
       </div>
     </div>
@@ -530,6 +547,12 @@
   <script src="js/net/transport.js"></script>
   <script src="js/net/rival-sim.js"></script>
   <script src="js/net/virus-sim.js"></script>
+  <script src="js/net/pvp-sim.js"></script>
+  <script src="js/net/faction-sim.js"></script>
+  <script src="js/net/nest-sim.js"></script>
+  <script src="js/net/war-sim.js"></script>
+  <script src="js/net/nemesis-sim.js"></script>
+  <script src="js/net/modes-sim.js"></script>
   <script src="js/net/mission-sim.js"></script>
   <script src="js/net/brawl-sim.js"></script>
   <script src="js/net/progression.js"></script>
@@ -539,9 +562,11 @@
   <script src="js/sprites.js"></script>
   <script src="js/attack-fx.js"></script>
   <script src="js/hit-fx.js"></script>
+  <script src="js/icon-art.js"></script>
   <script src="js/lab.js"></script>
   <script src="js/hatchery.js"></script>
   <script src="js/items.js"></script>
+  <script src="js/boards.js"></script>
   <script src="js/hub.js"></script>
   <script src="js/terrain-art.js"></script>
   <script src="js/biomes.js"></script>

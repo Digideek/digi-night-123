@@ -12,7 +12,7 @@ import math, os, sys
 from PIL import Image, ImageDraw
 
 W, H, CX, FEET = 40, 56, 20, 52
-WALK_N, IDLE_N = 6, 2
+WALK_N, IDLE_N = 8, 4   # Nov 20: eight-frame walk, four-frame breathing idle (holo3.py)
 INK = (26, 22, 38, 255)
 
 def rgb(h):
@@ -587,8 +587,11 @@ def holo_frame(ch, view, anim, i):
 def frame(ch, view, anim, i):
     if ch.get('kind') == 'holo':
         if '--holo1' in sys.argv: return holo_frame(ch, view, anim, i)      # the first, all-alike projections
-        import holo2                                                        # Nov 16: each projection has its own outline
-        return holo2.holo2_frame(ch, view, anim, i)
+        if '--holo2' in sys.argv:
+            import holo2                                                    # Nov 16: each projection has its own outline
+            return holo2.holo2_frame(ch, view, anim, i)
+        import holo3                                                        # Nov 20: the same outfits on a rigged eight-frame walk
+        return holo3.holo3_frame(ch, view, anim, i)
     if ch.get('kind') == 'ghost': return ghost_frame(ch, view, anim, i)
     P = pose(anim, i); p = Pen()
     s, c, walk = P['s'], P['c'], P['walk']

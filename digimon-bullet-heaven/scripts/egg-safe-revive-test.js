@@ -26,6 +26,7 @@ function dataFixture() {
     PLAYER: { iFrame: 0.05, pickupRadius: 18 },
     FARM_CFG: { stayCapSeconds: 45, intervalMinutes: [3, 6, 10], intervalPlus: 4, heal: { hp: 0.2, tamerHp: 0.2, dropChance: 0, worldEvery: 0 } },
     BRAWL: { everyLevels: 99, minLevel: 99, skipEgg: true, resultSeconds: 0.1, payoutSeconds: 0.1 },
+    NESTS: { tick: 1, activate: 980, cap: { herd: 6, nursery: 7, alpha: 5 }, capPerYear: 1, capMax: 11, breedSec: 40, startFull: 1, settlers: 2, scatter: 70 },
     waveAt: function () { return { cap: 14, spdMul: 1, dmgMul: 1, hpMul: 1, rates: { pagumon: 0.3 } }; }
   };
 }
@@ -96,10 +97,16 @@ function main() {
       const n = Math.ceil(seconds / sim.dt);
       for (let i = 0; i < n; i++) { p.hatchLeft = Math.max(0, p.hatchLeft - sim.dt); sim.step(); }
     }
-    incubate(p.hatchLeft - lead - 0.3);
-    assert(sim.enemies.length === 0, "enemies spawned during the egg lull: " + sim.enemies.length);
-    incubate(0.6);
-    assert(sim.enemies.length > 0, "no spawns once the egg is about to hatch");
+    /* a nest next door (nest-sim.js): its herd is what comes out once the lull is over */
+    const keepW = data.world, keepB = data.biomes;
+    data.world = { nestsNear: () => [{ key: "t", x: 300, y: 0, kind: "herd", biome: "plains" }] };
+    data.biomes = { homeOf: () => "plains" };
+    try {
+      incubate(p.hatchLeft - lead - 0.3);
+      assert(sim.enemies.length === 0, "enemies spawned during the egg lull: " + sim.enemies.length);
+      incubate(1.6);
+      assert(sim.enemies.length > 0, "no herd comes out once the egg is about to hatch");
+    } finally { data.world = keepW; data.biomes = keepB; }
     const hp0 = p.hp;
     sim.hurtMon(p, 80);
     assert(p.hp === hp0, "mixed-party egg took damage");

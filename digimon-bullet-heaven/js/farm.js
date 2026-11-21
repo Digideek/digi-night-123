@@ -13,6 +13,8 @@
   var grassSkin = null;
 
   function cfg() { return D.FARM_CFG || {}; }
+  /* Nov 20: you come and go as you like (no auto-return); the world keeps going while you're here */
+  function onDemand() { return !!cfg().onDemand; }
 
   function yardSize() {
     var c = cfg();
@@ -266,7 +268,15 @@
       particles: [],
       hungryExit: false
     };
-    if (hasAuth()) authAct({ type: "farm.enter", id: localId(), scheduled: scheduled });
+    if (hasAuth()) {
+      var res = authAct({ type: "farm.enter", id: localId(), scheduled: scheduled });
+      /* on-demand (Nov 20): the simulation can still say no (an enemy got close) */
+      if (onDemand() && res && !res.ok && !res.already) {
+        visit = null;
+        if (host && host.float) host.float(run.x, run.y - 30, res.reason || "Can't go now", "#ff9a7a");
+        return null;
+      }
+    }
     if (host && host.setState) host.setState("farm");
     render();
     sfx("ui");
@@ -800,7 +810,7 @@
       }
     }
 
-    if (visit.stayLeft <= 0) {
+    if (visit.stayLeft <= 0 && !onDemand()) {
       end("auto");
       return visit;
     }
@@ -1194,8 +1204,11 @@
     var run = host && host.getRun && host.getRun();
     var stay = el("farm-stay");
     if (stay) {
-      stay.textContent = "Auto-return " + formatTime(visit.stayLeft);
-      stay.classList.toggle("is-warn", visit.stayLeft <= 10);
+      if (onDemand()) { stay.textContent = "The world goes on without you"; stay.classList.remove("is-warn"); }
+      else {
+        stay.textContent = "Auto-return " + formatTime(visit.stayLeft);
+        stay.classList.toggle("is-warn", visit.stayLeft <= 10);
+      }
     }
     var mood = el("farm-mood");
     if (mood && run) {
@@ -2194,7 +2207,7 @@
 
     /* actors */
     if (run && D.sprites && D.sprites.drawTamer) {
-      add(visit.y, function () { D.sprites.drawTamer(ctx, sx(visit.x), sy(visit.y), visit.facing, t || 0, false, visit.moving, false, visit.tdir || "side", run.tamerId || "junior"); });
+      add(visit.y, function () { D.sprites.drawTamer(ctx, sx(visit.x), sy(visit.y), visit.facing, t || 0, false, visit.moving, false, visit.tdir || "side", run.tamerId || "junior", "farm"); });
     }
     if (visit.activity && visit.activity.id === "bond") {
       var buddy = visit.activity.buddy || "patamon";

@@ -825,3 +825,330 @@ doing its own thing and drawn its own way.
 - On a job level the skill window used to wait 0.9 s behind the fireworks. It now opens about a
   tenth of a second after the level (`LEVEL_FX.windowDelay`), and its pop-in is quicker.
 - Because it appears under the cursor, a click in its first 0.3 s does not pick a card.
+
+## 2026-11-17t — The living map
+
+Built on 17r (17s's oversized Dokugumon is not carried over; Dokugumon stays at its 17o size).
+
+- **Water is a wall unless it is frozen** (`world.js` ICE). Rivers now wind across the map, about
+  three tiles wide, with a ford every 30 tiles or so along each one (`isFord`), so no bank is a dead
+  end (`scripts/living-test.js` walks the map: 97–99% of open ground reachable). Lakes are a little
+  smaller (`LAKE_TRIM`). Lava is unchanged. Enemies path round water the same way they do cliffs.
+- **What freezes it**: Freezeland lakes are always ice. Winter freezes the seasonal country's rivers
+  and lakes, shallows first, over 50 s; spring thaws them over 70 s. An ice shot flying over open
+  water leaves a strip of ice behind it (30 s, `ICE.bridgeSec`), as does an ice patch on the ground
+  (`LIVING.patchIceSec`) and an ice ultimate's whole area (for as long as its mark lasts). Ice from a
+  move cracks and flickers for its last 5 s. Anyone still on it when it goes is put back on the bank.
+  The first time a river stops you, a note says how to cross.
+- **Wild routines** (`_packRoutine`, `LIVING.routine`): an undisturbed pack moves as one herd, grazes
+  about its spot and walks down to open water to drink. At night it sleeps (Zzz) and notices you
+  from less than half as far, so you can sneak past. Virus packs never sleep and prowl wider after dark.
+- **Footprints in snow**: every walker on snow (Freezeland, or anywhere in winter) leaves prints
+  sized to it, fading over 30 s. Flyers leave none.
+- **Big blasts fell trees** (`LIVING.fellR` = 64 px or wider, lightning, every ultimate): the tree
+  topples away from the blast with a thump of dust, lies 2.5 minutes, rots to a stump, grows back.
+- **Rain fills puddles** (`PUD`): low spots fill as the rain goes on, the deepest into ponds; they
+  dry out after (faster in summer) and freeze in winter. Standing in one soaks you (wet: slower,
+  and the element rules carry on); fire landing in one hisses out; lightning into one shocks
+  everything standing in the same puddle.
+- Online: the host decides; ice, felled trees and puddle depth reach guests as events/snapshot.
+- `scripts/regen-feed-test.js` now clears stray pickups while it measures healing (a dropped heal
+  could land on it depending on the random draw).
+
+## 2026-11-17u — Biome wars
+
+- **Bigger biomes**: about twice as wide (`world.js` BIOME_F 0.014 to 0.0075), with smooth ragged
+  borders; lairs are spaced further apart to match (LAIR_CELL 84). Lakes now get land bridges at the
+  same stride as river fords, so the bigger swamps don't wall anything off.
+- **Territory** (`world.js`): the map is cut into 8x8-tile cells. The land's shape (cliffs, water,
+  lairs) always comes from the biome it was born as; who *holds* a cell decides its look, props, tall
+  grass, what its water is (a conquered lake can become lava or ice), its regional Digimon and the lord
+  that spawns in its lair. A taken cell spreads a few wobbly tiles past its edges. Resets every run.
+- **The wars** (`js/net/war-sim.js`, data.js `WAR`): near the players, every border cell feels a push
+  from the neighbour pressing it hardest; pressure fills and the cell changes hands, a cell at a time.
+  Strength = season (Freezeland in winter, crags and desert in summer, forest and plains in spring,
+  swamp in fall; Dark Area after dark) x a slow wobble per front / (1 + its recent dead near there).
+  A death counts for the biome the Digimon lives in (`biomes.homeOf`), whoever killed it.
+- **Tipping a war**: hunt one side's Digimon at a front and the other side pushes in (a handful of
+  kills makes a cell fall in well under a minute). Kill a biome's lord and every front near it caves
+  in for a few minutes ("Its borders are caving in").
+- **Skirmishes**: every 30-45 s at a front you can see, a squad of each side's natives (at the stage
+  the field is at) forms up on its own side and they fight, with a pennant in their biome's colour.
+  They leave you alone unless you come within 150 px or hit them; then they turn on you. Winners hold
+  the ground a while, then drift off.
+- On screen: contested ground glows in the attacker's colour with sparks along the line, a toast when
+  a biome pushes in near you, "X vs Y" over a skirmish (and a marker on the minimap), which redraws
+  as the borders move.
+- Online: the host runs the wars; guests get the territory and the contested cells in each snapshot.
+- `scripts/war-test.js`.
+
+## 2026-11-17v — Flyers and swimmers cross water
+
+- `biomes.crossOf(id)`: 2 = flies (birds, angels, ghosts, pixies, winged dragons and bugs such as
+  Patamon, Tentomon/Kabuterimon, Stingmon, ExVeemon, Pegasusmon), 1 = swims (aquatic, amphibian,
+  crustacean, mollusk, sea animal/beast, plus Bukamon and Pichimon), 0 = walks.
+- Swimmers go over open water; fliers go over water and lava. Cliffs still stop everyone. Their
+  pathfinding uses its own map (`_solid` / `_flowField` take the level), so they come straight across.
+- **Your partner** follows the same rule, but over water it goes no further than `LIVING.leash`
+  (220 px) from you. **You (the tamer) still need a ford or ice.** Walkers are unchanged.
+- `scripts/cross-test.js`.
+
+## 2026-11-17w — Living populations (no more waves)
+
+First step of the open-world direction (next: faction trust, then the farm button).
+- **No waves**: the timed spawns, the opening flood, the Baby swarms, the timed bosses ("boss in
+  30 seconds") and the timed off-screen packs are gone. `_updateSpawns` now runs the nests, field
+  Megas, war skirmishes and lords; `_updatePacks` only looks after herds that already exist.
+- **Nests** (`world.js nestsNear`, `js/net/nest-sim.js`, data.js `NESTS`): fixed spots on the map
+  (one per 15x15 tiles about 57% of the time, and four always within 12-19 tiles of the start). Kinds:
+  herd (natives of the nest's biome at the season's stage), nursery (Babies and In-Training all run
+  long, for egg kill counts), alpha (a boss leads the herd). Drawn as a twig nest with an egg for
+  each one living there.
+- Within 980 px of a tamer a nest's herd comes out and lives its day (graze, drink, sleep). Leave it
+  2600 px behind and it goes home, not killed. Every death takes one from its nest; it breeds back one
+  every 40 s (out of sight too); while its herd is out, a new one visibly hatches from the nest.
+- Nests grow with the years (6 a herd, +1 a year, up to 11) and their kind follows the season's
+  stage. A nest in conquered land is resettled by the winner, two at first.
+- **Fix**: the host's snapshot (authority.js) and the online packing (online.js) never carried the
+  puddle depth, territory, fronts, sleeping Zzz or war pennants from 17t/17u. They do now (`soak`,
+  `terr`, `fronts`, `nests`; enemy bit 64 = asleep, slot 11 = war side).
+- Removed with the waves: the boss countdown chip, the "pack is gathering" notice, PACING.beatBoss,
+  the old PACKS spawn settings. `scripts/nest-test.js`; packs-lava and egg-safe-revive tests use nests.
+- Still left from the old loop: `game.js updateSpawns` (only runs if the simulation can't start).
+
+## 2026-11-17x — Faction trust
+
+Second step of the open-world direction (next: the "Go to farm" button and the world running while you're there).
+- **Trust per biome, per tamer, 0-100** (`js/net/faction-sim.js`, data.js `FACTIONS`). Earned in the run:
+  every Digimon you kill gives +6 to each biome bordering that spot (within 3 cells) and -12 to its own;
+  bosses x2.5, lords x9. A landed hit costs 0.5 (4 if that biome trusted you), at most twice a second.
+  Trust you stop earning fades after a minute, 0.25 a second.
+- **Trusted (40+)**: that biome's Digimon don't target or bite you or your partner, your partner doesn't
+  pick them, and your shots, blasts and ultimates pass over them. Click one to attack it on purpose
+  (that hits, and costs trust). Its herds don't wake for you.
+- **Allied (100, held until it falls below 85)**: up to 3 of its Digimon near you rally to you (a ring
+  in its colour), follow you and go for anything hostile within 320 px of you. Their kills count half
+  toward your standing. They drift off if you get more than 1100 px away or the alliance lapses.
+- Several biomes can trust you at once; turn on one and its trust drains until it's hostile again.
+  Rivals, infected Digimon, field Megas and spire bosses belong to nobody.
+- Screen: a trust strip under the season chip (bar, trust line, ♥ trusted, ★ allied), a heart over a
+  friendly biome's Digimon, toasts when a biome trusts you, allies with you, or turns on you.
+- Nest members fight for the biome that holds their nest (`e.fac`). Online: trust and allies ride in the
+  player snapshot; enemies carry their biome and who they've rallied to. `scripts/faction-test.js`.
+
+## 2026-11-17y — The farm when you choose
+
+Last step of the open-world direction.
+- **No timed farm visits** (`FARM_CFG.onDemand`): nothing comes due, no "Farm in" countdown or warnings,
+  no auto-return from the farm.
+- **The Farm chip / G**: stand still for 2 s (`chargeSec`) with no enemy within 380 px (`blockRadius`) of
+  you or your partner and you're at the farm. Moving, or an enemy coming close, calls it off; the chip
+  shows "Farm: enemies near" while you can't. Asleep, trusting or rallied Digimon don't count. The
+  simulation checks again (`_hostileNear`) and can refuse.
+- **The world keeps going**: the farm no longer changes the phase. Your pair is taken out of the world
+  (`p.atFarm`): no target, no bites, no lightning or lava, no moving or attacking, hunger and rarity run
+  at the farm's own rate. Wars, nests, the rival and everyone else carry on; toasts from the world still
+  come in. Solo, the game keeps stepping the simulation while the farm screen is up.
+- **Coming back**: Return puts you exactly where you stood, with a 2 s shield (`returnShield`).
+- **Online**: a friend can go on their own (`online.goFarm`: "farmGo" to the host, their visit runs on
+  their device, "farmDone" brings them back); they vanish from everyone's screen while they're away.
+  The old whole-party farm break is no longer triggered. `scripts/farm-go-test.js`.
+
+## 2026-11-17z — PvP and allies that grow
+
+- **PvP by faction** (`js/net/pvp-sim.js`, data.js `PVP`): two tamers are at war when each is trusted
+  by at least one biome and no biome trusts them both. Back nobody and you can't be fought; nobody at the
+  farm can be. Enemy partners within 240 px fight on sight: every move on its own cooldown at half its
+  damage (the rival's way), the shot drawn between them. A red ring and crossed swords mark an enemy
+  tamer's partner; a toast says when someone's backing puts you at war.
+- **Beaten = knocked back home**: at 8% health a partner is beaten, not killed: the pair goes to the
+  farm with 30% health, the winner takes 25% of the loser's Bits, and the loser comes back with a 6 s
+  shield. Guests go to their farm the same way.
+- **Allies that grow** (`ALLY_GROWTH`): a Digimon rallied to you levels from its own kills (1 each, 4 a
+  boss) and 35% of each of yours; each level +12% health (heals 30%) and +10% damage, up to Lv 12. At Lv 4
+  and Lv 8 it digivolves into its line's standard next form ("Your ally X digivolved into Y!"). Its level
+  shows in gold under it.
+- **It keeps its growth**: after it leaves your side it stays as it is; when its herd goes home its nest
+  remembers it (up to 4 veterans) and sends it back out as it was. `scripts/pvp-test.js`.
+
+## 2026-11-17z2 — The PvP flag
+
+- **A PvP flag** (chip under the Farm chip, or V): when two tamers both have theirs up, their partners
+  fight, whoever backs them (even the same biome). It goes up at once; lowering it takes 10 s
+  (`PVP.flagOff`), so it can't be dropped to slip out of a fight. Faction wars still apply with it down.
+- Golden crossed swords over any tamer with the flag up; the chip turns red while yours is up and counts
+  down while it's being lowered. Toasts when you raise or lower it, and when a flagged tamer meets yours.
+- `pvp.flag` intent (progression.js), forwarded for guests (online.js); `scripts/pvp-test.js` covers it.
+
+## 2026-11-17z3 — Ragnarok-style levels, and a map that never runs empty
+
+- **Enemy levels** (data.js `LEVELS`, mission-sim.js `_levelUp`): every wild Digimon gets a level inside
+  its stage's band (Baby 1-4 ... Champion 14-24, Ultimate 22-32, Mega 30-42), higher the further from the
+  start (up to 12000 px), a little at random; bosses and alpha leaders +3, lords +6, field Megas at the top.
+  Shown beside its health bar: grey well below you, white near, orange above, red far above.
+- **Properly tough**: x1.8 health (+5% a level within its band), x1.4 damage; XP x1.7.
+- **The level gap** (vs your partner's job level): above you it hits 5% harder a level (up to x2) and gives
+  6% more XP a level (up to +60%); more than 3 levels below you, 15% less XP a level down to 5%. Weak
+  ones die fast but won't level you.
+- **Mega never under an hour**: run-clock gates on top of the stage gates (evo-hardmode.js `minRunTime`):
+  Champion from 10 min, Ultimate from 30 min, Mega from 60 min of the run.
+- **Never empty**: a nest below 2 breeds back 3x as fast; and when fewer than 6 wild Digimon are within
+  1200 px of a tamer, a small wandering herd of the local biome drifts in from off-screen every 40-70 s.
+- Fix: the ally growth level from 17z shared a field with the enemy level, so every Rookie and up showed a
+  gold "Lv" tag; the ally level is its own field now (`alv`).
+- `scripts/levels-test.js`; faction-test now wins back the trust a click cost before its contact check.
+
+## 2026-11-17z4 — Run modes, respawning, and the League
+- **Run modes** on the setup screen (data.js `MODES`, js/net/modes-sim.js): **Open World** (respawn, the
+  default), **Survival** (one life), **Ranked** (one life, no CPU partners, no Hatchery partner or DigiBank
+  ally) and **Weekly Map** (one life on this week's map: the seed comes from the ISO week, so everyone
+  gets the same world Monday to Sunday).
+- **Respawning** (Open World, `RESPAWN`): when your partner or tamer falls, the partner becomes its line's
+  Digi Egg again and hatches 8 s later near the start, with 6 s of shield. Same map and tamer: base level,
+  stat points, Bits, bag and faction standing are kept; job level, skills and moves start over. The world
+  and your friends carry on.
+- **The start stays low** (nest-sim.js `_startZone`): within 2200 px of the start the nests hold Babies and
+  In-Training all run long, within 4500 px up to Rookie; no alpha leaders or field Megas there. Wanderers
+  follow the same rule.
+- **Catch-up XP**: x1.75 XP while the partner is more than 2 job levels below the best it reached this run.
+- **Bounties** (`BOUNTY`): beat 3 tamers in a row without losing and there are 300 Bits on your head
+  (+150 per further win), shown above your partner. Whoever beats you takes them on top of the usual share.
+- **Scores**: minutes x10 + best level x25 + KOs + lords x300 + bosses x60 + PvP wins x150 + up to 2000 for
+  a Mega (less the later past an hour). Shown on the run-over screen with Mode, Respawns and Mega time.
+- **The League** (boards-server.js, js/boards.js; needs an account on the online server): boards for
+  highest level, fastest Mega, longest survival, most lords, PvP wins, Ranked score and this week's Weekly
+  Map score. A LEAGUE button on the hub, and your bests and places on your profile. A run is sent when it
+  ends (1 minute or longer); the server checks it against what a run that long could reach.
+- **Faction seasons**: back one biome a week in the League. Every run you finish adds the land that biome
+  had conquered (+3 per PvP win). When the week turns, backers of the winner claim 600 DigiBits, the rest
+  120.
+- `scripts/modes-test.js`. Kept in `boards.json` next to the accounts (the Railway Volume).
+
+## 2026-11-17z5 — A quicker hatch
+- The starting egg hatches in **8 s** (was 20), the same as a respawned egg (data.js `HATCH.time`). The
+  wild Digimon still come out of their nests 1 s before it hatches. Setup screen and How to Play updated.
+
+## 2026-11-17z6 — New icons for the Items, the Lab and the Badges
+- `js/icon-art.js`: every icon is drawn on a 32 x 32 pixel grid and shaded the way pixel artists do it by
+  hand: five-tone ramps per material (cool shadows, warm lights), light from the top left with lit and
+  shadow rims, contact shadows where one part sits on another, and a tinted outline.
+- **Items** (all 26 plus scrolls), each with its own design: Crest Pieces are plug-in tags for the
+  Digivice with a metal bezel and an original emblem; Charms hang from a cord (flame, snowflake, drop,
+  crescent, winged halo, cog, leaf, slime, gale, fang, magnet bell, heart, winged tag, blood drop, pocket
+  watch, prism shard); one-run items (protein tub, four-leaf clover, meat on a hook, feather and heart).
+  Rare items glow blue, prismatic ones get a rainbow burst and sparkles; ones not found yet are a dark
+  silhouette with a padlock.
+- **The Lab**: 13 new icons (heart, sword, radar dish, book, barn, coin stack, coil, winged boot,
+  notebook, data tap, watering can, food bowl, Digivice); a maxed upgrade glows gold.
+- **Badges**: a medal for each, its tier in the metal (bronze, silver, gold with a sunburst edge,
+  prismatic in violet with sparkles) and an emblem for its group; not earned yet shows the same medal in
+  cold greys, secret ones a "?". Earned badges on the profile carry a small medal too.
+
+## 2026-11-17z7 — An emblem for every badge
+- All 133 badges have their own emblem on their medal (js/icon-art.js `EMBLEM`): a sprouting egg, rank
+  chevrons, crowns, stopwatches with a sun, leaf or bolt for the speed ones, an open hand, an hourglass,
+  dice, sparkles, level bars, crossed swords, flames, horned skulls, a split crown, an axe, a castle
+  tower, a slingshot, a baby bottle, the rival mask, a top hat, a white flag, trophies, the four
+  seasons, the moon, a gravestone, a dove, a coin pile, black spires, chests, data chips, a paw, a DNA
+  helix, shopping bags, meat, turnips, a punching bag, eggs and egg baskets, a magnifier, the whole
+  tree, photo frames, flasks, rank stars, linked rings, a medic's cross, a title belt, a rosette.
+- Badges on one ladder (100 / 1,000 / 10,000 KOs and so on) share the emblem and show their rung with
+  gold pips under it; the medal's metal shows the tier.
+
+## 2026-11-17z8 — The projections walk properly
+- New frames (scripts/art/holo3.py, written by make_tamers.py): the same eight outfits on a rigged walk.
+  Eight walk frames per view (was six) and a four-frame breathing idle (was two).
+  - Side: thigh and shin solved to the foot, the planted foot slides back under the body while the other
+    lifts and reaches; the far leg and arm drawn behind in a deeper tone; arms swing opposite the legs,
+    the elbow bending on the forward swing; the near arm has its own edge against the body.
+  - Front and back: the swinging leg lifts with a bent knee and reaches toward or away from you, arms
+    swing opposite with foreshortening, the hips settle over the standing leg at each contact.
+  - The body dips at each footfall and rises as the legs pass; the head, hair, capes and scarves follow
+    a beat later. The baked glitch tears are gone.
+- In the game (js/sprites.js drawTamer): the walk is driven by distance travelled (one cycle per 56 px),
+  so the feet keep pace with the ground and stop mid-step when you stop; a soft glow in the projection's
+  own colour, a scan band rising through it every few seconds, a lean into a sideways walk, a quick
+  squash when it turns, a rare flicker, and a sliced glitch when it is hit.
+- Footfalls (game.js tamerStep): a puff of dust on dirt, sand and ash, a ripple and splash in puddles,
+  a spray in snow.
+
+## 2026-11-17z9 — One lobby screen for picking and inviting
+- Hosting or joining now goes straight to one screen (index.html #lobby-screen, js/online-ui.js):
+  - **Your pick**: your projection walks in place on a glowing platform and turns (toward you, side,
+    away, other side); arrows flip through projections and eggs, it beams back in on each change, and the
+    egg sits on its own stand beside it with its line's blurb. Click the platform for the next colour.
+  - **Invite**: one big COPY INVITE LINK button (the link shown under it, "LINK COPIED" when done),
+    Share where the device has it, the room code up top; every empty slot is an invite button too.
+  - **Everyone's picks, live**: each slot shows the tamer's projection and egg as they flip through
+    them, with CHOOSING / READY / IN GAME / AWAY (online.js setPick, new "pick" message).
+  - **Ready check**: friends press READY to lock in (changing the pick un-readies them); the host's
+    START glows once everyone is ready, and still works earlier (latecomers drop in). The host picks the
+    mode in the footer; friends see it.
+
+## 2026-11-17z10 — Nemeses
+- `js/net/nemesis-sim.js`, data.js `NEMESIS`. The wild Digimon that lands the blow that beats a tamer's
+  partner becomes that tamer's **Rival**: +6 levels, x1.5 health (healed in full), x1.22 damage, it
+  digivolves on the spot, leaves its herd, and carries a title over its head ("Isaac's Nemesis", with a
+  skull per title and its level) in a glowing ring, bigger with every title, and a mark on everyone's
+  minimap wherever it is.
+- It keeps growing with no ceiling: every partner it beats (yours or a friend's) is worth 10 points,
+  every wild Digimon it kills 1 (4 for a boss, lord or another nemesis), and each kill makes it a little
+  stronger. Titles at 10 / 20 / 35 / 55 / 80 / 110 / 150 points, then one more every 50: Nemesis, Scourge,
+  Tyrant, Warlord, Calamity, Doom, Apocalypse, Apocalypse II... It digivolves again with each title.
+- When no tamer's side is within 650 px it hunts other biomes' Digimon (and they fight back), or roams.
+  From Tyrant it gathers a herd of its own biome's Digimon (2 more per title) that follow it and join
+  its fights, and their kills feed it. From Warlord, standing in another biome's land for 8 s takes that
+  land for its biome.
+- Beating it pays 60 Bits per title it held and scatters a ring of XP around it.
+- Toasts when it is made, rises a title (and digivolves), and when it is finally beaten.
+- `scripts/nemesis-test.js`.
+
+## 2026-11-17z11 — Nemesis titles renamed
+- The first title is now "Nemesis" ("Isaac's Nemesis"), so it no longer shares a name with the rival
+  tamers; the second is "Scourge". Then Tyrant, Warlord, Calamity, Doom, Apocalypse as before.
+
+## 2026-11-17z12 — Names under friends, and nemeses named after the right tamer
+- Each other tamer's profile name now sits under them on a small dark tag edged in their lobby colour,
+  drawn over grass and everything else so it never hides (game.js drawNameTags; it was a plain label
+  above their heads before, which tall grass and the PvP flag could cover).
+- A nemesis takes the name of whichever tamer it beats first ("Ren's Nemesis" when it beats Ren's
+  partner); checked with two browsers online. Names changed in the lobby follow into the running game.
+- The message when a friend's partner is beaten names them ("Ren's partner was beaten by a ...").
+
+## 2026-11-17z13 — Deep playtest and fixes
+Played in the browser with an autoplay bot (the real game at up to 40x speed, picking skill cards
+from the level-up window, spending stat points, bursting, answering digivolution prompts) for 40+
+game minutes at a time; every one of the 22 egg lines taken from its egg to its last digivolution
+with moves learned and a fight at every stage; Survival, Ranked, Weekly and Open World runs to the
+end; the farm, pause and online co-op. No script errors, no missing files.
+- Every line reaches Mega (Agumon: WarGreymon, Gabumon: MetalGarurumon, Chibomon: Imperialdramon,
+  Jyarimon: Gallantmon, Relemon: Sakuyamon, Cotsucomon: Jijimon...), learning 9-13 moves on the way.
+- Fix: a respawn could come back as another line's egg when two lines share a form (Yuramon came
+  back as a Pupumon egg); the partner now remembers the egg it hatched from (progression.js).
+- Fix: the respawn shield ran out while the egg was still hatching, so a nemesis waiting at the start
+  beat the new Baby the moment it hatched, again and again. The shield now starts at the hatch, the
+  respawn spot is the one furthest from any nemesis or much stronger Digimon, and nemeses keep out of
+  the Baby zone round the start (a sanctuary; they stop at its edge).
+- Fix: the start was a death spiral for a fresh Baby (36 respawns in 40 minutes in one run): herds of
+  In-Training at up to level 8, toughened x1.8 health and x1.4 damage. In the Baby zone the wild ones
+  are now level 3 at most and not toughened (data.js RESPAWN.startLv); the same run then had 2.
+
+## 2026-11-17z14 — A well-fed playtest, and a start that is safe for a Baby
+Autoplay again for 75 game minutes at a time, this time keeping the partner fed and happy (and a
+run where it collected food and fed it on farm trips with G). Fed, it takes the good route
+(Botamon → Koromon → Agumon) every time instead of the neglect one (Pagumon, Gazimon). Each death
+was logged with what stood next to it, which showed why a fresh Baby kept dying at the start:
+- Champion and Ultimate war squads were forming up in the Baby zone, and infected Digimon were
+  spawning on young partners there. Now: no war skirmishes in the Baby zone and only up to Rookie in
+  the Rookie zone; no virus spawns on a partner under job level 10 there.
+- The Baby zone still allowed In-Training herds of 5 or 6 at the respawn spot. Now there is a
+  "cradle" (1300 px round the start) with Babies only, at most level 2; herds in the Baby zone are
+  2-3 strong.
+- The run clock was still making start-zone Digimon tougher and harder-hitting 30+ minutes in. Wild
+  Digimon in the Baby zone now ignore the clock (their own base health, damage and speed).
+- Whole packs from out in the world chased a respawned partner into the start. A Digimon from
+  outside now stops at the edge of the Baby zone and walks back out if it wandered in.
+- The respawn spot is the one furthest from any wild Digimon; the shield after hatching is 10 s; a
+  partner beaten within 30 s of hatching makes no nemesis.
+Deaths in the same 75-minute run: 36 before, 10 after (all but two out in the world, where they
+belong). Tests updated for the start rules.

@@ -1,4 +1,4 @@
-/* node scripts/packs-lava-test.js : idle packs stay put until approached; lava burns partners only, never to death */
+/* node scripts/packs-lava-test.js : herds out of a nest stay put until approached; lava burns partners only, never to death */
 const path = require("path"), root = path.join(__dirname, "..");
 global.window = global;
 require(path.join(root, "js/data.js"));
@@ -18,12 +18,13 @@ if (!p) { sim.players.push({ id: "local" }); p = sim.players[0]; sim.localId = "
 Object.assign(p, { form: "agumon", hp: 200, maxHp: 200, x: 0, y: 0, mx: 0, my: 0, faint: 0, downed: false, hasTamer: true });
 sim.time = 200; sim.enemies.length = 0;
 const wave = sim._wave(sim.time);
-sim.packNext = 0;
-sim._updatePacks(0.04, wave, p);
+/* a herd comes out of its nest (nest-sim.js) and stands about near it */
+sim.nests = { "n1": { key: "n1", x: 700, y: 0, kind: "herd", biome: "plains", cap: 8, count: 8, t: sim.time, active: false, type: Object.keys(wave.rates)[0], breedT: 40 } };
+sim._nestRelease(sim.nests.n1);
 const pack = sim.enemies.filter(e => e.pack);
-ok(pack.length >= D.PACKS.size[0] && pack.length <= Math.ceil(D.PACKS.size[1] * 1.6), "a pack of " + pack.length + " " + (pack[0] && pack[0].type) + " appears");
+ok(pack.length === 8 && pack.every(e => e.nest === "n1"), "a herd of " + pack.length + " " + (pack[0] && pack[0].type) + " comes out of its nest");
 const far = Math.min.apply(null, pack.map(e => Math.hypot(e.x, e.y)));
-ok(far > D.PACKS.dist[0] - D.PACKS.scatter - 5, "out of sight (" + Math.round(far) + " px away)");
+ok(far > 700 - 18 - D.NESTS.scatter - 5, "round the nest, out of sight (" + Math.round(far) + " px away)");
 const others = sim.enemies.length;
 for (let i = 0; i < 250; i++) { sim.time += 0.04; sim._updateEnemies(0.04); }
 const drift = Math.max.apply(null, pack.map(e => Math.hypot(e.x - e.homeX, e.y - e.homeY)));

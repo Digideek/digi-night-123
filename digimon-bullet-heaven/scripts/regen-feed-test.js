@@ -17,7 +17,7 @@ const p = sim.players[0];
 Object.assign(p, { form: "agumon", level: 5, hp: 50, maxHp: 100, x: 0, y: 0, mx: 0, my: 0, faint: 0, downed: false, hasTamer: true, kind: "human", skills: { pepperBreath: 1 }, skillPoints: 0, xp: 0, xpNext: 1e9, sinceHit: 99, bag: { meat: 2 } });
 sim.enemies.length = 0; sim.enemyFreeze = 1e9;
 const stepName = ["step", "tick", "update"].find(n => typeof sim[n] === "function");
-function run(sec) { for (let i = 0; i < sec * 30; i++) { sim.enemies.length = 0; p.hp = Math.min(p.hp, p.maxHp); sim[stepName](1 / 30); } }
+function run(sec) { for (let i = 0; i < sec * 30; i++) { sim.enemies.length = 0; if (sim.orbs) sim.orbs.length = 0; p.hp = Math.min(p.hp, p.maxHp); sim[stepName](1 / 30); } }
 p.hp = 50; run(10);
 ok(Math.abs(p.hp - 50) < 0.01, "ten quiet seconds bring back no health (" + p.hp.toFixed(2) + " of " + p.maxHp + ")");
 p.skills.rg = 5; const hp0 = p.hp, mx = p.maxHp, t0 = sim.time; run(10); const el = sim.time - t0;

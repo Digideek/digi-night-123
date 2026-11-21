@@ -146,7 +146,7 @@
   function card(it, owned, on, n, kind, key) {
     var locked = !owned;
     return "<button type='button' class='item-card is-" + it.rarity + (on ? " is-on" : "") + (locked ? " is-locked" : "") + "' data-kind='" + kind + "' data-key='" + esc(key) + "'" + (locked ? " disabled" : "") + ">" +
-      "<i class='item-ico is-" + kind + "'></i><span><b>" + esc(locked ? "???" : it.name) + (n > 1 ? " <em>×" + n + "</em>" : "") + "</b><small>" + esc(locked ? it.rarity.charAt(0).toUpperCase() + it.rarity.slice(1) + ". Not found yet." : it.text) + "</small></span>" +
+      "<canvas class='item-ico' width='64' height='64' data-ico='" + kind + "' data-id='" + esc(it.id || "") + "' data-rarity='" + esc(it.rarity) + "'" + (locked ? " data-locked='1'" : "") + "></canvas><span><b>" + esc(locked ? "???" : it.name) + (n > 1 ? " <em>×" + n + "</em>" : "") + "</b><small>" + esc(locked ? it.rarity.charAt(0).toUpperCase() + it.rarity.slice(1) + ". Not found yet." : it.text) + "</small></span>" +
       "<u>" + (locked ? "" : on ? (kind === "cons" || kind === "scroll" ? "PACKED" : "ON") : (kind === "cons" || kind === "scroll" ? "Pack" : "Equip")) + "</u></button>";
   }
   function render(box) {
@@ -165,6 +165,12 @@
     }
     h += "</div></div>";
     box.innerHTML = h;
+    /* the hand-shaded icons (js/icon-art.js) */
+    Array.prototype.forEach.call(box.querySelectorAll("canvas.item-ico"), function (cv) {
+      if (!D.iconArt) return;
+      if (cv.getAttribute("data-ico") === "scroll") D.iconArt.scroll(cv);
+      else D.iconArt.item(cv, cv.getAttribute("data-id"), { rarity: cv.getAttribute("data-rarity"), locked: !!cv.getAttribute("data-locked") });
+    });
     $("items-x").addEventListener("click", function () { close(box); });
   }
   function close(box) { if (box.parentNode) box.parentNode.removeChild(box); if (box._key) document.removeEventListener("keydown", box._key, true); if (D.hub && D.hub.refresh) D.hub.refresh(); if (D.hub && D.hub.setupRefresh) D.hub.setupRefresh(); }

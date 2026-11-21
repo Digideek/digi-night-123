@@ -54,6 +54,7 @@
         '<button type="button" class="btn hub-mini is-lab" id="hub-lab" data-px="LAB"></button>' +
         '<button type="button" class="btn hub-mini is-items" id="hub-items" data-px="ITEMS"></button>' +
         '<button type="button" class="btn hub-mini is-badges" id="hub-badges" data-px="BADGES"></button>' +
+        '<button type="button" class="btn hub-mini is-league" id="hub-league" data-px="LEAGUE"></button>' +
         '<button type="button" class="btn hub-mini" id="hub-help" data-px="HOW TO PLAY"></button>';
     panel.appendChild(foot);
     /* top right: DigiBits and the music switch */
@@ -77,6 +78,7 @@
     $("hub-rival").addEventListener("click", function () { if (D.uiSfx) D.uiSfx("ui"); openTrophies(); });
     $("hub-lab").addEventListener("click", function () { if (D.uiSfx) D.uiSfx("ui"); if (D.menu) D.menu.go("lab"); });
     $("hub-help").addEventListener("click", function () { press("btn-help"); });
+    $("hub-league").addEventListener("click", function () { if (D.uiSfx) D.uiSfx("ui"); if (D.boards) D.boards.open(); });
     $("hub-music").addEventListener("click", function () { if (D.audio) D.audio.setMusic(!D.audio.musicOn()); paintMusic(); });
     stamp(hub); stamp($("hub-foot"));
     if (D.menu && D.menu.focus) setTimeout(function () { if (D.getState && D.getState() === "title") D.menu.focus(); }, 0);
@@ -239,12 +241,13 @@
           '<div class="setup-card" id="setup-party"><span class="setup-lab" data-px="WHO IS COMING"></span><canvas class="setup-art" id="setup-art-party" width="300" height="190"></canvas>' +
             '<span class="setup-name" id="setup-party-name" data-px="SOLO"></span><div class="setup-opt" id="setup-party-opt"></div><p class="setup-cap" id="setup-party-cap"></p></div>' +
         '</div>' +
+        '<div class="setup-modes" id="setup-modes"></div>' +
         '<div class="setup-strip"><canvas class="setup-scene" id="setup-scene" width="560" height="150"></canvas><p class="setup-sum" id="setup-sum"></p>' +
           '<button type="button" class="btn setup-go" id="btn-setup-start" data-px="START"></button></div>' +
       '</div>';
     host.parentNode.insertBefore(s, host);
     $("btn-setup-back").addEventListener("click", function () { var m = M(); if (m) m.go("title"); });
-    $("btn-setup-start").addEventListener("click", function () { var m = M(), e = curEgg(); if (!m || !e || e.locked) { if (D.uiSfx) D.uiSfx("ui"); return; } m.setEgg(e.id); m.start(); });
+    $("btn-setup-start").addEventListener("click", function () { var m = M(), e = curEgg(); if (!m || !e || e.locked || modeBlocks(m, e)) { if (D.uiSfx) D.uiSfx("ui"); return; } m.setEgg(e.id); m.start(); });
     $("setup-tamer-prev").addEventListener("click", function () { stepTamer(-1); });
     $("setup-tamer-next").addEventListener("click", function () { stepTamer(1); });
     $("setup-egg-prev").addEventListener("click", function () { stepEgg(-1); });
@@ -283,6 +286,22 @@
     for (i = 0; i < show; i++) h += "<i" + (Math.round(at * (show - 1) / Math.max(1, n - 1)) === i ? " class='on'" : "") + "></i>";
     if (el) el.innerHTML = h;
   }
+  /* Ranked and the Weekly Map are one life with nothing brought along: no Hatchery partner, no CPU partners */
+  function modeBlocks(m, e) { var md = m.mode ? m.mode() : "open"; return (md === "ranked" || md === "weekly") && e && e.hatchery; }
+  function paintModes(m) {
+    var box = $("setup-modes"), l = m.modes ? m.modes() : [], cur = m.mode ? m.mode() : "open", h = "", i, d = null, wk;
+    if (!box) return;
+    if (!l.length) { box.hidden = true; return; }
+    for (i = 0; i < l.length; i++) {
+      if (l[i].id === cur) d = l[i];
+      h += "<button type='button' class='btn setup-mode" + (l[i].id === cur ? " is-on" : "") + (l[i].ranked ? " is-ranked" : "") + "' data-mode='" + l[i].id + "'><b>" + esc(l[i].name) + "</b><span>" + esc(l[i].short) + "</span></button>";
+    }
+    wk = cur === "weekly" && D.weekOf ? " This week: " + D.weekOf().replace("-W", ", week ") + "." : "";
+    box.innerHTML = "<span class='setup-lab' data-px='MODE'></span><div class='setup-mode-row'>" + h + "</div><p class='setup-mode-cap'>" + esc(((d && d.blurb) || "") + wk) +
+      (d && d.ranked && !(D.boards && D.boards.signedIn()) ? " Log in on the online server for it to count on the boards." : "") + "</p>";
+    Array.prototype.forEach.call(box.querySelectorAll("[data-mode]"), function (b) { b.addEventListener("click", function () { m.setMode(b.getAttribute("data-mode")); if (D.uiSfx) D.uiSfx("ui"); paintSetup(); }); });
+    stamp(box);
+  }
   function paintSetup() {
     var m = M(), l = tamers(), ta = tamerAt(), e, who, opt, n, i, h, on, max, go;
     if (!m || !$("setup-screen")) return;
@@ -298,21 +317,25 @@
       dots($("setup-egg-dots"), m.eggs().length, eggAt());
       $("setup-egg").classList.toggle("is-locked", !!e.locked);
     }
+    paintModes(m);
     on = m.online(); n = m.cpu(); max = m.cpuMax();
+    var oneLife = m.mode && (m.mode() === "ranked" || m.mode() === "weekly");
+    if (oneLife) n = 0;
     px($("setup-party-name"), on ? "ONLINE" : (n ? "YOU + " + n + " CPU" : "SOLO"));
     opt = $("setup-party-opt"); h = "";
-    if (!on) {
+    if (!on && !oneLife) {
       for (i = 0; i <= max; i++) h += "<button type='button' class='btn setup-pick" + (i === n ? " is-on" : "") + "' data-cpu='" + i + "' aria-label='" + (i ? i + " CPU partners" : "Solo") + "'>" + (i ? "+" + i : "Solo") + "</button>";
       h += "<button type='button' class='btn setup-pick is-sea' data-online='1'>Online</button>";
     }
     opt.innerHTML = h;
     Array.prototype.forEach.call(opt.querySelectorAll("[data-cpu]"), function (b) { b.addEventListener("click", function () { m.setCpu(+b.getAttribute("data-cpu")); if (D.uiSfx) D.uiSfx("ui"); paintSetup(); }); });
     Array.prototype.forEach.call(opt.querySelectorAll("[data-online]"), function (b) { b.addEventListener("click", function () { m.go("title"); press("btn-online-host"); }); });
-    $("setup-party-cap").textContent = on ? "Friends pick theirs too. You all meet in the lobby next." : (n ? "CPU partners fight beside you and join the brawls." : "Just you, your partner, and a rival somewhere out there.");
+    $("setup-party-cap").textContent = on ? "Friends pick theirs too. You all meet in the lobby next." : oneLife ? "Ranked and the Weekly Map are you and your partner alone: no CPU partners." : (n ? "CPU partners fight beside you and join the brawls." : "Just you, your partner, and a rival somewhere out there.");
     who = m.name() || "You";
     $("setup-sum").innerHTML = e && e.locked ? "This egg is still locked. Raise one to Rookie in the Hatchery to open its line."
+      : modeBlocks(m, e) ? "A Hatchery partner can't enter a Ranked or Weekly run. Pick another egg, or another mode."
       : e && e.hatchery ? "<b>" + esc(who) + "</b> as " + esc((l[ta] && l[ta].name) || "tamer") + ", with your Hatchery <b>" + esc(e.name) + "</b>. No egg: it starts fighting at once. This is its one run."
-      : "<b>" + esc(who) + "</b> as " + esc((l[ta] && l[ta].name) || "tamer") + ", with " + (e && e.random ? "a <b>surprise</b> egg" : "the <b>" + esc((e && e.name) || "egg") + "</b>" + (/egg$/i.test((e && e.name) || "") ? "" : " egg")) + ". It hatches 20 seconds in.";
+      : "<b>" + esc(who) + "</b> as " + esc((l[ta] && l[ta].name) || "tamer") + ", with " + (e && e.random ? "a <b>surprise</b> egg" : "the <b>" + esc((e && e.name) || "egg") + "</b>" + (/egg$/i.test((e && e.name) || "") ? "" : " egg")) + ". It hatches " + ((D.HATCH && D.HATCH.time) || 8) + " seconds in.";
     var gr = m.gear ? m.gear() : [], gb = $("setup-gear");
     if (!gb) {
       gb = document.createElement("button"); gb.type = "button"; gb.id = "setup-gear"; gb.className = "btn setup-gear";
@@ -322,7 +345,7 @@
     }
     gb.innerHTML = "<b>ITEMS</b><span>" + (gr.length ? esc(gr.join("  \u00b7  ")) : "nothing equipped") + "</span>";
     go = $("btn-setup-start");
-    go.classList.toggle("is-off", !!(e && e.locked));
+    go.classList.toggle("is-off", !!(e && e.locked) || modeBlocks(m, e));
     px(go, on ? "TO THE LOBBY" : "START");
   }
   function openSetup() {

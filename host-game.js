@@ -43,6 +43,8 @@ var publicFrom = publicUrl ? "option" : "";
 /* Player accounts (accounts-server.js): a username and password, and the save kept here. On for a
  * web host; at home only with --accounts or ACCOUNTS=1, so start-online.bat plays as before. */
 var accounts = require("./accounts-server.js");
+var boards = require("./boards-server.js");   /* leaderboards, the weekly map, faction seasons */
+boards.use(accounts);
 var ACCOUNTS = process.env.ACCOUNTS === "0" ? false : (HOSTED || process.env.ACCOUNTS === "1" || flag("accounts"));
 var MAX_ROOMS = 40, MAX_MEMBERS = 6, MAX_MSG = 512 * 1024, GRACE_MS = 90 * 1000;
 
@@ -147,7 +149,7 @@ function lanAddresses() {
 function info() {
   var n = 0, k;
   for (k in rooms) n += 1;
-  return { game: "digimon-bullet-heaven", online: true, port: PORT, lan: lanAddresses(), publicUrl: publicUrl || "", publicFrom: publicFrom, rooms: n, accounts: !!ACCOUNTS, accountsKept: !!(ACCOUNTS && accounts.persistent) };
+  return { game: "digimon-bullet-heaven", online: true, port: PORT, lan: lanAddresses(), publicUrl: publicUrl || "", publicFrom: publicFrom, rooms: n, accounts: !!ACCOUNTS, boards: !!ACCOUNTS, accountsKept: !!(ACCOUNTS && accounts.persistent) };
 }
 
 var server = http.createServer(function (req, res) {
@@ -155,6 +157,7 @@ var server = http.createServer(function (req, res) {
   var rel;
   try { rel = decodeURIComponent(url).replace(/^\/+/, ""); } catch (e) { return send(res, 400, "Bad request"); }
   if (ACCOUNTS && rel.indexOf("api/account/") === 0 && accounts.handle(req, res, rel)) return;
+  if (ACCOUNTS && rel.indexOf("api/board/") === 0 && boards.handle(req, res, rel)) return;
   if (req.method !== "GET" && req.method !== "HEAD") return send(res, 405, "Method not allowed");
   if (rel === "api/info") {
     return send(res, 200, JSON.stringify(info()), { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });

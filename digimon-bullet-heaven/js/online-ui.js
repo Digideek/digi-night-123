@@ -48,7 +48,8 @@
       if (err) { titleNote(err, true); return; }
       titleNote("");
       sendProfile();
-      D.setState("tamer");
+      D.setState("lobby");                     /* Nov 20: pick and invite on one screen */
+      enterLobby();
     });
   }
 
@@ -63,6 +64,15 @@
     setTimeout(function () { try { ((c && !c.value) ? c : n).focus(); } catch (e) {} }, 50);
   }
 
+  /* arriving in the lobby: show everyone what you are looking at */
+  function enterLobby() {
+    var m = M(), l, i, ok = false;
+    if (!m) return;
+    l = eggs(); for (i = 0; i < l.length; i++) if (l[i].id === m.egg() && !l[i].locked) ok = true;
+    if (!ok) for (i = 0; i < l.length; i++) if (!l[i].locked) { m.setEgg(l[i].id); break; }
+    if (N.setPick && N.myState && N.myState() !== "ready" && N.myState() !== "playing") N.setPick(m.egg(), m.tamer());
+    renderLobby();
+  }
   function joinGo() {
     if (busy) return;
     var c = $("join-code"), n = $("join-name"), s = $("join-status");
@@ -77,7 +87,8 @@
       if (D.profile && D.profile.setName) D.profile.setName(name);
       sendProfile();
       sfx();
-      D.setState("tamer");
+      D.setState("lobby");
+      enterLobby();
     });
   }
 
@@ -114,13 +125,10 @@
   }
 
   function ensureLobbyExtras() {
-    var box = document.querySelector("#lobby-invite .lobby-code-box");
-    if (box && !$("lobby-name")) {
-      var lab = document.createElement("label");
-      lab.className = "join-field lobby-name-field";
-      lab.innerHTML = '<span>Your name</span><input type="text" id="lobby-name" maxlength="14" autocomplete="off" spellcheck="false">';
-      box.appendChild(lab);
-      $("lobby-name").addEventListener("change", function () {
+    var nm = $("lobby-name");
+    if (nm && !nm._wired) {
+      nm._wired = true;
+      nm.addEventListener("change", function () {
         var v = this.value.trim();
         if (!v) return;
         store("dbh_net_name", v);
@@ -144,38 +152,114 @@
     }
   }
 
-  function paintCard(cv, pl) {
-    var c = cv.getContext("2d"), list = D.EGGS || [], i, frame = null;
+  /* ---------- your pick: the projection on its platform, and the egg beside it ---------- */
+  function M() { return D.menu || null; }
+  function tamers() { return (D.sprites && D.sprites.getTamerList) ? D.sprites.getTamerList() : []; }
+  function eggs() { var m = M(); return m && m.eggs ? m.eggs().filter(function (e) { return !e.hatchery; }) : []; }
+  function eggOf(id) { var l = eggs(), i; for (i = 0; i < l.length; i++) if (l[i].id === id) return l[i]; return null; }
+  function tamerName(id) { var l = tamers(), i; for (i = 0; i < l.length; i++) if (l[i].id === id) return l[i].name; return "Projection"; }
+  function tamerGlow(id) { var l = tamers(), i; for (i = 0; i < l.length; i++) if (l[i].id === id) return l[i].glow || "#7cf0ff"; return "#7cf0ff"; }
+  function eggName(id) { var e = eggOf(id); return e ? e.name : "Egg"; }
+  var swapAt = -9;                                  /* when the pick last changed: the projection materialises again */
+  function stepTamer(d) {
+    var m = M(), l = tamers(), i, at = 0;
+    if (!m || !l.length) return;
+    for (i = 0; i < l.length; i++) if (l[i].id === m.tamer()) at = i;
+    m.setTamer(l[(at + d + l.length) % l.length].id);
+    picked();
+  }
+  function stepEgg(d) {
+    var m = M(), l = eggs(), i, at = 0, k, e;
+    if (!m || !l.length) return;
+    for (i = 0; i < l.length; i++) if (l[i].id === m.egg()) at = i;
+    for (k = 1; k <= l.length; k++) { e = l[(at + d * k + l.length * k) % l.length]; if (!e.locked) break; }
+    if (e && !e.locked) m.setEgg(e.id);
+    picked();
+  }
+  /* a change of pick: shown to everyone at once, and it un-readies you */
+  function picked() {
+    var m = M();
+    sfx();
+    swapAt = performance.now() / 1000;
+    if (m && N.setPick && N.role()) N.setPick(m.egg(), m.tamer());
+    renderLobby();
+  }
+  function stageFrame(now) {
+    var cv = $("lobby-stage"), m = M();
+    if (!cv || !m || D.getState() !== "lobby") { stageRaf = 0; return; }
+    stageRaf = requestAnimationFrame(stageFrame);
+    var c = cv.getContext("2d"), W = cv.width, H = cv.height, t = now / 1000, id = m.tamer(), col = tamerGlow(id), e = eggOf(m.egg());
+    c.imageSmoothingEnabled = false;
+    c.clearRect(0, 0, W, H);
+    /* the floor grid and the platform it is projected from */
+    var px = 140, py = 200, i, g;
+    c.save(); c.globalAlpha = 0.18; c.strokeStyle = col; c.lineWidth = 1;
+    for (i = -6; i <= 6; i++) { c.beginPath(); c.moveTo(px + i * 30, py + 40); c.lineTo(px + i * 12, py - 30); c.stroke(); }
+    for (i = 0; i < 4; i++) { c.beginPath(); c.moveTo(0, py - 24 + i * 18); c.lineTo(W, py - 24 + i * 18); c.stroke(); }
+    c.restore();
+    g = c.createRadialGradient(px, py, 4, px, py, 80); g.addColorStop(0, col); g.addColorStop(1, "rgba(0,0,0,0)");
+    c.save(); c.globalAlpha = 0.35; c.fillStyle = g; c.beginPath(); c.ellipse(px, py, 80, 24, 0, 0, 7); c.fill(); c.restore();
+    c.fillStyle = "#1a2440"; c.beginPath(); c.ellipse(px, py + 4, 64, 17, 0, 0, 7); c.fill();
+    c.fillStyle = "#2c3f5c"; c.beginPath(); c.ellipse(px, py, 64, 17, 0, 0, 7); c.fill();
+    c.strokeStyle = col; c.lineWidth = 2; c.globalAlpha = 0.6 + Math.sin(t * 3) * 0.2; c.beginPath(); c.ellipse(px, py, 52, 13, 0, 0, 7); c.stroke(); c.globalAlpha = 1;
+    /* it walks in place and turns: toward you, to the side, away, the other side */
+    var cyc = t % 9, dir = "down", face = 1;
+    if (cyc > 3 && cyc <= 5) { dir = "side"; face = 1; } else if (cyc > 5 && cyc <= 6.5) { dir = "up"; } else if (cyc > 6.5) { dir = "side"; face = -1; }
+    var appear = Math.min(1, (t - swapAt) / 0.45), sc = 2.6;
+    c.save();
+    c.translate(px, py + 2); c.scale(sc, sc);
+    if (appear < 1) { c.beginPath(); c.rect(-30, -70 + 70 * (1 - appear), 60, 80); c.clip(); }
+    try { D.sprites.drawTamer(c, 0, 0, face, t, false, true, false, dir, id); } catch (er) {}
+    c.restore();
+    if (appear < 1) {                                   /* the beam that draws it in */
+      c.save(); c.globalCompositeOperation = "lighter"; c.globalAlpha = 0.6 * (1 - appear); c.fillStyle = col;
+      c.fillRect(px - 34, 20, 68, py - 20); c.restore();
+    }
+    /* the egg on its own little stand */
+    var ex = 288, ey = 196;
+    c.fillStyle = "#1a2440"; c.beginPath(); c.ellipse(ex, ey + 3, 30, 8, 0, 0, 7); c.fill();
+    c.fillStyle = "#2c3f5c"; c.beginPath(); c.ellipse(ex, ey, 30, 8, 0, 0, 7); c.fill();
+    if (e && D.sprites.drawEgg) { c.save(); c.translate(ex, ey); c.scale(1.7, 1.7); try { D.sprites.drawEgg(c, e.frame, 0, 0, t, false, false); } catch (er2) {} c.restore(); }
+    /* friends' slots breathe too */
+    var cvs = document.querySelectorAll("#lobby-players canvas[data-i]"), list = N.players(), k, pl;
+    for (k = 0; k < cvs.length; k++) { pl = list[+cvs[k].getAttribute("data-i")]; if (pl) paintCard(cvs[k], pl, t); }
+  }
+  var stageRaf = 0;
+  function startStage() { if (!stageRaf && $("lobby-stage")) stageRaf = requestAnimationFrame(stageFrame); }
+
+  function paintCard(cv, pl, t) {
+    var c = cv.getContext("2d"), list = D.EGGS || [], i, frame = null, e = pl.peek ? eggOf(pl.peek) : null;
     c.imageSmoothingEnabled = false;
     c.clearRect(0, 0, cv.width, cv.height);
     if (!D.sprites) return;
     try {
-      if (pl.tamerId && D.sprites.drawTamer) D.sprites.drawTamer(c, 24, 58, 1, 0, false, false, false, "down", pl.tamerId);
-      for (i = 0; i < list.length; i++) if (list[i].id === pl.line) frame = list[i].frame;
-      if (frame && D.sprites.drawEgg) D.sprites.drawEgg(c, frame, 58, 58, 0, false, false);
-    } catch (e) {}
+      if (pl.tamerId && D.sprites.drawTamer) D.sprites.drawTamer(c, 22, 50, 1, t || 0, false, false, false, "down", pl.tamerId);
+      if (e) frame = e.frame;
+      else for (i = 0; i < list.length; i++) if (list[i].id === pl.line) frame = list[i].frame;
+      if (frame && D.sprites.drawEgg) D.sprites.drawEgg(c, frame, 42, 50, (t || 0) + 1, false, false);
+    } catch (er) {}
   }
 
   function renderLobby() {
     var role = N.role();
     if (!role) return;
     ensureLobbyExtras();
-    var list = N.players(), meId = N.netId(), i, pl, html = "", tag, cls;
-    var running = N.running(), isHost = role === "host";
-    var title = $("lobby-title"), sub = $("lobby-sub"), codeEl = $("lobby-code"), link = $("lobby-link"), note = $("lobby-note");
+    var m = M(), list = N.players(), meId = N.netId(), i, pl, html = "", tag, cls;
+    var running = N.running(), isHost = role === "host", me = null;
+    for (i = 0; i < list.length; i++) if (list[i].id === meId) me = list[i];
+    var ready = !!(me && (me.state === "ready" || me.state === "playing"));
+    var title = $("lobby-title"), codeEl = $("lobby-code"), link = $("lobby-link"), note = $("lobby-note");
     if (title) { title.setAttribute("data-px", isHost ? "YOUR ROOM" : "ONLINE LOBBY"); title.removeAttribute("aria-label"); }
-    if (sub) sub.textContent = isHost
-      ? "Send the invite link to your friends. They open it in a browser — nothing to download."
-      : "You're in. The game begins when the host starts it.";
     if (codeEl) { codeEl.setAttribute("data-px", N.code() || "----"); codeEl.removeAttribute("aria-label"); }
     var base = inviteBase();
     if (link) link.value = base.url + "/?room=" + N.code();
+    if ($("lobby-link-short")) $("lobby-link-short").textContent = link ? link.value.replace(/^https?:\/\//, "") : "";
     var pw = $("lobby-public-wrap"), pin = $("lobby-public");
     if (note) {
-      if (!isHost) note.textContent = "Anyone with this link can join until the game is full (6 players).";
-      else if (base.pub) note.innerHTML = "<b>Works anywhere.</b> Friends can join from any network while this computer and the server window stay on.";
+      if (!isHost) note.textContent = "Share the link: anyone with it can join until the room is full (6 tamers).";
+      else if (base.pub) note.innerHTML = "<b>Works anywhere.</b> Friends open it in a browser, nothing to download.";
       else if (base.loopback) note.innerHTML = "<b>This computer only.</b> The server did not report a network address.";
-      else note.innerHTML = "<b>Home network only.</b> This link works for people on your Wi-Fi. For friends somewhere else you need a tunnel or port forwarding (HOSTING.md explains both); the address fills in here on its own, or paste it below.";
+      else note.innerHTML = "<b>Home network only.</b> For friends somewhere else you need a tunnel or port forwarding (HOSTING.md); the address fills in on its own, or paste it below.";
     }
     if (pw) pw.hidden = !isHost || (base.pub && base.from !== "you");
     if (pin && document.activeElement !== pin) pin.value = store("dbh_public_url");
@@ -183,26 +267,35 @@
     if (nm && document.activeElement !== nm) nm.value = N.name();
     var share = $("btn-lobby-share");
     if (share) share.hidden = !navigator.share;
-
+    /* your pick */
+    if (m) {
+      if ($("lobby-tamer-name")) $("lobby-tamer-name").textContent = tamerName(m.tamer());
+      if ($("lobby-egg-name")) $("lobby-egg-name").textContent = eggName(m.egg());
+      if ($("lobby-egg-blurb")) { var eb = eggOf(m.egg()); $("lobby-egg-blurb").textContent = (eb && eb.blurb) || ""; }
+    }
+    /* everyone in the room */
+    var here = 0, readyN = 0, others = 0, othersReady = 0;
     for (i = 0; i < 6; i++) {
       pl = list[i];
-      if (!pl) { html += '<button type="button" class="lobby-player is-empty" data-invite="1">+ Invite</button>'; continue; }
-      if (!pl.here) { tag = "Away"; cls = ""; }
-      else if (pl.state === "playing") { tag = pl.host ? "Host · in game" : "In game"; cls = pl.host ? " is-host" : ""; }
-      else if (pl.state === "ready") { tag = pl.host ? "Host · ready" : "Ready"; cls = pl.host ? " is-host" : ""; }
-      else { tag = pl.host ? "Host · choosing" : "Choosing…"; cls = pl.host ? " is-host" : ""; }
-      var nAch = pl.prof && pl.prof.a ? pl.prof.a.length : 0;
-      html += '<div class="lobby-player' + (pl.id === meId ? " is-me" : "") + '" data-pid="' + i + '" title="See profile" style="border-left-color:' + esc(pl.color) + '">' +
-        '<canvas width="76" height="64" data-i="' + i + '"></canvas>' +
-        '<div class="who"><div class="nm">' + esc(pl.name) + (pl.id === meId ? " (you)" : "") + '</div><div class="tg' + cls + '">' + tag + '</div>' +
-        '<div class="st">\u2605 ' + nAch + '</div></div></div>';
+      if (!pl) { html += '<button type="button" class="lobby2-slot is-empty" data-invite="1">+ Invite a friend</button>'; continue; }
+      here++;
+      var isReady = pl.state === "ready" || pl.state === "playing";
+      if (isReady) readyN++;
+      if (pl.id !== meId && pl.here) { others++; if (isReady) othersReady++; }
+      if (!pl.here) { tag = "AWAY"; cls = " is-away"; }
+      else if (pl.state === "playing") { tag = "IN GAME"; cls = " is-playing"; }
+      else if (isReady) { tag = "✓ READY"; cls = " is-ready"; }
+      else { tag = "CHOOSING…"; cls = ""; }
+      html += '<div class="lobby2-slot' + (pl.id === meId ? " is-me" : "") + '" data-pid="' + i + '" title="See profile" style="border-left-color:' + esc(pl.color) + '">' +
+        '<canvas width="64" height="56" data-i="' + i + '"></canvas>' +
+        '<div><div class="nm">' + (pl.host ? "★ " : "") + esc(pl.name) + (pl.id === meId ? " (you)" : "") + '</div>' +
+        '<span class="pk">' + esc(pl.tamerId ? tamerName(pl.tamerId) : "") + (pl.peek || pl.line ? "  ·  " + esc(eggName(pl.peek || pl.line)) : "") + '</span>' +
+        '<span class="tg' + cls + '">' + tag + '</span></div></div>';
     }
+    if ($("lobby-count")) $("lobby-count").textContent = here + " / 6  ·  " + readyN + " ready";
     var box = $("lobby-players");
     if (box) {
       box.innerHTML = html;
-      var cvs = box.querySelectorAll("canvas");
-      for (i = 0; i < cvs.length; i++) paintCard(cvs[i], list[+cvs[i].getAttribute("data-i")]);
-      /* empty slots invite; filled ones open that player's profile */
       var slots = box.querySelectorAll("[data-invite]"), cards = box.querySelectorAll("[data-pid]");
       for (i = 0; i < slots.length; i++) slots[i].addEventListener("click", copyLink);
       for (i = 0; i < cards.length; i++) (function (card) {
@@ -214,26 +307,66 @@
         });
       })(cards[i]);
     }
-    var start = $("btn-lobby-start"), st = $("lobby-status");
-    var others = list.filter(function (p) { return p.id !== meId && p.here; });
-    var ready = others.filter(function (p) { return p.state === "ready" || p.state === "playing"; }).length;
-    if (start) start.hidden = !isHost;
+    /* the mode (the host picks it) */
+    var mb = $("lobby-mode"), modes = (m && m.modes) ? m.modes() : [], hm = N.hostMode ? N.hostMode() : "open", mh = "<span class='lb2lab'>MODE</span>";
+    if (mb) {
+      if (isHost) for (i = 0; i < modes.length; i++) mh += "<button type='button' data-mode='" + modes[i].id + "' class='" + (modes[i].id === hm ? "is-on" : "") + "' title='" + esc(modes[i].blurb) + "'>" + esc(modes[i].name) + "</button>";
+      else { var md = null; for (i = 0; i < modes.length; i++) if (modes[i].id === hm) md = modes[i]; mh += "<span class='fixed'>" + esc(md ? md.name : "Open World") + "</span><span class='lb2lab'>&nbsp;THE HOST PICKS</span>"; }
+      mb.innerHTML = mh;
+      Array.prototype.forEach.call(mb.querySelectorAll("[data-mode]"), function (bt) { bt.addEventListener("click", function () { if (m && m.setMode) m.setMode(bt.getAttribute("data-mode")); sfx(); if (N.refresh) N.refresh(); renderLobby(); }); });
+    }
+    /* ready / start */
+    var start = $("btn-lobby-start"), rb = $("btn-lobby-ready"), st = $("lobby-status");
+    if (start) {
+      start.hidden = !isHost;
+      var all = others === othersReady;
+      start.classList.toggle("is-go", all);
+      start.textContent = running ? "JOIN" : "START";
+    }
+    if (rb) {
+      rb.hidden = isHost;
+      rb.classList.toggle("is-on", ready);
+      rb.textContent = ready ? "✓ READY" : "READY";
+    }
     if (st) {
       st.classList.remove("is-bad");
       if (!N.connected()) { st.textContent = "Not connected to the game server."; st.classList.add("is-bad"); }
-      else if (isHost) st.textContent = others.length ? (ready + " of " + others.length + " friend" + (others.length === 1 ? "" : "s") + " ready. Anyone still choosing drops in as soon as they finish.") : "Waiting for friends. You can also start now — they can join a game in progress.";
-      else st.textContent = running ? "The game is running — you'll drop in any second." : "Waiting for the host to start…";
+      else if (isHost) st.textContent = !others ? "Pick your projection and egg, invite friends, then start. Friends can also drop into a game in progress."
+        : othersReady === others ? "Everyone is ready. Start when you like." : (others - othersReady) + " still choosing. Start now and they drop in when they are ready.";
+      else st.textContent = running ? "The game is running: press Ready to drop in." : ready ? "Ready. Waiting for the host to start…" : "Pick your projection and egg, then press Ready.";
     }
     restamp();
+    startStage();
+  }
+
+  /* Ready: locks in your pick (game.js confirmEggAndStart -> online.js interceptStart) */
+  function toggleReady() {
+    var me = null, list = N.players(), i, m = M();
+    for (i = 0; i < list.length; i++) if (list[i].id === N.netId()) me = list[i];
+    sfx("pick");
+    if (me && (me.state === "ready" || me.state === "playing")) { if (m && N.setPick) N.setPick(m.egg(), m.tamer()); renderLobby(); return; }
+    if (m) m.start();
+    renderLobby();
+  }
+  function hostStart() {
+    var me = null, list = N.players(), i, m = M();
+    for (i = 0; i < list.length; i++) if (list[i].id === N.netId()) me = list[i];
+    sfx("pick");
+    if (!me || me.state !== "ready") { if (m) m.start(); }
+    N.startGame();
   }
 
   function copyLink() {
-    var link = $("lobby-link"), st = $("lobby-status");
+    var link = $("lobby-link"), st = $("lobby-status"), b = $("btn-lobby-copy");
     if (!link) return;
-    function ok() { if (st) { st.textContent = "Invite link copied. Paste it to your friends."; st.classList.remove("is-bad"); } sfx("pick"); }
+    function ok() {
+      if (st) { st.textContent = "Invite link copied. Paste it to your friends."; st.classList.remove("is-bad"); }
+      if (b) { b.classList.add("is-done"); var lb = b.querySelector("b"); if (lb) lb.textContent = "✓ LINK COPIED"; setTimeout(function () { b.classList.remove("is-done"); if (lb) lb.textContent = "COPY INVITE LINK"; }, 1800); }
+      sfx("pick");
+    }
     function manual() {
       try { link.focus(); link.select(); link.setSelectionRange(0, 9999); if (document.execCommand("copy")) return ok(); } catch (e) {}
-      if (st) st.textContent = "Select the link above and copy it.";
+      if (st) st.textContent = "Copy this link: " + link.value;
     }
     if (navigator.clipboard && navigator.clipboard.writeText && global.isSecureContext) navigator.clipboard.writeText(link.value).then(ok, manual);
     else manual();
@@ -313,7 +446,13 @@
       var link = $("lobby-link");
       if (navigator.share && link) navigator.share({ title: "Digi Night", text: "Join my game!", url: link.value }).catch(function () {});
     });
-    if ((b = $("btn-lobby-start"))) b.addEventListener("click", function () { sfx("pick"); N.startGame(); });
+    if ((b = $("btn-lobby-start"))) b.addEventListener("click", hostStart);
+    if ((b = $("btn-lobby-ready"))) b.addEventListener("click", toggleReady);
+    if ((b = $("lobby-tamer-prev"))) b.addEventListener("click", function () { stepTamer(-1); });
+    if ((b = $("lobby-tamer-next"))) b.addEventListener("click", function () { stepTamer(1); });
+    if ((b = $("lobby-egg-prev"))) b.addEventListener("click", function () { stepEgg(-1); });
+    if ((b = $("lobby-egg-next"))) b.addEventListener("click", function () { stepEgg(1); });
+    if ((b = $("lobby-stage"))) b.addEventListener("click", function () { stepTamer(1); });
     if ((b = $("btn-lobby-leave"))) b.addEventListener("click", function () { sfx(); N.leave("lobby"); D.setState("title"); });
     if ((b = $("lobby-link"))) b.addEventListener("focus", function () { try { this.select(); } catch (e) {} });
     ["join-code", "join-name"].forEach(function (id) {

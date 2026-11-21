@@ -272,7 +272,7 @@
       if (rv.calmT > 0) { rv.calmT -= dt; best = 0; }          /* it has just lost you: it lets you be for a while */
       for (i = 0; i < this.players.length; i++) {
         p = this.players[i];
-        if (this._isEgg(p.form) || p.faint > 0 || p.downed || !(p.hp > 0)) continue;
+        if (p.atFarm || this._isEgg(p.form) || p.faint > 0 || p.downed || !(p.hp > 0)) continue;
         d = dist2(e.x, e.y, p.mx, p.my);
         if (d < best) { best = d; tgt = p; }
       }
@@ -352,7 +352,7 @@
       moved = false;
       if (n) {
         spd = this._rivalSpeed(rv) * (e.stSlow == null ? 1 : e.stSlow) * (e.slow || 1);
-        pos = this._slide(e.x, e.y, n.x * spd * dt, n.y * spd * dt, this._navRad ? this._navRad(e) : e.radius);
+        pos = this._slide(e.x, e.y, n.x * spd * dt, n.y * spd * dt, this._navRad ? this._navRad(e) : e.radius, this._crossOf ? this._crossOf(e.type) : 0);
         moved = Math.abs(pos.x - e.x) + Math.abs(pos.y - e.y) > 0.2;
         e.x = pos.x; e.y = pos.y;
       }

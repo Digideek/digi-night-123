@@ -56,6 +56,8 @@
       if (this._virusAt == null) this._virusAt = V.firstAt;
       if (this.time < this._virusAt) return;
       if (!this._spawnsOpen() || this._virusCount(true) >= V.wild || this._virusCount() >= V.cap) { this._virusAt = this.time + 5; return; }
+      var vh = this.player(this.localId) || this.players[0];
+      if (vh && (vh.level || 1) < 10 && this._startZone && this._startZone(vh.x, vh.y) >= 2) { this._virusAt = this.time + 10; return; }   /* not on a young partner in the Baby zone round the start */
       stages = V.stageAt[0][1];
       for (i = 0; i < V.stageAt.length; i++) { row = V.stageAt[i]; if (this.time / 60 >= row[0]) stages = row[1]; }
       defs = this._enemies(); pool = [];
@@ -132,9 +134,16 @@
     MissionSim.prototype._wildKill = function (e, owner) {
       var k = owner.by != null ? this._enemyById(owner.by) : null;
       if (e.dead) return;
+      if (this._warLossOf) this._warLossOf(e);
+      if (this._nestLoss) this._nestLoss(e);
+      /* a kill by a Digimon fighting at a tamer's side counts toward that tamer's standing, at half */
+      if (k && k.rally && this._trustKill) this._trustKill(this.player(k.rally), e, 0.5);
+      if (k && k.rally && this._allyXp) this._allyXp(k, (e.boss || e.lord) ? 4 : 1);   /* its own kill teaches it most */
       e.dead = true; e.hp = 0;
       this.emit({ type: "kill", enemyId: e._id, enemyType: e.type, x: e.x, y: e.y, killer: "wild", boss: false, big: false, r: e.radius || 10, hp: Math.round(e.maxHp), virus: e.virus ? 1 : 0 });
       if (k && !k.dead && k.virus) this._virusFed(k);
+      if (k && !k.dead && k.nemesis && this._nemesisFed) this._nemesisFed(k, e);           /* nemesis-sim.js */
+      else if (k && !k.dead && k.nemLead != null && this._nemesisFed) { var L = this._enemyById(k.nemLead); if (L && !L.dead) this._nemesisFed(L, e); }   /* its herd feeds it too */
     };
 
     MissionSim.prototype._virusNext = function (type) {

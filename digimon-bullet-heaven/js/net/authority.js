@@ -287,7 +287,9 @@
       snap.farm = ms.farm;
       snap.clock = ms.clock;
       snap.rival = ms.rival;
-      snap.weather = ms.weather;                 /* the sky the simulation is under (it was left out, so the screen never showed it) */
+      snap.weather = ms.weather;
+      /* the living world (Nov 20): rain in the low spots, who holds the land, the fronts, the nests */
+      snap.soak = ms.soak; snap.terr = ms.terr; snap.fronts = ms.fronts; snap.nests = ms.nests; snap.nems = ms.nems;                 /* the sky the simulation is under (it was left out, so the screen never showed it) */
       snap.lifecycle = ms.lifecycle;
       snap.localPause = this.localPause;
       snap.runOver = ms.runOver;

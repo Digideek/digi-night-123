@@ -155,7 +155,10 @@
   function rosterList() { return order.filter(function (id) { return players[id]; }).map(function (id) { return players[id]; }); }
   function pushRoster() {
     if (role !== "host") return;
-    toAll({ t: "roster", players: rosterList(), running: !!H.auth, code: code });
+    /* names follow into the running game (a nemesis is named after the tamer it beat) */
+    if (H.sim) rosterList().forEach(function (pl) { var sp = H.sim.player(pl.id); if (sp && pl.name) sp.name = pl.name; });
+    if (H.sim && H.sim.localId && players[myId]) { var hp = H.sim.player(H.sim.localId); if (hp && players[myId].name) hp.name = players[myId].name; }
+    toAll({ t: "roster", players: rosterList(), running: !!H.auth, code: code, mode: (D.menu && D.menu.mode && D.menu.mode()) || "open" });
     emit("change");
   }
 
@@ -211,6 +214,20 @@
     return true;
   }
 
+  /* The lobby (online-ui.js): what you are looking at before you are ready. It shows on everyone's
+   * slot as you flip through; being ready (interceptStart) locks it in. Changing it un-readies you. */
+  var hostMode = "open";
+  function setPick(line, tamerId) {
+    if (!role) return;
+    var me = players[myId] || addPlayer(myId, myName, role === "host");
+    me.tamerId = String(tamerId || "").slice(0, 24); me.peek = String(line || "").slice(0, 24);
+    if (eggFormFor(line)) me.line = String(line);
+    if (me.state !== "playing") me.state = "choosing";
+    myPick = null;
+    if (role === "host") pushRoster();
+    else toHost({ t: "pick", line: me.peek, tamerId: me.tamerId });
+    emit("change");
+  }
   function setName(name) {
     myName = String(name || "").replace(/[<>]/g, "").trim().slice(0, 14) || myName;
     if (players[myId]) players[myId].name = myName;
@@ -405,7 +422,7 @@
     delete H.net[id]; delete H.holds[id];
   }
 
-  var ACTS = { levelup: 1, "shop.buy": 1, capture: 1, "brawl.bet": 1, "field.feed": 1, evolve: 1, "evolve.hold": 1, "stat.add": 1, "skill.add": 1, "dna.ask": 1, "dna.answer": 1, burst: 1, "breather.end": 1, "prop.use": 1 };
+  var ACTS = { "pvp.flag": 1, levelup: 1, "shop.buy": 1, capture: 1, "brawl.bet": 1, "field.feed": 1, evolve: 1, "evolve.hold": 1, "stat.add": 1, "skill.add": 1, "dna.ask": 1, "dna.answer": 1, burst: 1, "breather.end": 1, "prop.use": 1 };
   /* What a friend's own farm visit is allowed to change on their record. */
   var FARM_KEYS = ["fullness", "happiness", "bag", "items", "shopBought", "bits", "trainStats", "trainVisits", "bondTrain",
     "careMistakes", "foodEaten", "foodCounts", "garden", "bond", "mood", "ignoredSeconds", "starveCycles",
@@ -430,6 +447,11 @@
       pl.state = "ready";
       if (auth && sim) addGuest(pl);
       pushRoster();
+    } else if (d.t === "pick") {
+      pl.tamerId = String(d.tamerId || "").slice(0, 24); pl.peek = String(d.line || "").slice(0, 24);
+      if (eggFormFor(d.line)) pl.line = String(d.line);
+      if (pl.state !== "playing") pl.state = "choosing";
+      pushRoster();
     } else if (d.t === "resume") {
       p = sim && sim.player(id);
       if (p) { p.away = false; pl.state = "playing"; H.slowSent[id] = ""; }
@@ -445,14 +467,24 @@
       else if (d.i.type === "dna.ask") intent.to = String(d.i.to || "").slice(0, 40);
       else if (d.i.type === "dna.answer") { intent.ok = !!d.i.ok; intent.to = String(d.i.to || "").slice(0, 40); }
       else if (d.i.type === "prop.use") { intent.tx = num(d.i.tx) | 0; intent.ty = num(d.i.ty) | 0; }
+      else if (d.i.type === "pvp.flag") intent.on = !!d.i.on;
       else if (d.i.type === "skill.add") intent.skill = String(d.i.skill || "").slice(0, 32);
       else if (d.i.type === "stat.add") { intent.stat = String(d.i.stat || "").slice(0, 8); intent.n = num(d.i.n) | 0; }
       else if (d.i.type === "brawl.bet") intent.targetId = d.i.targetId === "h" ? "local" : String(d.i.targetId || "");
       var res = auth.act(intent) || { ok: false };
       H.ack[id] = Math.max(H.ack[id] || 0, num(d.n) | 0);
       if (d.i.type === "capture") toOne(id, { t: "res", k: "capture", res: { ok: !!res.ok, reason: res.reason || null, chance: res.chance == null ? null : res.chance, form: res.form || null } });
+    } else if (d.t === "farmGo") {
+      p = sim && sim.player(id);
+      if (p) p.atFarm = true;
     } else if (d.t === "farmDone") {
       p = sim && sim.player(id);
+      if (p && p.atFarm) {
+        var sh = Math.max((D.FARM_CFG && D.FARM_CFG.returnShield) || 2, p.pvpShield || 0);
+        p.atFarm = false; p.pvpShield = 0;
+        p.monInvuln = Math.max(p.monInvuln || 0, sh);
+        p.tamerInvuln = Math.max(p.tamerInvuln || 0, sh);
+      }
       if (p && d.s && typeof d.s === "object") {
         FARM_KEYS.forEach(function (k) { if (d.s[k] !== undefined) p[k] = d.s[k]; });
         if (typeof d.s.hp === "number") p.hp = clamp(d.s.hp, 0, p.maxHp || d.s.hp);
@@ -650,7 +682,7 @@
       P.push({ id: wid(p.id), x: r1(p.x), y: r1(p.y), mx: r1(p.mx), my: r1(p.my), facing: p.facing, tdir: p.tdir, moving: p.moving ? 1 : 0,
         mfacing: p.mfacing, monMoving: p.monMoving ? 1 : 0, tamerHp: r1(p.tamerHp), tamerMaxHp: p.tamerMaxHp, tamerInvuln: r2(p.tamerInvuln),
         hp: r1(p.hp), maxHp: p.maxHp, monInvuln: r2(p.monInvuln), faint: r2(p.faint), downed: p.downed ? 1 : 0, ack: p.ack, form: p.form, burst: p.burst || 0, burstLeft: p.burstLeft || 0, burstForm: p.burstForm || null, burstStyle: p.burstStyle || null, shiny: p.shiny ? 1 : 0,
-        level: p.level, xp: r1(p.xp), xpNext: p.xpNext, bits: p.bits, fullness: r1(p.fullness), happiness: r1(p.happiness), kills: p.kills,
+        level: p.level, xp: r1(p.xp), xpNext: p.xpNext, bits: p.bits, fullness: r1(p.fullness), happiness: r1(p.happiness), kills: p.kills, trust: p.trust || null, allied: p.allied || null, atFarm: p.atFarm ? 1 : 0, pvpFlag: p.pvpFlag ? 1 : 0, pvpOffAt: p.pvpOffAt || 0, md: p.md || null,
         hatchLeft: p.hatchLeft == null ? null : r1(p.hatchLeft), desperation: p.desperation ? 1 : 0, atkBoost: r1(p.atkBoost), focusId: p.focusId,
         aim: r2(p.aim), pendingLevels: p.pendingLevels || 0, away: sp && sp.away ? 1 : 0 });
       /* the rest of a player's record only goes to that player, when it changes */
@@ -671,7 +703,7 @@
     }
     for (i = 0; i < s.enemies.length; i++) {
       e = s.enemies[i];
-      E.push([e._id, e.type, Math.round(e.x), Math.round(e.y), Math.round(e.hp), Math.round(e.maxHp), e.facing, e.radius, (e.flash > 0 ? 1 : 0) | (e.boss ? 2 : 0) | (e.mega ? 4 : 0) | (e.lord ? 8 : 0) | (e.rival ? 16 : 0) | (e.virus ? 32 : 0), e.dmgMul || 1, e.st || 0]);
+      E.push([e._id, e.type, Math.round(e.x), Math.round(e.y), Math.round(e.hp), Math.round(e.maxHp), e.facing, e.radius, (e.flash > 0 ? 1 : 0) | (e.boss ? 2 : 0) | (e.mega ? 4 : 0) | (e.lord ? 8 : 0) | (e.rival ? 16 : 0) | (e.virus ? 32 : 0) | (e.zz ? 64 : 0), e.dmgMul || 1, e.st || 0, e.war || 0, e.fac || 0, e.rally != null ? wid(e.rally) : 0, e.alv || 0, e.lv || 1, e.nem || 0, e.nem ? (e.nemTitle || "") : 0, e.nem ? (e.nemScale || 1) : 0]);
     }
     for (i = 0; i < s.bullets.length; i++) {
       b = s.bullets[i];
@@ -715,7 +747,9 @@
       ps: s.startingPartySize, pc: s.partyReviveCharge,
       al: a && a.form ? { form: a.form, x: r1(a.x), y: r1(a.y), hp: r1(a.hp), maxHp: a.maxHp, facing: a.facing, invuln: r2(a.invuln), level: a.level || 1, passive: a.passive || null } : null,
       pt: (s.patches || []).map(function (q) { return [q.id, q.kind, Math.round(q.x), Math.round(q.y), Math.round(q.r), r2(q.t), r2(q.max)]; }),
-      fm: H.farm.open ? H.farm.id : 0 };
+      fm: H.farm.open ? H.farm.id : 0,
+      /* the living world: puddle depth, who holds the land, the fronts, the nests near anyone */
+      sk: s.soak || 0, tr: s.terr || "", fr: s.fronts || null, ns: s.nests || null, nm: s.nems || null };
     if (O) w.O = O;
     if (any) w.rv = rev;
     if (waiting.length) w.fw = waiting;
@@ -843,6 +877,7 @@
       var mine = players[myId];
       players = {}; order = [];
       (d.players || []).forEach(function (p) { players[p.id] = p; order.push(p.id); });
+      if (d.mode) hostMode = String(d.mode).slice(0, 12);
       if (mine && players[myId] && myPick) { players[myId].line = players[myId].line || mine.line; players[myId].tamerId = players[myId].tamerId || mine.tamerId; }
       emit("change");
     } else if (d.t === "start") {
@@ -994,7 +1029,7 @@
     for (i = 0; i < b.E.length; i++) {
       e = b.E[i]; ea = a.Emap[e[0]] || e;
       en.push({ _id: e[0], type: e[1], x: ea[2] + (e[2] - ea[2]) * k, y: ea[3] + (e[3] - ea[3]) * k, hp: e[4], maxHp: e[5], facing: e[6],
-        radius: e[7], flash: (e[8] & 1) ? 0.1 : 0, boss: !!(e[8] & 2), mega: !!(e[8] & 4), lord: !!(e[8] & 8), rival: !!(e[8] & 16), virus: !!(e[8] & 32), dmgMul: e[9], st: e[10] || 0, dead: false });
+        radius: e[7], flash: (e[8] & 1) ? 0.1 : 0, boss: !!(e[8] & 2), mega: !!(e[8] & 4), lord: !!(e[8] & 8), rival: !!(e[8] & 16), virus: !!(e[8] & 32), zz: (e[8] & 64) ? 1 : 0, dmgMul: e[9], st: e[10] || 0, war: e[11] || null, fac: e[12] || null, rally: e[13] || null, alv: e[14] || 0, lv: e[15] || 1, nem: e[16] || 0, nemTitle: e[17] || null, nemScale: e[18] || 1, dead: false });
     }
     /* bullets carry a velocity, so move them along from the newer frame */
     var bl = [];
@@ -1022,7 +1057,8 @@
       patches: (L.pt || []).map(function (q) { return { id: q[0], kind: q[1], x: q[2], y: q[3], r: q[4], t: q[5], max: q[6] }; }),
       pendingLevels: mine ? (mine.pendingLevels || 0) : 0, levelOffers: mine ? (mine.levelOffers || []) : [],
       merchant: L.mr || null, runOver: !!L.ro, phase: "playing", clock: L.ck || null, lifecycle: null,
-      startingPartySize: L.ps, partyReviveCharge: L.pc, reviveHold: null, weather: L.wx || null, rival: L.rv || null
+      startingPartySize: L.ps, partyReviveCharge: L.pc, reviveHold: null, weather: L.wx || null, rival: L.rv || null,
+      soak: L.sk || 0, terr: L.tr || "", fronts: L.fr || null, nests: L.ns || null, nems: L.nm || null
     };
     return out;
   }
@@ -1074,7 +1110,7 @@
       G.overrides.push({ n: G.intentN, f: { attrs: at2, statPoints: left2 } });
       return { ok: true, stat: intent.stat, value: at2[intent.stat], left: left2 };
     }
-    if (intent.type === "breather.end" || intent.type === "prop.use") return { ok: true, pending: true };
+    if (intent.type === "breather.end" || intent.type === "prop.use" || intent.type === "pvp.flag") return { ok: true, pending: true };
     if (intent.type === "burst") return (m.burst || 0) >= 100 ? { ok: true, pending: true } : { ok: false, reason: "charging" };
     if (intent.type === "dna.ask" || intent.type === "dna.answer") return { ok: true, pending: true };   /* the host decides; events follow */
     if (intent.type === "evolve" || intent.type === "evolve.hold") {
@@ -1097,7 +1133,14 @@
   }
 
   /* --- a friend's farm visit runs on their own device --- */
-  function beginLocalFarm() {
+  /* a friend chose to go to the farm (Nov 20, the Farm button): the host takes their pair out of the
+   * world (p.atFarm) and the visit runs here as before; farmDone brings them back where they stood */
+  function guestGoFarm() {
+    if (role !== "guest" || !netRun || G.inFarm) return false;
+    toHost({ t: "farmGo" });
+    return beginLocalFarm(-1);
+  }
+  function beginLocalFarm(visitId) {
     var local = G.local, L = G.latest, mine, lp, k, v;
     if (!local || !local.sim || !L) return false;
     lp = local.sim.player("local") || local.sim.players[0];
@@ -1113,7 +1156,7 @@
     lp.hasTamer = true; lp.pendingFarm = true; lp.pendingBrawl = false; lp.downed = false;
     local.sim.time = L.tm; local.sim.phase = "playing"; local.sim.farm = null; local.sim.runOver = false;
     if (local.sim.lifecycle) local.sim.lifecycle.resume = null;
-    G.inFarm = true; G.farmVisit = L.fm;
+    G.inFarm = true; G.farmVisit = visitId != null ? visitId : L.fm;
     D.bridge.setAuth(local, "local");
     if (!D.bridge.startFarm() || D.getState() !== "farm") { abortLocalFarm(); return false; }
     return true;
@@ -1224,10 +1267,15 @@
       return role === "guest" ? guestPhase() === "brawl" : !!(H.sim && H.sim.phase === "brawl");
     },
     wantsFarm: function () { var L = G.latest; return role === "guest" && netRun && !!L && !!L.fm && L.fm !== G.farmDone && !G.inFarm; },
+    goFarm: guestGoFarm,
     inSetup: function () { return !!role && setup; },
     view: view,
     host: host, join: join, leave: leave, setName: setName, startGame: startGame, afterRun: afterRun,
     interceptStart: interceptStart,
+    setPick: setPick,
+    refresh: function () { if (role === "host") pushRoster(); },
+    hostMode: function () { return role === "host" ? ((D.menu && D.menu.mode && D.menu.mode()) || "open") : hostMode; },
+    myState: function () { var me = players[myId]; return me ? me.state : null; },
     cancelSetup: function () { if (role && !netRun && !(role === "host" && H.auth)) leave("cancel"); },
     reviveUi: reviveUi,
     otherEvent: otherEvent,

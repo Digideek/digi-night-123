@@ -129,6 +129,13 @@
     if (D.BADGES) D.BADGES.tick(api, run);
   }
   /* ---------- the Badges page: every badge, by kind, with progress on the counted ones ---------- */
+  /* the medals (js/icon-art.js) */
+  function paintBadges(root) {
+    if (!D.iconArt || !root) return;
+    var by = {}, i;
+    for (i = 0; i < ACH.length; i++) by[ACH[i].id] = ACH[i];
+    Array.prototype.forEach.call(root.querySelectorAll("canvas[data-badge]"), function (cv) { D.iconArt.badge(cv, by[cv.getAttribute("data-badge")], { got: !!cv.getAttribute("data-got") }); });
+  }
   function openBadges() {
     if (!load()) return;
     syncBadges();
@@ -146,7 +153,7 @@
       h += "<h3>" + esc(B.CATS[ci]) + " <small>" + cg + " / " + ct + "</small></h3><div class='badge-grid'>";
       for (i = 0; i < list.length; i++) {
         b = list[i]; have = !!P.ach[b.id];
-        h += "<div class='badge-card is-t" + b.tier + (have ? " is-got" : "") + (b.secret && !have ? " is-secret" : "") + "'><i>" + (have ? "\u2605" : (b.secret ? "?" : "\u2606")) + "</i><div><b>" + esc(b.secret && !have ? "???" : b.name) + "</b><span>" + esc(b.secret && !have ? "A secret badge. You will know it when you earn it." : b.text) + "</span>";
+        h += "<div class='badge-card is-t" + b.tier + (have ? " is-got" : "") + (b.secret && !have ? " is-secret" : "") + "'><canvas class='badge-ico' width='64' height='64' data-badge='" + b.id + "'" + (have ? " data-got='1'" : "") + "></canvas><div><b>" + esc(b.secret && !have ? "???" : b.name) + "</b><span>" + esc(b.secret && !have ? "A secret badge. You will know it when you earn it." : b.text) + "</span>";
         if (b.stat && !have) { cur = Math.min(b.need, P.stats[b.stat] || 0); pct = Math.round(100 * cur / b.need); h += "<u><s style='width:" + pct + "%'></s></u><small>" + cur.toLocaleString() + " / " + b.need.toLocaleString() + "</small>"; }
         else if (have) h += "<small>" + esc(B.TIER[b.tier]) + "  \u00b7  " + esc(since(P.ach[b.id])) + "</small>";
         else h += "<small>" + esc(B.TIER[b.tier]) + "</small>";
@@ -157,6 +164,7 @@
     h += "</div>";
     box = el("div", "profile-overlay", h); box.id = "badges-panel";
     host().appendChild(box);
+    paintBadges(box);
     function close() { if (box.parentNode) box.parentNode.removeChild(box); document.removeEventListener("keydown", key, true); }
     function key(e) { if (e.key === "Escape") { close(); e.preventDefault(); e.stopPropagation(); } }
     $("badges-x").addEventListener("click", close);
@@ -372,14 +380,16 @@
       stat("eggs unlocked", (+st.eggs || 0) + (st.eggsOf ? " / " + (+st.eggsOf) : "")) +
       stat("Digimon raised", (+st.forms || 0) + (st.formsOf ? " / " + (+st.formsOf) : "")) +
       stat("longest run", clock(+st.best || 0)) + stat("runs", +st.runs || 0) + stat("KOs", +st.kos || 0) + stat("shinies", +st.shiny || 0) + stat("bosses beaten", +st.bosses || 0) + stat("rival trophies", +st.tr || 0) + "</div>" +
+      (opt.me && D.boards ? "<h3>League <small id='profile-league-place'></small></h3><div class='profile-stats' id='profile-league'><div class='profile-stat'><b>…</b><span>loading</span></div></div>" : "") +
       "<h3>Badges <small>" + got + " / " + ACH.length + "</small></h3><div class='badge-bar'><i style='width:" + Math.round(100 * got / Math.max(1, ACH.length)) + "%'></i></div><div class='badge-chips'>";
     var mine = ACH.filter(function (b) { return have[b.id]; }).sort(function (x, y) { return (y.tier - x.tier); });
-    for (i = 0; i < mine.length; i++) { a = mine[i]; html += "<span class='badge-chip is-t" + a.tier + "' title='" + esc(a.text) + "'>" + esc(a.name) + "</span>"; }
+    for (i = 0; i < mine.length; i++) { a = mine[i]; html += "<span class='badge-chip is-t" + a.tier + "' title='" + esc(a.text) + "'><canvas class='badge-mini' width='32' height='32' data-badge='" + a.id + "' data-got='1'></canvas>" + esc(a.name) + "</span>"; }
     if (!mine.length) html += "<span class='badge-none'>None yet.</span>";
     html += "</div>" + (opt.me ? "<div class='profile-row'><button type='button' class='profile-btn' id='profile-badges-btn'>All badges</button><button type='button' class='profile-btn' id='profile-edit-btn'>Change name or picture</button>" + (D.account && D.account.on() ? "<button type='button' class='profile-btn' id='profile-logout-btn'>Log out (" + esc(D.account.name()) + ")</button>" : "") + "</div>" : "") + "</div>";
     box = el("div", "profile-overlay", html); box.id = "profile-panel";
     host().appendChild(box);
     paintPic($("profile-ghost-cv"), picOf(c));
+    paintBadges(box);
     if ($("profile-egg-cv")) paintEgg($("profile-egg-cv"), pl.line);
     function close() { if (box.parentNode) box.parentNode.removeChild(box); }
     $("profile-x").addEventListener("click", close);
@@ -387,6 +397,22 @@
     if ($("profile-edit-btn")) $("profile-edit-btn").addEventListener("click", function () { close(); openEdit(false); });
     if ($("profile-logout-btn")) $("profile-logout-btn").addEventListener("click", function () { this.disabled = true; this.textContent = "Saving and logging out…"; D.account.logout(); });
     if ($("profile-badges-btn")) $("profile-badges-btn").addEventListener("click", function () { close(); openBadges(); });
+    /* your bests on the boards (js/boards.js) */
+    if ($("profile-league")) {
+      if (!D.boards.signedIn()) $("profile-league").innerHTML = "<div class='profile-stat'><b>-</b><span>log in online to join</span></div>";
+      else D.boards.mine(function (me) {
+        var lg = $("profile-league"), b = me && me.bests, pl = (me && me.places) || {}, ck = D.boards.clock;
+        if (!lg) return;
+        function place(k) { return pl[k] ? " (#" + pl[k] + ")" : ""; }
+        lg.innerHTML = !b ? "<div class='profile-stat'><b>-</b><span>no League runs yet</span></div>" :
+          stat("best level" + place("level"), b.level || 0) + stat("fastest Mega" + place("mega"), b.megaAt ? ck(b.megaAt) : "-") + stat("longest run" + place("time"), ck(b.time || 0)) +
+          stat("most lords" + place("lords"), b.lords || 0) + stat("PvP wins" + place("pvp"), b.pvp || 0) + stat("ranked best" + place("ranked"), b.ranked || 0) + stat("weekly best" + place("weekly"), b.weekly || 0) + stat("League runs", b.runs || 0);
+        if ($("profile-league-place")) $("profile-league-place").textContent = me && me.backing ? "backing " + me.backing + " this week" : "";
+      });
+      var lb = document.createElement("button"); lb.type = "button"; lb.className = "profile-btn"; lb.textContent = "Open the League";
+      lb.addEventListener("click", function () { close(); D.boards.open(); });
+      $("profile-league").parentNode.insertBefore(lb, $("profile-league").nextSibling);
+    }
   }
 
   /* the title screen asks for a profile the first time, and shows the chip after */

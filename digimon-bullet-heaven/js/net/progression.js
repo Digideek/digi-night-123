@@ -18,7 +18,7 @@
   function rarityApi() { return (D.net && D.net.rarity) || (D.rarity) || null; }
 
   var INTENTS = {
-    capture: 1, hatch: 1, evolve: 1, "evolve.hold": 1, "dna.ask": 1, "dna.answer": 1, burst: 1, "breather.end": 1, "prop.use": 1, "stat.add": 1, "skill.add": 1, levelup: 1,
+    capture: 1, hatch: 1, evolve: 1, "evolve.hold": 1, "pvp.flag": 1, "dna.ask": 1, "dna.answer": 1, burst: 1, "breather.end": 1, "prop.use": 1, "stat.add": 1, "skill.add": 1, levelup: 1,
     "shop.buy": 1,
     "farm.enter": 1, "farm.tick": 1, "farm.pet": 1, "farm.feed": 1, "farm.plant": 1, "farm.harvest": 1,
     "field.feed": 1,
@@ -171,6 +171,7 @@
       agility: (p.trainStats && p.trainStats.agility) || 0,
       bondTrain: p.bondTrain || 0,
       formTime: Math.max(0, ((this.sim() && this.sim().time) || 0) - (p.formSince || 0)),
+      runTime: (this.sim() && this.sim().time) || 0,
       /* times this partner has been told "not yet": in this form, and ever */
       formHolds: p.formHolds || 0,
       holdbacks: p.holdbacks || 0
@@ -251,6 +252,7 @@
     this.emit({ type: kind === "hatch" ? "hatch" : "evolve", id: p.id, from: prev, to: to, kind: kind || "standard",
       boost: grew ? { hp: Math.max(0, p.maxHp - hpWas), atk: Math.round((EB.damage || 0) * 100), rate: Math.round((EB.cooldown || 0) * 100), spd: Math.round((EB.speed || 0) * 100) } : null });
     if (p.shiny && kind !== "dna.revert") this.emit({ type: "shiny", id: p.id, form: to, first: becameShiny });
+    if (this.sim() && this.sim()._noteStage) this.sim()._noteStage(p);   /* first Mega, for the boards (modes-sim.js) */
     return { ok: true, from: prev, to: to, kind: kind || "standard" };
   };
 
@@ -269,7 +271,11 @@
     }
     var to = this.data.SPECIES && this.data.SPECIES[p.form] && this.data.SPECIES[p.form].hatchTo;
     if (!to) return { ok: false, reason: "no-hatch" };
-    return this._applyForm(p, to, "hatch");
+    p.hatchedAt = (this.sim() && this.sim().time) || 0;
+    p.eggForm = p.form;                          /* the line's own egg: a respawn comes back as this (modes-sim.js; lines share forms) */
+    var hres = this._applyForm(p, to, "hatch");
+    if (p.respawnShield) { p.monInvuln = Math.max(p.monInvuln || 0, p.respawnShield); p.tamerInvuln = Math.max(p.tamerInvuln || 0, p.respawnShield); p.respawnShield = 0; }   /* modes-sim.js */
+    return hres;
   };
 
   Progression.prototype._handlers.evolve = function (intent) {
@@ -298,6 +304,17 @@
     var hr = this._hatchRoute(p, pick);
     if (hr) return this._applyForm(p, hr.to, hr.kind || "special");
     return this._applyForm(p, pick.to, pick.kind || "standard");
+  };
+
+  /* The PvP flag (Nov 20, pvp-sim.js): on at once; off only after PVP.flagOff seconds, so it can't be
+   * dropped to slip out of a fight. */
+  Progression.prototype._handlers["pvp.flag"] = function (intent) {
+    var sim = this.sim(), p = this.player(intent.id), P = this.data.PVP || {};
+    if (!sim || !p) return { ok: false, reason: "no-run" };
+    if (intent.on) { p.pvpFlag = true; p.pvpOffAt = 0; }
+    else if (p.pvpFlag && !p.pvpOffAt) p.pvpOffAt = sim.time + (P.flagOff || 10);
+    this.emit({ type: "pvp.flag", id: p.id, on: !!p.pvpFlag, offAt: p.pvpOffAt || 0 });
+    return { ok: true, on: !!p.pvpFlag, offAt: p.pvpOffAt || 0 };
   };
 
   /* the level-up window was closed early: the breather ends with it */
@@ -882,8 +899,17 @@
     }
     var c = (this.data.FARM_CFG) || {};
     var stay = (c.stayCapSeconds || 45) + (sim._lab ? sim._lab(p).farm : 0) + (sim._gear ? sim._gear(p).farm : 0);
-    sim.phase = "farm";
-    if (D.weather) D.weather.clearPhase(sim, { data: this.data, phase: "farm" });
+    if (c.onDemand) {
+      /* Nov 20: the world does not stop. The tamer and partner step out of it (p.atFarm: nothing can
+       * reach them, they reach nothing) and come back to the same spot. Not with enemies close. */
+      if (p.atFarm) return { ok: true, already: true };
+      if (sim._hostileNear && sim._hostileNear(p, c.blockRadius || 380)) return { ok: false, reason: "Enemies are too close" };
+      p.atFarm = true;
+      stay = 1e9;
+    } else {
+      sim.phase = "farm";
+      if (D.weather) D.weather.clearPhase(sim, { data: this.data, phase: "farm" });
+    }
     if (D.partyRules) D.partyRules.clearHold(sim);
     var scheduled = !!intent.scheduled;
     var R = rarityApi();
@@ -1299,8 +1325,17 @@
       });
     }
     sim.farm.active = false;
-    sim.phase = "playing";
-    if (D.weather) D.weather.resumePlaying(sim, { data: this.data });
+    if (p.atFarm) {
+      /* back where you left, with a moment to get your bearings */
+      p.atFarm = false;
+      var shield = Math.max(fc.returnShield || 2, p.pvpShield || 0);   /* longer after being beaten by another tamer (pvp-sim.js) */
+      p.pvpShield = 0;
+      p.monInvuln = Math.max(p.monInvuln || 0, shield);
+      p.tamerInvuln = Math.max(p.tamerInvuln || 0, shield);
+    } else {
+      sim.phase = "playing";
+      if (D.weather) D.weather.resumePlaying(sim, { data: this.data });
+    }
     if (p.pendingAtkBoost) {
       p.atkBoost = (p.atkBoost || 0) + p.pendingAtkBoost;
       p.pendingAtkBoost = 0;
@@ -1701,6 +1736,7 @@
   Progression.prototype._markFarmDue = function (p) {
     var sim = this.sim();
     if (!p || !sim || sim.phase !== "playing") return false;
+    if (this.data.FARM_CFG && this.data.FARM_CFG.onDemand) return false;      /* you go when you choose (Nov 20) */
     if (sim.farm && sim.farm.active) return false;
     var R = rarityApi();
     var cfg = (this.data && this.data.FARM_CFG) || {};
@@ -1722,6 +1758,7 @@
     this._checkUnlocks(p);
     this._markFarmDue(p);
     if ((p.pendingLevels || 0) <= 0) this._markBrawlDue(p);
+    if (this.data && this.data.FARM_CFG && this.data.FARM_CFG.onDemand) return;
     var marks = ((this.data && this.data.FARM_CFG && this.data.FARM_CFG.warnAt) || [15, 5]);
     var R = rarityApi();
     var left = R && R.farmDueIn ? R.farmDueIn(p, sim.time, this.data && this.data.FARM_CFG) : 1e9;

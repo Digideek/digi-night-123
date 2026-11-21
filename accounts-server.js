@@ -180,4 +180,4 @@ function handle(req, res, rel) {
   return true;
 }
 
-module.exports = { handle: handle, persistent: !!VOLUME, dir: DIR, _handlers: HANDLERS, _nameOk: nameOk };
+module.exports = { handle: handle, persistent: !!VOLUME, dir: DIR, _handlers: HANDLERS, _nameOk: nameOk, _byToken: byToken };

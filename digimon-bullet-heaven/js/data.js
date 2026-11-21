@@ -152,11 +152,11 @@
    * (never below 1 HP, so the lava alone cannot end a run). Enemies are not
    * burned, so luring a horde into lava earns nothing. */
   var LAVA = { edge: 14, every: 0.5, damage: 0.03, minDamage: 2 };
-  /* Idle packs: a big group of one kind standing about somewhere off-screen.
-   * They mill around until a tamer or partner comes within `aggro` of any of
-   * them (or one is hit), then the whole pack charges. Outside the normal
-   * enemy limit. */
-  var PACKS = { firstAt: 30, every: [50, 85], size: [8, 14], dist: [620, 900], scatter: 95, aggro: 185, wander: 70, idleSpeed: 0.3, maxAlive: 2, forgetAt: 2600 };
+  /* Herds (from 20 Nov every one comes out of a nest, data.js NESTS): they mill
+   * around until a tamer or partner comes within `aggro` of any of them (or
+   * one is hit), then the whole herd charges. Left `forgetAt` px behind, a herd
+   * goes back into its nest (it is not killed). */
+  var PACKS = { aggro: 185, wander: 70, idleSpeed: 0.3, forgetAt: 2600 };
 
   /* Warp burst: a meter that creeps up by itself and fills faster from
    * damage dealt. Full, R flashes the partner into the standard next form
@@ -330,6 +330,146 @@
    * ground under it; tall grass catches for sure and carries the fire
    * further. Charred ground cannot burn again until it has grown back:
    * `regrow` seconds of battle time, short green shoots for the last `sprout`. */
+  /* The living map (Nov 20; world.js ICE / FELL / PUD, mission-sim.js "_packRoutine")
+   *   fellR         a blast at least this wide knocks trees flat
+   *   patchIceSec   how long ice from a move holds frozen water (a bridge)
+   *   routine       how undisturbed packs spend the day */
+  var LIVING = {
+    fellR: 64, patchIceSec: 30,
+    leash: 220,                    /* a flying or swimming partner goes no further than this from you while over water */
+    routine: { drinkChance: 0.45, drinkSec: 22, drinkReach: 420, grazeSec: 18, roam: 220, herdSpeed: 9, sleepAggro: 0.45, prowl: 2, prowlSpeed: 1.6 }
+  };
+
+  /* Biome wars (Nov 20; war-sim.js, world.js territory). Tuned so that a
+   * season's edge alone moves a front a cell (8 tiles) every couple of
+   * minutes, a handful of one side's dead at the front makes it give way in
+   * under a minute, and a fallen lord lets its whole country cave in.
+   *   radius        how many cells round each tamer the fighting is worked out
+   *   rate / leak   pressure gained per second per unit of push / lost without push (full = the cell falls)
+   *   loss*         a death counts 1 (a boss 4, a lord lordLoss) for lossLife seconds within lossRadius px
+   *   season        strength in each biome's good and bad seasons; nightOwl: Dark Area after dark
+   *   skirmish*     squads of each side's natives meeting at a front you can see */
+  var WAR = {
+    tick: 1, radius: 7, rate: 0.034, leak: 0.01, maxPush: 2, maxFlipsPerTick: 1,
+    wobble: 0.12, wobbleEvery: 150,
+    lossWeight: 0.14, lossLife: 150, lossRadius: 1300, bossLoss: 4, lordLoss: 6, lordRadius: 4800, maxDead: 400,
+    base: {},
+    season: {
+      snow: { winter: 1.4, summer: 0.8 }, volcano: { summer: 1.35, winter: 0.8 }, desert: { summer: 1.3, winter: 0.85 },
+      forest: { spring: 1.25, fall: 0.9 }, plains: { spring: 1.2, winter: 0.9 }, swamp: { fall: 1.3, summer: 0.9 }, circuit: {}
+    },
+    nightOwl: { glitch: 1.35 },
+    skirmishFirst: 40, skirmishEvery: [28, 46], skirmishNear: [380, 1100], squad: [3, 5], scatter: 70, maxUnits: 16,
+    seek: 520, aggro: 150, holdFor: 25, fightMul: 0.45,   /* soldiers hit each other softer than they hit you, so a fight lasts long enough to watch */
+    color: { plains: "#8ad84a", forest: "#2fb05a", desert: "#f0c860", snow: "#bfe8ff", swamp: "#a8e83a", volcano: "#ff6a2a", circuit: "#3ae0ff", glitch: "#d070ff" }
+  };
+
+  /* Living populations (Nov 20; nest-sim.js, world.js nestsNear). Replaces the waves.
+   *   activate     a nest within this many px of a tamer has its herd out
+   *   cap          how many a nest holds (herd / nursery / alpha), +capPerYear a year, at most capMax
+   *   breedSec     one more every this many seconds, out of sight or not
+   *   startFull    how full a nest is the first time anyone comes near
+   *   settlers     how many a conquering biome starts a taken nest with */
+  var NESTS = { tick: 1, activate: 980, cap: { herd: 6, nursery: 7, alpha: 5 }, capPerYear: 1, capMax: 11, breedSec: 40, startFull: 1, settlers: 2, scatter: 70 };
+
+  /* Faction trust (Nov 20; faction-sim.js). Per tamer, per biome, 0 to max.
+   *   trusted     at or above: that biome leaves you be, and your side's attacks pass over it unless you click one
+   *   allyHold    once allied (max), it stays so until trust falls below this
+   *   killGain    for each biome bordering the spot (within frontCells) where you kill a Digimon; killLoss from its own
+   *   hit*        a landed hit costs trust (more if they trusted you), at most once per hitEvery seconds per biome
+   *   fade*       trust not added to for fadeAfter seconds drifts down fade a second
+   *   rally*      allied: up to rallyCap of its Digimon within rallyReach come to you; they go for anything hostile
+   *               within guard of you, and drift off past rallyLeave */
+  var FACTIONS = {
+    tick: 1, max: 100, trusted: 40, allyHold: 85, frontCells: 3,
+    killGain: 6, killLoss: 12, bossMul: 2.5, lordMul: 9,
+    hitLoss: 0.5, hitLossTrusted: 4, hitEvery: 0.5,
+    fadeAfter: 60, fade: 0.25,
+    rallyCap: 3, rallyReach: 520, rallyLeave: 1100, guard: 320
+  };
+
+  /* PvP (Nov 20; pvp-sim.js). Tamers backed by different biomes (and none in common) fight on sight.
+   *   reach   partner-to-partner distance it starts at; share: of each move's damage
+   *   koAt    a partner at or below this share of its health is beaten: home to the farm with koHp,
+   *           the winner takes `bits` of the loser's Bits, and the loser comes back with a koShield-second shield */
+  var PVP = { reach: 240, share: 0.5, koAt: 0.08, koHp: 0.3, bits: 0.25, koShield: 6, flagOff: 10 };   /* flagOff: seconds to lower the PvP flag */
+  /* Allies that grow (pvp-sim.js): a Digimon rallied to you levels from its own kills (1 each, 4 for a
+   * boss) and `share` of each of yours; xpBase + xpPer per level to the next. Each level: health x hpPer
+   * (heals healPer), damage x dmgPer. At evolveAt levels it digivolves into its line's standard next form. */
+  var ALLY_GROWTH = { share: 0.35, bossXp: 4, xpBase: 4, xpPer: 2, maxLevel: 12, hpPer: 1.12, healPer: 0.3, dmgPer: 1.1, evolveAt: [4, 8] };
+
+  /* Levels and toughness (Nov 20, Ragnarok-style; mission-sim.js "_levelUp"/"_xpGap").
+   * Every wild Digimon has a level inside its stage's band (band), higher the further from the start
+   * (farFrac of the band over farPx) and a little at random; bosses and alpha leaders +bossLv, lords
+   * +lordLv, Megas in the field at the top. Within its band each level above the bottom is +hpPerLv
+   * health. All of them: x hpMul health, x dmgMul damage ("properly tough"), x xpMul XP.
+   * The gap to your partner's job level:
+   *   a Digimon above you hits dmgPerLvAbove harder a level (up to dmgCapAbove) and gives xpPerLvAbove
+   *   more XP a level (up to xpCapAbove);
+   *   one more than freeBelow levels below you gives xpPerLvBelow less a level, down to xpFloor:
+   *   cutting down weak ones is easy, but it won't level you.
+   * Never empty: a nest below lowAt breeds lowMul times as fast; and when fewer than wanderMin wild
+   * Digimon are within wanderNear of a tamer, a small wandering herd of the local biome drifts in from
+   * off-screen every wanderEvery seconds. */
+  var LEVELS = {
+    band: { "Baby I": [1, 4], "Baby II (In-Training)": [3, 8], "Child (Rookie)": [7, 15], "Adult (Champion)": [14, 24], "Armor": [16, 24],
+      "Perfect (Ultimate)": [22, 32], "Ultimate (Mega)": [30, 42], "Ultimate (Mega+)": [40, 50] },
+    farPx: 12000, farFrac: 0.6, bossLv: 3, lordLv: 6, hpPerLv: 0.05,
+    hpMul: 1.8, dmgMul: 1.4, xpMul: 1.7,
+    dmgPerLvAbove: 0.05, dmgCapAbove: 1.0, xpPerLvAbove: 0.06, xpCapAbove: 0.6,
+    freeBelow: 3, xpPerLvBelow: 0.15, xpFloor: 0.05,
+    lowAt: 2, lowMul: 3,
+    wanderEvery: [40, 70], wanderMin: 6, wanderNear: 1200, wanderSize: [3, 5], wanderDist: [950, 1150]
+  };
+
+  /* Run modes, respawning, scores, bounties (Nov 20; js/net/modes-sim.js, boards-server.js, hub.js League).
+   *   MODES.list   what the run setup offers: open (respawn), survival, ranked, weekly (one life each but open)
+   *   RESPAWN      Open World only. When your partner (or tamer) falls: back hatchSec later as the line's
+   *                egg, near the start (near: px from the centre), shield seconds of safety. Base level,
+   *                stat points, Bits, bag and faction standing are kept. zone: inside baby px the nests stay
+   *                Babies and In-Training all run long; inside rookie px, up to Rookie; no field Megas or
+   *                alpha leaders there. catchUp: XP multiplier while the job level is more than catchUpGap
+   *                below the best it reached this run.
+   *   BOUNTY       streak PvP wins in a row without losing puts base Bits on your head, +per for each more.
+   *   MODES.score  how a run is scored for the boards (modes-sim.js _score). */
+  var MODES = {
+    list: [
+      { id: "open", name: "Open World", short: "Respawn", blurb: "Your partner falls? It starts over as an egg near the start. Same map, same tamer, keep your base level." },
+      { id: "survival", name: "Survival", short: "One life", blurb: "One life. When your partner falls, the run is over." },
+      { id: "ranked", name: "Ranked", short: "Hardcore", blurb: "One life, no CPU partners, scored for the Ranked board.", ranked: true },
+      { id: "weekly", name: "Weekly Map", short: "This week", blurb: "One life on this week's map: the same world for everyone. Scored for the Weekly board.", ranked: true }
+    ],
+    score: { perMinute: 10, perLevel: 25, perKill: 1, perLord: 300, perBoss: 60, perPvp: 150, mega: 2000, megaMin: 500, megaLatePerMin: 15 }
+  };
+  var RESPAWN = { hatchSec: 8, near: [250, 520], shield: 10, zone: { cradle: 1300, baby: 2200, rookie: 4500 }, catchUp: 1.75, catchUpGap: 2,
+    startLv: 3, startHp: 1, startHerd: 2, freshSec: 30 };   /* in the Baby zone: wild levels capped at startLv, no LEVELS toughening, herds of
+                                                             startHerd (+1 from a nest); a partner beaten within freshSec of hatching makes no nemesis */   /* in the Baby zone: wild levels capped at startLv, no LEVELS toughening (playtest, Nov 20) */
+  var BOUNTY = { streak: 3, base: 300, per: 150 };
+  /* Nemeses (Nov 20; js/net/nemesis-sim.js). A wild Digimon that beats a tamer's partner remembers it.
+   *   pts       what each kill is worth to it: a tamer's partner (any tamer) or another wild Digimon
+   *   tiers     points for each title; past the last, one more every `beyond`. No ceiling.
+   *   titles    shown over it as "<the first tamer it beat>'s <title>"
+   *   perKill   a partner beaten: levels, health and damage multiplied, healed in full
+   *   perWild   a wild kill: a little stronger, healed a little, a level every lvEvery of them
+   *   Every new title it digivolves (when its line goes further).
+   *   notice    it comes for a tamer's side inside this; otherwise it hunts other biomes' Digimon
+   *             within hunt, or roams
+   *   herdFrom  from this title on it gathers its own biome's Digimon as a herd (herdPer more a title)
+   *   conquerFrom  from this title on, standing in another biome's land for conquerSec takes it
+   *   reward    XP and Bits when you finally beat it, per title */
+  var NEMESIS = {
+    pts: { partner: 10, wild: 1, big: 4 },
+    tiers: [10, 20, 35, 55, 80, 110, 150], beyond: 50,
+    titles: ["Nemesis", "Scourge", "Tyrant", "Warlord", "Calamity", "Doom", "Apocalypse"],
+    perKill: { lv: 6, hp: 1.5, dmg: 1.22 },
+    perWild: { hp: 1.03, dmg: 1.01, heal: 0.2, lvEvery: 3 },
+    radiusPer: 0.06, radiusMax: 1.8,
+    notice: 650, hunt: 700, roam: 900,
+    herdFrom: 3, herdPer: 2, herdReach: 450, herdEvery: 5,
+    conquerFrom: 4, conquerSec: 8,
+    reward: { xp: 80, bits: 60, orbs: 6 }
+  };
+
   var GRASSFIRE = {
     regrow: 170, sprout: 45,
     tallIgnite: 0.6, tallSpreadGen: 4, tallSpreadChance: 0.6,
@@ -519,8 +659,7 @@
    *   group                 enemies arrive together, a few at a time, at one
    *                         edge of the screen instead of one by one
    *   magnet*               XP comes to you from further and faster, and a
-   *                         job level-up pulls in everything within levelMagnet
-   *   beatBoss              a warning this many seconds before each boss */
+   *                         job level-up pulls in everything within levelMagnet */
   var PACING = {
     jobEarly: [0.55, 0.55, 0.65, 0.75, 0.85, 0.93],
     baseEarly: [2.2, 1.6, 1.3, 1.1],
@@ -539,8 +678,7 @@
     followPartner: false,                      /* the field's stage follows the clock only; it used to wait for the partner to digivolve */
     belowShare: 0.4,                           /* how much of the field is the stage below (was 0.2): little ones to cut through */
     group: { min: 3, max: 4, spread: 44 },
-    magnetRadius: 125, magnetSpeed: 430, levelMagnet: 650, xpOrbScale: 1.35,
-    beatBoss: 30
+    magnetRadius: 125, magnetSpeed: 430, levelMagnet: 650, xpOrbScale: 1.35
   };
 
   var LEASH = {
@@ -1169,7 +1307,7 @@
    * No enemies spawn until `enemyLead` seconds before the hatch, then the
    * opening wave floods in (`openingFlood` Pagumon). */
   var HATCH = {
-    time: 20,
+    time: 8,             /* Nov 20: 8 s, the same as a respawned egg (RESPAWN.hatchSec) */
     enemyLead: 1,
     openingFlood: 4,
     feedBonus: 0,
@@ -1401,6 +1539,17 @@
     SKILL_CARDS: SKILL_CARDS,
     TERRAIN: TERRAIN,
     STORM: STORM,
+    LIVING: LIVING,
+    NESTS: NESTS,
+    LEVELS: LEVELS,
+    MODES: MODES,
+    RESPAWN: RESPAWN,
+    BOUNTY: BOUNTY,
+    NEMESIS: NEMESIS,
+    FACTIONS: FACTIONS,
+    PVP: PVP,
+    ALLY_GROWTH: ALLY_GROWTH,
+    WAR: WAR,
     RIVAL: RIVAL,
     VIRUS: VIRUS,
     RANK: RANK,
@@ -1477,6 +1626,10 @@
     },
     /* Digifarm intermission (ids 14, 17). Visit gaps are battle-time intervals 3, 6, 10, then +4 minutes — not absolute due-stamps at t=3/6/10. */
     FARM_CFG: {
+      /* Nov 20: the farm is visited when you choose (the "Farm" button, G), not on a timer. The world
+       * keeps going while you're there; you can't go with an enemy within blockRadius, and it takes
+       * chargeSec of standing still to get there. You come back where you left. */
+      onDemand: true, blockRadius: 380, chargeSec: 2, returnShield: 2,
       intervalMinutes: [3, 6, 10],
       intervalPlus: 4,
       stayCapSeconds: 120,

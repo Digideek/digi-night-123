@@ -9,6 +9,9 @@
   var camX = 0, camY = 0, shake = 0;
   var enemies = [];
   var patches = [];            /* fire, puddles, ice and goo on the ground (data.js STATUS) */
+  var fronts = [], terrSeen = "", warToastT = -99;
+  var nemList = null;          /* nemeses: [id, x, y, tier, title, form, level] */
+  var nestList = [];           /* the nests near us (nest-sim.js): [x, y, biome, count, cap, kind] */   /* biome wars (war-sim.js): contested cells, the territory last applied */
   var bullets = [];
   var orbs = [];
   var particles = [];
@@ -19,6 +22,7 @@
   var selectedTamer = "byte";
   var selectedEgg = "agumon";
   var selectedCpuBots = 0;
+  var selectedMode = "open";   /* run modes (data.js MODES, modes-sim.js): open / survival / ranked / weekly */
   var menuItems = [];
   var menuIndex = 0;
   var pendingLevels = 0;
@@ -86,9 +90,21 @@
     return Math.max(6, Math.round(base * sc));
   }
 
-  function slideMove(x, y, dx, dy, rad) {
-    if (D.world && D.world.moveSlide) return D.world.moveSlide(x, y, dx, dy, rad);
+  /* cross: 0 walks, 1 swims, 2 flies (biomes.js crossOf) */
+  function slideMove(x, y, dx, dy, rad, cross) {
+    if (D.world && D.world.moveSlide) return D.world.moveSlide(x, y, dx, dy, rad, cross);
     return { x: x + dx, y: y + dy };
+  }
+
+  function crossOf(id) { return D.biomes && D.biomes.crossOf ? D.biomes.crossOf(id) : 0; }
+  /* a flying or swimming partner goes out over the water, but stays within LIVING.leash of the tamer there */
+  function partnerSlide(dx, dy) {
+    var cr = crossOf(run.form), pos = slideMove(run.mx, run.my, dx, dy, actorRad(run.form), cr), L = (D.LIVING && D.LIVING.leash) || 220, dn, dO;
+    if (cr && D.world && D.world.openWaterAt && (D.world.openWaterAt(pos.x, pos.y) || (D.world.hazardNear && D.world.hazardNear(pos.x, pos.y, 2)))) {
+      dn = dist2(pos.x, pos.y, run.x, run.y); dO = dist2(run.mx, run.my, run.x, run.y);
+      if (dn > L * L && dn > dO) return { x: run.mx, y: run.my };
+    }
+    return pos;
   }
 
   function isWalkable(x, y, rad) {
@@ -96,8 +112,8 @@
     return true;
   }
 
-  function snapWalkable(x, y, rad, maxR) {
-    if (D.world && D.world.nearestWalkable) return D.world.nearestWalkable(x, y, maxR || 240, rad == null ? 8 : rad);
+  function snapWalkable(x, y, rad, maxR, cross) {
+    if (D.world && D.world.nearestWalkable) return D.world.nearestWalkable(x, y, maxR || 240, rad == null ? 8 : rad, cross);
     return { x: x, y: y };
   }
 
@@ -558,7 +574,7 @@
     sp *= 1.02;
     var l = len(vx, vy);
     if (l > 4) {
-      var pos = slideMove(a.x, a.y, (vx / l) * sp * dt, (vy / l) * sp * dt, rad);
+      var pos = slideMove(a.x, a.y, (vx / l) * sp * dt, (vy / l) * sp * dt, rad, crossOf(a.form));
       a.moving = Math.abs(pos.x - a.x) + Math.abs(pos.y - a.y) > 0.2;
       a.x = pos.x;
       a.y = pos.y;
@@ -710,6 +726,11 @@
     };
     if (D.rarity && D.rarity.resetRun) D.rarity.resetRun(run);
     run.formsReached[formId] = true;
+    /* the run's mode (modes-sim.js): the Weekly Map is the same world for everyone this week; Ranked and Weekly bring no CPU partners or DigiBank help */
+    run.mode = guestNow() ? "open" : selectedMode;
+    run.week = run.mode === "weekly" && D.weekOf ? D.weekOf() : null;
+    if (run.mode === "ranked" || run.mode === "weekly") { run.cpuBots = 0; hatchSpec = null; }
+    if (run.week && D.weekSeed) run.worldSeed = D.weekSeed(run.week);
     run.worldSeed = (D._shotSeed || run.worldSeed || ((Date.now() ^ ((Math.random() * 0x7fffffff) | 0)) >>> 0)) || 1;
     if (D.world && D.world.reset) D.world.reset(run.worldSeed);
     preloadForRun();
@@ -736,11 +757,13 @@
       run.hatchery = hatchSpec;
     }
     shake = 0;
+    prints = []; printLast = {}; livingFx = { landed: {}, iceT: -9, warnT: -99, warned: false };
+    fronts = []; terrSeen = ""; warToastT = -99; nestList = []; pvpSeen = {};
     pendingLevels = 0;
     lastT = 0;
     setState("playing");
     var deployForm = save.bankDeploy && (typeof save.bankDeploy === "object" ? save.bankDeploy.form : save.bankDeploy);
-    if (deployForm && D.SPECIES[deployForm] && !(D.online && D.online.isGuest && D.online.isGuest())) {
+    if (deployForm && D.SPECIES[deployForm] && !(D.online && D.online.isGuest && D.online.isGuest()) && run.mode !== "ranked" && run.mode !== "weekly") {
       spawnAlly(deployForm, run.x + 48, run.y - 16);
     }
     spawnCpuMates();
@@ -802,6 +825,7 @@
     }
     missionAuth = auth;
     D.missionAuth = auth;
+    var lp0 = sim.player(localId); if (lp0 && !lp0.name && D.profile && D.profile.name) lp0.name = D.profile.name() || "";   /* a nemesis carries your name */
     /* a Hatchery partner: the digivolutions it has behind it, the skill points of its job levels, and what it ate */
     if (run.hatchery && !run.hatchery.applied) {
       var hp0 = sim.player(localId);
@@ -902,6 +926,9 @@
       run.desperation = p.desperation;
       run.atkBoost = p.atkBoost;
       run.focusId = p.focusId != null ? p.focusId : null;
+      run.trust = p.trust || null; run.allied = p.allied || null; run.myId = p.id;   /* faction trust (faction-sim.js) */
+      run.pvpFlag = !!p.pvpFlag; run.pvpOffAt = p.pvpOffAt || 0;                    /* the PvP flag (pvp-sim.js) */
+      if (p.md) run.md = p.md;                                                        /* respawns, bounty, bests (modes-sim.js) */
       if (p.weapons) run.weapons = p.weapons;
       if (p.form) run.form = p.form;
       if (p.bag) run.bag = p.bag;
@@ -944,14 +971,17 @@
     }
     run.others = [];
     for (i = 0; i < list.length; i++) {
-      if (list[i] !== p && list[i].id !== missionLocalId) run.others.push({
+      /* a friend away at the farm isn't in the world to be drawn (Nov 20) */
+      if (list[i] !== p && list[i].id !== missionLocalId && !list[i].atFarm) run.others.push({
         id: list[i].id, x: list[i].x, y: list[i].y, mx: list[i].mx, my: list[i].my, hasTamer: list[i].hasTamer,
         form: list[i].form, facing: list[i].facing, tdir: list[i].tdir, moving: list[i].moving,
         mfacing: list[i].mfacing, monMoving: list[i].monMoving, hp: list[i].hp, maxHp: list[i].maxHp,
         tamerHp: list[i].tamerHp, tamerMaxHp: list[i].tamerMaxHp, tamerInvuln: list[i].tamerInvuln, monInvuln: list[i].monInvuln,
-        faint: list[i].faint, downed: list[i].downed, level: list[i].level, hatchLeft: list[i].hatchLeft, burstForm: list[i].burstForm || null, burstStyle: list[i].burstStyle || null, shiny: !!list[i].shiny
+        faint: list[i].faint, downed: list[i].downed, level: list[i].level, hatchLeft: list[i].hatchLeft, burstForm: list[i].burstForm || null, burstStyle: list[i].burstStyle || null, shiny: !!list[i].shiny,
+        trust: list[i].trust || null, pvpFlag: !!list[i].pvpFlag, bounty: (list[i].md && list[i].md.bo) || 0
       });
     }
+    pvpWatch();
     if (snap.startingPartySize != null) run.startingPartySize = snap.startingPartySize;
     if (snap.partyReviveCharge != null) run.partyReviveCharge = snap.partyReviveCharge;
     if (Object.prototype.hasOwnProperty.call(snap, "reviveHold")) run.reviveHold = snap.reviveHold;
@@ -966,6 +996,12 @@
     run.ally = snap.ally || (snap.ally === null ? null : run.ally);
     replaceArr(enemies, snap.enemies);
     patches = snap.patches || [];
+    if (!missionAuth && snap.soak != null && D.world && D.world.setSoak) D.world.setSoak(snap.soak);
+    /* who holds the land (the host decides; a guest's world follows) */
+    if (snap.terr != null && snap.terr !== terrSeen && D.world && D.world.applyTerritory) { terrSeen = snap.terr; if (!missionAuth) D.world.applyTerritory(snap.terr); }
+    fronts = snap.fronts || fronts;
+    nestList = snap.nests || nestList;
+    nemList = snap.nems || null;                                                    /* every nemesis alive (nemesis-sim.js) */
     if (D.sprites && D.sprites.preloadSpecies) {
       for (i = 0; i < enemies.length; i++) {
         if (!seenEnemyTypes[enemies[i].type]) { seenEnemyTypes[enemies[i].type] = true; D.sprites.preloadSpecies(enemies[i].type, true); }
@@ -996,6 +1032,12 @@
         }
         continue;
       }
+      if (e.type === "war.flip" || e.type === "war.skirmish" || e.type === "war.lord") { warEvent(e); continue; }
+      if (e.type === "trust") { trustEvent(e); continue; }
+      if (e.type === "pvp.ko") { pvpKoEvent(e); continue; }
+      if (e.type === "nemesis.kill" || e.type === "nemesis.rise" || e.type === "nemesis.down") { nemesisEvent(e); continue; }
+      if (e.type === "respawn" || e.type === "bounty.set" || e.type === "bounty.claimed" || e.type === "mode.mega") { modeEvent(e); continue; }
+      if (e.type === "pvp.flag") { pvpFlagEvent(e); continue; }
       if (e.type === "hurt") {
         shake = Math.max(shake, e.who === "tamer" ? 8 : 6);
         if (e.who === "tamer" || e.who === "mon") sfx("hurt");
@@ -1023,6 +1065,7 @@
         if (e.k === "boltwarn") { boltWarns.push({ x: e.x, y: e.y, t: e.t || 0.9, max: e.t || 0.9 }); continue; }
         if (e.k === "bolt") { strikeFx(e.x, e.y, e.r || 60); continue; }
         if (e.k === "frost") { burst(e.x, e.y, "#c4ecff", 14, 150); addFloat(e.x, e.y - 10, "Frozen over", "#bfe8ff"); continue; }
+        if (livingEvent(e)) continue;
         if (e.k === "weak") { addFloat(e.x, e.y - 6, "Weak!", e.id != null ? "#ff6a5a" : "#ff9a3a"); continue; }
         if (e.k === "resist") { addFloat(e.x, e.y - 6, "Resist", e.id != null ? "#8fd0ff" : "#8a94a8"); continue; }
         if (e.k === "crit") { addFloat(e.x, e.y - 14, "CRIT!", "#ffe14a"); burst(e.x, e.y, "#ffe14a", 8, 150); continue; }
@@ -1084,12 +1127,6 @@
         evoLuckyNote = true;
       } else if (e.type === "evo.offer") {
         sfx("level");
-      } else if (e.type === "beat" && e.k === "boss") {
-        beat = { k: "boss", at: run.time + (e.in || 30) };
-        showNoticeToast("A boss is coming in " + (e.in || 30) + " seconds."); noticeToastTimer = 3; sfx("hurt");
-      } else if (e.type === "pack") {
-        var pdx = e.x - run.x, pdy = e.y - run.y, pa = Math.atan2(pdy, pdx), dirs = ["east", "south-east", "south", "south-west", "west", "north-west", "north", "north-east"];
-        if (!(noticeToastTimer > 0)) { showNoticeToast("A pack of " + spName(e.enemyType) + " is gathering to the " + dirs[((Math.round(pa / (Math.PI / 4)) % 8) + 8) % 8] + "."); noticeToastTimer = 3.5; }
       } else if (e.type === "prop.used") {
         if (D.world && D.world.markUsed) D.world.markUsed(e.key);
         if (e.kind === "spire") {
@@ -1314,6 +1351,21 @@
     floats.push({ x: x, y: y, text: text, color: color || "#fff", life: 0.7, max: 0.7, pop: 0 });
   }
 
+  /* a projection's foot lands (sprites.js drawTamer): a puff on dirt and sand, a ripple in a puddle,
+   * a spray of snow, and the faint ring it stands on blinks where the foot touched */
+  function tamerStep(key, x, y) {
+    if (!run || state !== "playing" || !D.world) return;
+    var W = D.world, puddle = W.inPuddle && W.inPuddle(x, y + 2), tile = (D.sprites && D.sprites.TILE) || 16, b, mat, i, col;
+    if (puddle) { addParticle(x + rand(-3, 3), y + 3, 0, 0, "rgba(200,235,255,0.9)", 0.6, 3, "ripple", false, 0); for (i = 0; i < 2; i++) addParticle(x + rand(-4, 4), y + 1, rand(-14, 14), rand(-30, -16), "#cfeaff", 0.3, 2, "pixel", false, 1.4); return; }
+    if (W.snowAt && W.snowAt(x, y)) { for (i = 0; i < 3; i++) addParticle(x + rand(-4, 4), y + 2, rand(-16, 16), rand(-18, -6), "#f4f8ff", rand(0.3, 0.5), 2, "pixel", false, 0.8); return; }
+    b = W.biomeAt ? W.biomeAt(x, y) : null;
+    mat = W.materialAt ? W.materialAt(Math.floor(x / tile), Math.floor(y / tile)) : 0;
+    if (mat === 1 || (b && (b.id === "desert" || b.id === "volcano"))) {
+      col = b && b.id === "desert" ? "#e6c98a" : b && b.id === "volcano" ? "#8a7a74" : "#b89a6a";
+      for (i = 0; i < (reducedFx ? 1 : 3); i++) addParticle(x + rand(-5, 5), y + 2, rand(-12, 12), rand(-10, -3), col, rand(0.35, 0.6), rand(2, 3), "pixel", false, 0.15);
+    }
+  }
+  if (D.sprites) D.sprites.onTamerStep = tamerStep;
   function burst(x, y, color, n, speed) {
     var i, a, sp, nn;
     nn = reducedFx ? Math.ceil(n * 0.4) : n;
@@ -1814,7 +1866,7 @@
     if (d2 >= min * min) return;
     var d = Math.sqrt(d2);
     if (d < 0.001) { var a0 = (e._id || 1) * 2.399; dx = Math.cos(a0); dy = Math.sin(a0); d = 1; }
-    var pos = slideMove(e.x, e.y, x + dx / d * min - e.x, y + dy / d * min - e.y, Math.max(4, (e.radius || 10) * 0.6));
+    var pos = slideMove(e.x, e.y, x + dx / d * min - e.x, y + dy / d * min - e.y, Math.max(4, (e.radius || 10) * 0.6), crossOf(e.type));
     e.x = pos.x; e.y = pos.y;
   }
 
@@ -1849,7 +1901,7 @@
       if (e.kbStun > 0) e.kbStun -= dt;
       else { e.x += n.x * spd * dt; e.y += n.y * spd * dt; }
       if (e.kvx || e.kvy) {
-        var kp = slideMove(e.x, e.y, e.kvx * dt, e.kvy * dt, Math.max(4, e.radius * 0.6));
+        var kp = slideMove(e.x, e.y, e.kvx * dt, e.kvy * dt, Math.max(4, e.radius * 0.6), crossOf(e.type));
         e.x = kp.x; e.y = kp.y;
         var kdec = Math.exp(-((D.KNOCKBACK && D.KNOCKBACK.decay) || 11) * dt);
         e.kvx *= kdec; e.kvy *= kdec;
@@ -2420,18 +2472,6 @@
       for (i = 0; i < (run.others || []).length; i++) { o = run.others[i]; if (o.burstForm) burstSparks(o.mx, o.my, o.burstForm); }
     }
   }
-  /* what is about to happen: a countdown chip under the clock */
-  var beat = null;
-  function tickBeat() {
-    var c = $("hud-beat"), left;
-    if (!c) return;
-    if (!beat || !run || run.ended || state !== "playing") { if (!c.hidden) c.hidden = true; if (run && run.ended) beat = null; return; }
-    left = Math.ceil(beat.at - run.time);
-    if (left <= 0) { beat = null; c.hidden = true; return; }
-    c.hidden = false;
-    c.textContent = "Boss in 0:" + (left < 10 ? "0" : "") + left;
-    c.classList.toggle("is-urgent", left <= 10);
-  }
   /* ---- the rival (its rules are in net/rival-sim.js; this is its voice and its look) ----
    * `run.rival` is the simulation's view of it each snapshot: name, form,
    * levels, health, where it and its tamer are, what it is doing, the score. */
@@ -2525,7 +2565,7 @@
     id = ids.length ? ids[(rv.tamer + (ids[rv.tamer % ids.length] && ids[rv.tamer % ids.length].id === run.tamerId ? 1 : 0)) % ids.length].id : run.tamerId;
     ctx.save();
     ctx.globalAlpha = 0.9;
-    D.sprites.drawTamer(ctx, rv.tx, rv.ty, rv.tf || 1, run.time, false, !!rv.tm, false, "side", id);
+    D.sprites.drawTamer(ctx, rv.tx, rv.ty, rv.tf || 1, run.time, false, !!rv.tm, false, "side", id, "rival");
     ctx.globalAlpha = 1;
     ctx.font = "bold 10px Trebuchet MS, sans-serif"; ctx.textAlign = "center"; ctx.lineWidth = 3;
     ctx.strokeStyle = "rgba(20,6,16,0.85)"; ctx.fillStyle = "#ff9ad0";
@@ -2692,7 +2732,7 @@
       var far = Math.sqrt(dist2(run.mx, run.my, run.x, run.y));
       if (far > 360) {
         var pn = norm(run.x - run.mx, run.y - run.my);
-        var fpos = slideMove(run.mx, run.my, pn.x * 40 * dt, pn.y * 40 * dt, actorRad(run.form));
+        var fpos = partnerSlide(pn.x * 40 * dt, pn.y * 40 * dt);
         run.mx = fpos.x;
         run.my = fpos.y;
       }
@@ -2742,7 +2782,7 @@
       desiredY = run.y + 6;
     }
     var monRad = actorRad(run.form);
-    var dest = snapWalkable(desiredX, desiredY, monRad, 160);
+    var dest = snapWalkable(desiredX, desiredY, monRad, 160, crossOf(run.form));
     desiredX = dest.x;
     desiredY = dest.y;
     var vx = desiredX - run.mx, vy = desiredY - run.my;
@@ -2752,7 +2792,7 @@
     if (vd > 4) {
       var step = Math.min(vd, spd * dt);
       var sx = vx / vd * step, sy = vy / vd * step;
-      var pos = slideMove(run.mx, run.my, sx, sy, monRad);
+      var pos = partnerSlide(sx, sy);
       var moved = Math.abs(pos.x - run.mx) + Math.abs(pos.y - run.my);
       if (moved < step * 0.25 && vd > 16) {
         var px = -vy / vd, py = vx / vd;
@@ -2761,7 +2801,7 @@
         for (ti = 0; ti < tryOff.length; ti++) {
           wx = sx + px * tryOff[ti];
           wy = sy + py * tryOff[ti];
-          steered = slideMove(run.mx, run.my, wx, wy, monRad);
+          steered = partnerSlide(wx, wy);
           if (Math.abs(steered.x - run.mx) + Math.abs(steered.y - run.my) > 1) {
             pos = steered;
             break;
@@ -2778,7 +2818,7 @@
     }
     dTamer = Math.sqrt(dist2(run.mx, run.my, run.x, run.y));
     if (dTamer < L.unstick && dTamer > 0.1) {
-      pos = slideMove(run.mx, run.my, (run.mx - run.x) / dTamer * (L.unstick - dTamer), (run.my - run.y) / dTamer * (L.unstick - dTamer), monRad);
+      pos = partnerSlide((run.mx - run.x) / dTamer * (L.unstick - dTamer), (run.my - run.y) / dTamer * (L.unstick - dTamer));
       run.mx = pos.x;
       run.my = pos.y;
     }
@@ -3793,7 +3833,7 @@
     sp *= 0.95;
     var l = len(vx, vy);
     if (l > 4) {
-      var pos = slideMove(a.x, a.y, (vx / l) * sp * dt, (vy / l) * sp * dt, actorRad(a.form));
+      var pos = slideMove(a.x, a.y, (vx / l) * sp * dt, (vy / l) * sp * dt, actorRad(a.form), crossOf(a.form));
       a.moving = Math.abs(pos.x - a.x) + Math.abs(pos.y - a.y) > 0.2;
       a.x = pos.x;
       a.y = pos.y;
@@ -4430,7 +4470,8 @@
       intelligence: (run.trainStats && run.trainStats.intelligence) || 0,
       agility: (run.trainStats && run.trainStats.agility) || 0,
       bondTrain: run.bondTrain || 0,
-      formTime: Math.max(0, (run.time || 0) - (run.formSince || 0))
+      formTime: Math.max(0, (run.time || 0) - (run.formSince || 0)),
+      runTime: run.time || 0
     };
     if (D.rarity && D.rarity.attachStats) D.rarity.attachStats(stats, run);
     if (save && save.discoveries) stats.discoveries = save.discoveries;
@@ -4691,6 +4732,18 @@
     if (pick && pick.to && pick.to !== run.form) beginEvolution(pick);
   }
 
+  /* the end-of-run record for the boards: the sim's own when we host it, our snapshot's when we are a guest */
+  function runRecord() {
+    var sim = missionAuth && missionAuth.sim, p = sim && sim.player && sim.player(missionLocalId), rec, md = run.md || {}, landBy = {}, parts, i, f, bt = 0, k;
+    if (p && sim._runRecord) return sim._runRecord(p);
+    if (D.world && D.world.territoryString) { parts = D.world.territoryString().split(";"); for (i = 0; i < parts.length; i++) { f = parts[i].split(",")[2]; if (f) landBy[f] = (landBy[f] || 0) + 1; } }
+    rec = { mode: "open", week: null, seed: run.worldSeed, time: Math.round(run.time || 0), level: Math.max(run.level || 1, md.pk || 0), kills: run.kills || 0,
+      lords: md.lo || 0, bosses: run.bossesBeaten || 0, pvp: md.pw || 0, megaAt: md.mg ? Math.round(md.mg) : null, respawns: md.rs || 0, faction: null, landBy: landBy, form: run.form };
+    for (k in (run.trust || {})) if (run.trust[k] > bt) { bt = run.trust[k]; rec.faction = k; }
+    rec.score = D.modeScore ? D.modeScore(D, rec) : 0;
+    return rec;
+  }
+
   /* ---------- Run end ---------- */
   function endRun() {
     if (!run || run.ended) return;
@@ -4720,6 +4773,19 @@
       save.hub.rivalLosses = (save.hub.rivalLosses || 0) + (run.rival.losses || 0);
       save.hub.lastRival = { name: run.rival.name, form: run.rival.form, level: run.rival.level, wins: run.rival.wins || 0, beat: !!run.rivalBeatYou, time: Math.floor(run.time) };
       writeSave();
+    }
+    /* the boards (js/boards.js, boards-server.js): the run's record and score */
+    var rec = runRecord(), md = modeDef(rec.mode);
+    lines.unshift(["Mode", (md && md.name) || "Open World"]);
+    lines.push(["Score", String(rec.score)]);
+    if (rec.respawns) lines.push(["Respawns", String(rec.respawns)]);
+    if (rec.megaAt) lines.push(["Mega at", formatTime(rec.megaAt)]);
+    var gb = document.getElementById("go-board");
+    if (!gb && el.goSummary && el.goSummary.parentNode) { gb = document.createElement("p"); gb.id = "go-board"; gb.className = "go-board"; el.goSummary.parentNode.insertBefore(gb, el.goSummary.nextSibling); }
+    if (gb) { gb.hidden = true; gb.textContent = ""; }
+    if (D.boards && D.boards.signedIn() && rec.time >= 60) {
+      if (gb) { gb.hidden = false; gb.textContent = "Sending the run to the League…"; }
+      D.boards.submit(rec).then(function (j) { if (gb) { gb.textContent = j && j.ok ? D.boards.placedText(j) : "The League could not take this run" + (j && j.reason ? ": " + j.reason : "") + "."; } });
     }
     if (run.rival) lines.push(["Rival", run.rival.name + "'s " + spName(run.rival.form) + " (job level " + run.rival.level + "): you " + run.rival.wins + ", " + run.rival.name + " " + run.rival.losses]);
     el.goTitle.textContent = (run.hp <= 0 || run.downed) ? "RUN OVER" : "RUN ENDED";
@@ -4954,7 +5020,7 @@
     }
     checkUnlocks();
     if (isEggForm(run.form)) {
-      run.hatchLeft = Math.max(0, (run.hatchLeft == null ? 20 : run.hatchLeft) - dt);
+      run.hatchLeft = Math.max(0, (run.hatchLeft == null ? ((D.HATCH && D.HATCH.time) || 8) : run.hatchLeft) - dt);
       if (run.hatchLeft <= 0) { doHatch(); return; }
     } else {
       checkEvolution();
@@ -4991,6 +5057,7 @@
     if (run && run.focusMarkT > 0) run.focusMarkT = Math.max(0, run.focusMarkT - dt * 2);
     shake = Math.max(0, shake - dt * 18);
     frameStep = dt; stepTick = (stepTick + 1) % 30000;
+    if (state === "playing") { riverHint(dt); tickFarmGo(dt); } else if (farmGo) farmGo = null;
     if (D.attackFx) D.attackFx.update(dt);
     if (evoFlash > 0) evoFlash = Math.max(0, evoFlash - dt * 1.6);
     for (i = particles.length - 1; i >= 0; i--) {
@@ -5000,6 +5067,7 @@
       p.y += p.vy * dt;
       if (p.grav) p.vy += 40 * p.grav * dt;
       if (p.type === "ring") p.size += 90 * dt;
+      if (p.type === "ripple") p.size += 16 * dt;
       if (p.type === "glow") p.size *= 1 + dt * 1.8;
       if (p.life <= 0) {
         partPool.push(particles.splice(i, 1)[0]);
@@ -5204,6 +5272,608 @@
       ctx.restore();
     }
   }
+  /* ---------- The living map (Nov 20, world.js) ---------- */
+  var livingFx = { landed: {}, iceT: -9, warnT: -99, warned: false };
+  function polyBox(polys) { return D.net.mission.MissionSim.polyBox(polys); }
+  /* what the host's world did, done to ours too (the host's own world already has it: these are no-ops there) */
+  function livingEvent(e) {
+    var W = D.world, MS = D.net && D.net.mission && D.net.mission.MissionSim, b;
+    if (!W) return false;
+    if (e.k === "icewater") {
+      if (W.freezeArea) W.freezeArea(e.x, e.y, e.r, e.until);
+      if (run.time - livingFx.iceT > 0.25) { livingFx.iceT = run.time; burst(e.x, e.y, "#e4f6ff", 7, 90); burst(e.x, e.y, "#ffffff", 3, 50); }
+      return true;
+    }
+    if (e.k === "icepoly") {
+      if (W.freezeTest && MS && e.polys) { b = polyBox(e.polys); W.freezeTest(function (px, py) { return MS.inPolys(e.polys, px, py, 1.05); }, b[0], b[1], b[2], b[3], e.until); }
+      return true;
+    }
+    if (e.k === "fell") { if (W.fellArea) W.fellArea(e.x, e.y, e.r, e.at); return true; }
+    if (e.k === "fellp") {
+      if (W.fellTest && MS && e.polys) { b = polyBox(e.polys); W.fellTest(function (px, py) { return MS.inPolys(e.polys, px, py, 1); }, b[0], b[1], b[2], b[3], e.x, e.y, e.at); }
+      return true;
+    }
+    if (e.k === "allylv") {
+      addFloat(e.x, e.y, "Lv " + e.alv + "!", "#ffe27a"); burst(e.x, e.y + 8, "#ffe27a", 8, 120);
+      return true;
+    }
+    if (e.k === "allyevo") {
+      burst(e.x, e.y, "#ffffff", 20, 220); burst(e.x, e.y, "#ffd200", 16, 180);
+      addFloat(e.x, e.y - 40, spName(e.to) + "!", "#ffe080");
+      if (run && e.owner != null && e.owner === run.myId) { showNoticeToast("Your ally " + spName(e.from) + " digivolved into " + spName(e.to) + "!"); noticeToastTimer = 3.5; sfx("evo"); }
+      return true;
+    }
+    if (e.k === "rally") { addFloat(e.x, e.y, "Joins you!", warColor(e.fac)); burst(e.x, e.y + 10, warColor(e.fac), 8, 120); return true; }
+    if (e.k === "nesthatch") {
+      /* a new one comes out of the nest: shell bits and a puff */
+      burst(e.x, e.y - 4, "#f4ecd8", 10, 110); burst(e.x, e.y - 2, "#c8b890", 6, 70);
+      return true;
+    }
+    if (e.k === "pudzap") {
+      burst(e.x, e.y, "#ffe14a", 16, 200); burst(e.x, e.y, "#bfe8ff", 10, 140);
+      addFloat(e.x, e.y - 12, "Shocked through!", "#ffe14a");
+      return true;
+    }
+    return false;
+  }
+  /* A tree knocked flat: it topples away from the blast (speeding up as it goes, with a thump of dust),
+   * lies there a couple of minutes, leaves a stump, then grows back. */
+  function drawFallen(pr, kind, f) {
+    var base = kind.replace(/_used$/, ""), k, a, sc;
+    if (f.state === 2) { D.sprites.drawProp(ctx, "stump", pr.x, pr.y); return; }
+    if (f.state === 3) {
+      sc = 0.3 + 0.7 * clamp(f.grow, 0, 1);
+      ctx.save(); ctx.translate(pr.x, pr.y); ctx.scale(sc, sc); ctx.translate(-pr.x, -pr.y);
+      D.sprites.drawProp(ctx, base, pr.x, pr.y);
+      ctx.restore();
+      return;
+    }
+    k = clamp(f.age / 0.7, 0, 1);
+    a = f.dir * (Math.PI / 2) * 0.94 * k * k;
+    if (k >= 1 && !livingFx.landed[pr.fk + "@" + f.at]) {
+      livingFx.landed[pr.fk + "@" + f.at] = 1;
+      if (f.age < 2) { burst(pr.x + f.dir * 34, pr.y - 4, "#8a7a5a", 12, 120); burst(pr.x + f.dir * 18, pr.y - 2, "#5a4a30", 6, 80); shake = Math.max(shake, 2); }
+    }
+    D.sprites.drawProp(ctx, "stump", pr.x, pr.y);
+    ctx.save();
+    if (f.left < 8) ctx.globalAlpha = clamp(f.left / 8, 0, 1);
+    ctx.translate(pr.x, pr.y - 4); ctx.rotate(a); ctx.translate(-pr.x, -(pr.y - 4));
+    D.sprites.drawProp(ctx, base, pr.x, pr.y - 4);
+    ctx.restore();
+  }
+  function drawZzz(en) {
+    var t = run.time, top = en.y - (en.radius || 10) * 1.8 - 8, i, ph2, x, y;
+    ctx.save();
+    ctx.font = "bold 11px Trebuchet MS, sans-serif"; ctx.textAlign = "center"; ctx.lineWidth = 3;
+    for (i = 0; i < 3; i++) {
+      ph2 = (t * 0.45 + i / 3 + (en._id % 7) * 0.13) % 1;
+      x = en.x + 6 + ph2 * 12 + Math.sin(ph2 * 6 + i) * 2; y = top - ph2 * 18;
+      ctx.globalAlpha = Math.sin(ph2 * Math.PI) * 0.9;
+      ctx.font = "bold " + (8 + i * 2) + "px Trebuchet MS, sans-serif";
+      ctx.strokeStyle = "rgba(10,14,30,0.85)"; ctx.fillStyle = "#cfe0ff";
+      ctx.strokeText("z", x, y); ctx.fillText("z", x, y);
+    }
+    ctx.restore();
+  }
+  /* rain-filled puddles and ponds: muddy rim, water, a highlight; rings when it is still raining; ice in winter */
+  function drawPuddles() {
+    if (!D.world || !D.world.puddlesIn) return;
+    var span = camSpan(), list = D.world.puddlesIn(camX - span.w / 2 - 20, camY - span.h / 2 - 20, camX + span.w / 2 + 20, camY + span.h / 2 + 20), i, p, k, ry, wet, frozen, t = run.time, ph2, rx, cx, cy;
+    if (!list.length) return;
+    wet = D.weather && D.weather.wetness ? D.weather.wetness(run) : 0;
+    frozen = D.world.season === "winter";
+    ctx.save();
+    for (i = 0; i < list.length; i++) {
+      p = list[i]; ry = p.r * 0.62;
+      ctx.globalAlpha = 0.28; ctx.fillStyle = "#2a2014";
+      ctx.beginPath(); ctx.ellipse(p.x, p.y + 1, p.r + 4, ry + 3, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = frozen ? 0.85 : (p.pond ? 0.78 : 0.62);
+      ctx.fillStyle = frozen ? "#cfe6f2" : (p.pond ? "#2a6478" : "#3a7a8e");
+      ctx.beginPath(); ctx.ellipse(p.x, p.y, p.r, ry, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = frozen ? 0.8 : 0.35; ctx.fillStyle = frozen ? "#ffffff" : "#a8e0f0";
+      ctx.beginPath(); ctx.ellipse(p.x - p.r * 0.25, p.y - ry * 0.3, p.r * 0.45, ry * 0.28, -0.15, 0, Math.PI * 2); ctx.fill();
+      if (!frozen && wet > 0.15) {
+        /* raindrops landing */
+        ctx.strokeStyle = "#d8f4ff"; ctx.lineWidth = 1;
+        for (k = 0; k < Math.max(2, Math.round(p.r / 9)); k++) {
+          ph2 = (t * 1.3 + ph(k * 7.1, p.x * 0.01 + p.y * 0.013)) % 1;
+          cx = p.x + (ph(k, p.x) - 0.5) * p.r * 1.3; cy = p.y + (ph(p.y, k) - 0.5) * ry * 1.2;
+          rx = 1.5 + ph2 * 6;
+          ctx.globalAlpha = (1 - ph2) * 0.7 * wet;
+          ctx.beginPath(); ctx.ellipse(cx, cy, rx, rx * 0.55, 0, 0, Math.PI * 2); ctx.stroke();
+        }
+      }
+    }
+    ctx.restore();
+  }
+  /* move-made ice that is about to give way: cracks that spread and flicker */
+  function drawThinIce() {
+    if (!D.world || !D.world.thinIceInView) return;
+    var span = camSpan(), list = D.world.thinIceInView(camX, camY, span.w, span.h, 5), i, q, k, a, len, T = (D.sprites && D.sprites.TILE) || 48, f;
+    if (!list.length) return;
+    ctx.save(); ctx.lineWidth = 2;
+    for (i = 0; i < list.length; i++) {
+      q = list[i]; f = 1 - q.left / 5;
+      ctx.globalAlpha = (0.45 + 0.4 * f) * (Math.sin(run.time * (6 + f * 14) + q.x) > -0.3 ? 1 : 0.4);
+      ctx.strokeStyle = f > 0.6 ? "#3a6a88" : "#7aa8c4";
+      for (k = 0; k < 3; k++) {
+        a = ph(q.x + k, q.y) * Math.PI * 2; len = T * (0.2 + 0.3 * f) * (0.6 + ph(q.y, k));
+        ctx.beginPath(); ctx.moveTo(q.x, q.y);
+        ctx.lineTo(q.x + Math.cos(a) * len * 0.5 + 3, q.y + Math.sin(a) * len * 0.5);
+        ctx.lineTo(q.x + Math.cos(a) * len, q.y + Math.sin(a) * len);
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
+  /* Footprints in snow: every walker leaves a trail that fades over half a minute */
+  var prints = [], printLast = {};
+  var PRINT = { life: 30, max: 900 };
+  function stepPrints(id, x, y, size) {
+    var L = printLast[id], dx, dy, d, a, side;
+    if (!L) { printLast[id] = { x: x, y: y, acc: 0, side: 1, seen: run.time }; return; }
+    L.seen = run.time;
+    dx = x - L.x; dy = y - L.y; d = Math.sqrt(dx * dx + dy * dy);
+    L.x = x; L.y = y;
+    if (d < 0.2 || d > 60) { L.acc = 0; return; }
+    L.acc += d;
+    if (L.acc < 11 * size) return;
+    L.acc = 0;
+    if (!D.world.snowAt(x, y)) return;
+    a = Math.atan2(dy, dx); side = (L.side = -L.side);
+    prints.push({ x: x - Math.sin(a) * side * 3.2 * size, y: y + Math.cos(a) * side * 2.2 * size, a: a, t: run.time, s: size });
+    if (prints.length > PRINT.max) prints.splice(0, prints.length - PRINT.max);
+  }
+  function drawPrints() {
+    if (!D.world || !D.world.snowAt || !run) return;
+    var i, o, en, def, k;
+    stepPrints("t", run.x, run.y + 2, 0.85);
+    if (!isEggForm(run.form)) stepPrints("m", run.mx, run.my, 1.1);
+    for (i = 0; i < (run.others || []).length; i++) { o = run.others[i]; stepPrints("ot" + o.id, o.x, o.y + 2, 0.85); stepPrints("om" + o.id, o.mx, o.my, 1.1); }
+    for (i = 0; i < enemies.length; i++) {
+      en = enemies[i]; def = D.ENEMIES && D.ENEMIES[en.type];
+      if (def && def.fly) continue;
+      stepPrints("e" + en._id, en.x, en.y, clamp((en.radius || 10) / 12, 0.7, 2.6));
+    }
+    if (stepTick % 600 === 0) for (k in printLast) if (run.time - printLast[k].seen > 3) delete printLast[k];
+    while (prints.length && run.time - prints[0].t > PRINT.life) prints.shift();
+    if (!prints.length) return;
+    var span = camSpan(), x0 = camX - span.w / 2 - 10, x1 = camX + span.w / 2 + 10, y0 = camY - span.h / 2 - 10, y1 = camY + span.h / 2 + 10, p, age;
+    ctx.save();
+    for (i = 0; i < prints.length; i++) {
+      p = prints[i];
+      if (p.x < x0 || p.x > x1 || p.y < y0 || p.y > y1) continue;
+      age = run.time - p.t;
+      ctx.globalAlpha = 0.5 * clamp((PRINT.life - age) / 10, 0, 1);
+      ctx.fillStyle = "#7c90b0";
+      ctx.beginPath(); ctx.ellipse(p.x, p.y, 2.8 * p.s, 1.7 * p.s, p.a, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha *= 0.6; ctx.fillStyle = "#ffffff";
+      ctx.beginPath(); ctx.ellipse(p.x + Math.cos(p.a) * 1.2, p.y + 1, 2.2 * p.s, 1 * p.s, p.a, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.restore();
+  }
+  /* the first time a river stops you, say why (once a run) */
+  function riverHint(dt) {
+    if (!run || livingFx.warned || !D.world || !D.world.openWaterAt) return;
+    livingFx.warnT -= dt;
+    if (livingFx.warnT > 0) return;
+    livingFx.warnT = 0.4;
+    var i, a;
+    for (i = 0; i < 8; i++) {
+      a = (Math.PI * 2 * i) / 8;
+      if (D.world.openWaterAt(run.x + Math.cos(a) * 22, run.y + Math.sin(a) * 22)) {
+        livingFx.warned = true;
+        showNoticeToast("Too deep to wade. Find a ford, wait for winter, or freeze it with an ice move", "is-season is-winter");
+        return;
+      }
+    }
+  }
+
+  /* ---------- Biome wars (Nov 20, war-sim.js) ---------- */
+  function biomeName(id) { var BD = D.biomes && D.biomes.DEFS; return (BD && BD[id] && BD[id].name) || id; }
+  function warColor(id) { return (D.WAR && D.WAR.color && D.WAR.color[id]) || "#ffffff"; }
+  function warEvent(e) {
+    if (!run) return;
+    var near, d;
+    if (e.type === "war.flip") {
+      /* a guest's world learns it from the snapshot's territory too; this keeps it prompt */
+      if (!missionAuth && D.world && D.world.setOwner) D.world.setOwner(e.cx, e.cy, e.to);
+      d = Math.sqrt((e.x - run.x) * (e.x - run.x) + (e.y - run.y) * (e.y - run.y));
+      near = d < 1400;
+      if (near) burst(e.x, e.y, warColor(e.to), 10, 160);
+      if (near && run.time - warToastT > 30) {
+        warToastT = run.time;
+        showNoticeToast(biomeName(e.to) + " is pushing into " + biomeName(e.from), "is-season is-war");
+      }
+      return;
+    }
+    if (e.type === "war.skirmish") {
+      addFloat(e.x, e.y - 20, biomeName(e.a) + " vs " + biomeName(e.b), "#ffd27a");
+      if (D.minimap && D.minimap.mark) {
+        var mk = "war-" + e.x + "," + e.y;
+        D.minimap.mark(mk, { x: e.x, y: e.y, color: "#ffb040" });
+        setTimeout(function () { if (D.minimap) D.minimap.unmark(mk); }, 40000);
+      }
+      return;
+    }
+    if (e.type === "war.lord") {
+      showNoticeToast(biomeName(e.side) + "'s lord has fallen. Its borders are caving in", "is-season is-war");
+      burst(e.x, e.y, warColor(e.side), 24, 260);
+    }
+  }
+  /* A nest: a ring of woven twigs and data-grass, with eggs in it for as many as live there (up to
+   * five drawn), speckled in the biome's colour. An alpha nest is ringed with stones; an empty one is
+   * just the ring. */
+  function drawNests() {
+    if (!nestList || !nestList.length) return;
+    var cs = camSpan(), i, n, x, y, k, a, eggs, c, r;
+    ctx.save();
+    for (i = 0; i < nestList.length; i++) {
+      n = nestList[i]; x = n[0]; y = n[1];
+      if (Math.abs(x - camX) > cs.w / 2 + 60 || Math.abs(y - camY) > cs.h / 2 + 60) continue;
+      c = warColor(n[2]); r = n[5] === "alpha" ? 30 : 24;
+      ctx.globalAlpha = 0.35; ctx.fillStyle = "#1a120a";
+      ctx.beginPath(); ctx.ellipse(x, y + 3, r + 4, (r + 4) * 0.5, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = "#4a3620"; ctx.beginPath(); ctx.ellipse(x, y, r, r * 0.48, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "#2a1c10"; ctx.beginPath(); ctx.ellipse(x, y + 1, r * 0.66, r * 0.3, 0, 0, Math.PI * 2); ctx.fill();
+      /* twigs round the rim */
+      ctx.strokeStyle = "#8a6a40"; ctx.lineWidth = 2;
+      for (k = 0; k < 14; k++) {
+        a = (Math.PI * 2 * k) / 14 + ph(x, k) * 0.3;
+        ctx.beginPath();
+        ctx.moveTo(Math.round(x + Math.cos(a) * r * 0.75), Math.round(y + Math.sin(a) * r * 0.36));
+        ctx.lineTo(Math.round(x + Math.cos(a + 0.5) * r * 1.02), Math.round(y + Math.sin(a + 0.5) * r * 0.5));
+        ctx.stroke();
+      }
+      ctx.fillStyle = c; ctx.globalAlpha = 0.7;
+      for (k = 0; k < 6; k++) { a = ph(k, y) * Math.PI * 2; ctx.fillRect(Math.round(x + Math.cos(a) * r * 0.9), Math.round(y + Math.sin(a) * r * 0.44), 2, 2); }
+      ctx.globalAlpha = 1;
+      if (n[5] === "alpha") {
+        ctx.fillStyle = "#8a8a94";
+        for (k = 0; k < 5; k++) { a = (Math.PI * 2 * k) / 5 + 0.3; ctx.fillRect(Math.round(x + Math.cos(a) * (r + 7) - 3), Math.round(y + Math.sin(a) * (r + 7) * 0.5 - 4), 6, 5); }
+      }
+      eggs = Math.min(5, n[3]);
+      for (k = 0; k < eggs; k++) {
+        var ex = Math.round(x + (k - (eggs - 1) / 2) * 7), ey = Math.round(y - 3 + (k % 2) * 3);
+        ctx.fillStyle = "#1a1410"; ctx.beginPath(); ctx.ellipse(ex, ey, 4, 5.5, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = "#f2ead6"; ctx.beginPath(); ctx.ellipse(ex, ey, 3, 4.5, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = c; ctx.fillRect(ex - 1, ey - 2, 2, 2); ctx.fillRect(ex + 1, ey + 1, 1, 1);
+      }
+    }
+    ctx.restore();
+  }
+  /* ---------- PvP and allies that grow (Nov 20, pvp-sim.js) ---------- */
+  function trustedList(tr) { var F = D.FACTIONS, out = [], k; if (!F || !tr) return out; for (k in tr) if (tr[k] >= F.trusted) out.push(k); return out; }
+  /* the simulation's rule: both flags up; or each backed by some biome, and no biome backing both */
+  function pvpFoe(o) {
+    var A = trustedList(run && run.trust), B = trustedList(o && o.trust), i;
+    if (o && o.hasTamer && run && run.pvpFlag && o.pvpFlag) return true;
+    if (!A.length || !B.length || !o.hasTamer) return false;
+    for (i = 0; i < A.length; i++) if (B.indexOf(A[i]) >= 0) return false;
+    return true;
+  }
+  var pvpSeen = {};
+  function pvpWatch() {
+    var i, o, foe, name;
+    if (!run || !run.others) return;
+    for (i = 0; i < run.others.length; i++) {
+      o = run.others[i]; foe = pvpFoe(o);
+      if (foe && !pvpSeen[o.id]) {
+        name = (online() && online().playerName && online().playerName(o.id)) || "Another tamer";
+        showNoticeToast(name + " backs " + trustedList(o.trust).map(biomeName).join(" & ") + ". You're at war: your partners will fight on sight", "is-season is-war");
+        noticeToastTimer = 4.5;
+      }
+      pvpSeen[o.id] = foe;
+    }
+  }
+  /* the PvP flag: up at once, down only after PVP.flagOff seconds (so it can't be dropped mid-fight) */
+  function togglePvp() {
+    if (!run || run.ended || !missionAuth || (state !== "playing" && state !== "farm")) return;
+    var want = !(run.pvpFlag && !run.pvpOffAt);
+    if (missionAuth.act) missionAuth.act({ type: "pvp.flag", id: missionLocalId, on: want });
+    sfx("ui");
+  }
+  function pvpFlagEvent(e) {
+    if (!run || e.id !== run.myId) {
+      if (e.on && run && run.pvpFlag && !e.offAt) { showNoticeToast(((online() && online().playerName && online().playerName(e.id)) || "Another tamer") + " raised their PvP flag. Both flags are up: fight!", "is-season is-war"); noticeToastTimer = 3.5; }
+      return;
+    }
+    if (e.on && !e.offAt) showNoticeToast("PvP flag up: any tamer with theirs up can fight you.", "is-season is-war");
+    else if (e.on) showNoticeToast("Lowering your PvP flag: still up for " + Math.max(0, Math.round(e.offAt - run.time)) + " seconds.", "is-season is-war");
+    else showNoticeToast("PvP flag down.", "is-season is-war");
+    noticeToastTimer = 3;
+  }
+  function tickPvpChip() {
+    var c = el.hudPvp || $("hud-pvp");
+    if (!c) return;
+    var show = !!(run && !run.ended && (state === "playing" || state === "farm") && D.PVP);
+    c.hidden = !show;
+    if (!show) return;
+    c.textContent = run.pvpFlag ? (run.pvpOffAt ? "PvP lowering… " + Math.max(0, Math.ceil(run.pvpOffAt - run.time)) + "s" : "PvP ON [V]") : "PvP off [V]";
+    c.classList.toggle("is-urgent", !!run.pvpFlag);
+  }
+  /* crossed golden swords over a tamer whose PvP flag is up */
+  function drawPvpFlag(x, y) {
+    ctx.save();
+    ctx.strokeStyle = "rgba(10,10,20,0.9)"; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.moveTo(x - 6, y + 6); ctx.lineTo(x + 6, y - 6); ctx.moveTo(x + 6, y + 6); ctx.lineTo(x - 6, y - 6); ctx.stroke();
+    ctx.strokeStyle = "#ffd24a"; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(x - 6, y + 6); ctx.lineTo(x + 6, y - 6); ctx.moveTo(x + 6, y + 6); ctx.lineTo(x - 6, y - 6); ctx.stroke();
+    ctx.fillStyle = "#c08a2a"; ctx.fillRect(x - 7, y + 3, 4, 2); ctx.fillRect(x + 3, y + 3, 4, 2);
+    ctx.restore();
+  }
+  function drawPvpMark(o) {
+    var x = Math.round(o.mx), y = Math.round(o.my - 54 + Math.sin(run.time * 4) * 1.5);
+    ctx.save();
+    ctx.globalAlpha = 0.6 + Math.sin(run.time * 6) * 0.2; ctx.strokeStyle = "#ff4a5a"; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.ellipse(o.mx, o.my - 2, 22, 11, 0, 0, Math.PI * 2); ctx.stroke();
+    ctx.globalAlpha = 1; ctx.strokeStyle = "rgba(10,10,20,0.9)"; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.moveTo(x - 6, y - 6); ctx.lineTo(x + 6, y + 6); ctx.moveTo(x + 6, y - 6); ctx.lineTo(x - 6, y + 6); ctx.stroke();
+    ctx.strokeStyle = "#ff6a6a"; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(x - 6, y - 6); ctx.lineTo(x + 6, y + 6); ctx.moveTo(x + 6, y - 6); ctx.lineTo(x - 6, y + 6); ctx.stroke();
+    ctx.restore();
+  }
+  /* other tamers' profile names, under them, on a dark tag in their lobby colour (Nov 20) */
+  var nameTags = [];
+  function drawNameTags() {
+    var i, t, lw, lx, ly;
+    if (!nameTags.length) return;
+    ctx.save();
+    ctx.font = "bold 12px Trebuchet MS, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
+    for (i = 0; i < nameTags.length; i++) {
+      t = nameTags[i];
+      lw = Math.ceil(ctx.measureText(t.label).width) + 12; lx = Math.round(t.x - lw / 2); ly = Math.round(t.y + 12);
+      ctx.fillStyle = "rgba(8,10,24,0.72)"; ctx.fillRect(lx, ly, lw, 15);
+      ctx.fillStyle = t.col; ctx.fillRect(lx, ly, 2, 15); ctx.fillRect(lx + lw - 2, ly, 2, 15);
+      ctx.lineWidth = 3; ctx.strokeStyle = "rgba(8,10,24,0.85)"; ctx.strokeText(t.label, Math.round(t.x), ly + 12);
+      ctx.fillStyle = t.col; ctx.fillText(t.label, Math.round(t.x), ly + 12);
+    }
+    ctx.restore();
+  }
+  /* ---------- nemeses (nemesis-sim.js) ---------- */
+  var NEM_COL = ["#ff5a4a", "#ff3a6a", "#e04aff", "#ff8a1a", "#ffd23a", "#9aff4a", "#ffffff"];
+  function nemCol(t) { return NEM_COL[Math.min(NEM_COL.length, Math.max(1, t)) - 1]; }
+  function drawNemesis(en) {
+    var t = en.nem || 1, col = nemCol(t), r = (en.radius || 12) * (1.3 + 0.08 * t), sh = (D.stageHeight ? D.stageHeight(en.type) : (en.radius || 12) * 2.6) * (en.nemScale || 1), y = Math.round(en.y - sh * 0.74 - 16), pulse = Math.sin(run.time * (3 + t)) * 0.5 + 0.5;
+    ctx.save();
+    /* a ring of its colour under it, and flames of it rising off it */
+    ctx.globalCompositeOperation = "lighter";
+    ctx.globalAlpha = 0.35 + pulse * 0.3; ctx.strokeStyle = col; ctx.lineWidth = 2 + Math.min(4, t * 0.6);
+    ctx.beginPath(); ctx.ellipse(en.x, en.y + 2, r, r * 0.38, 0, 0, Math.PI * 2); ctx.stroke();
+    if (!reducedFx && Math.random() < 0.25 + t * 0.05) addParticle(en.x + rand(-r * 0.7, r * 0.7), en.y - rand(0, (en.radius || 12) * 1.6), rand(-6, 6), rand(-40, -20), col, rand(0.4, 0.7), rand(2, 3 + t * 0.4), "glow", true, 0);
+    ctx.globalCompositeOperation = "source-over"; ctx.globalAlpha = 1;
+    /* the title, with a skull for each title it holds (up to five) */
+    var txt = en.nemTitle || "Nemesis", sk = "", k;
+    for (k = 0; k < Math.min(5, t); k++) sk += "\u2620";
+    ctx.font = "bold " + (12 + Math.min(4, t)) + "px Trebuchet MS, sans-serif"; ctx.textAlign = "center"; ctx.lineWidth = 4;
+    ctx.strokeStyle = "rgba(10,4,12,0.92)"; ctx.fillStyle = col;
+    ctx.strokeText(txt, en.x, y); ctx.fillText(txt, en.x, y);
+    ctx.font = "bold 9px sans-serif"; ctx.lineWidth = 3;
+    ctx.strokeText(sk + "  Lv " + (en.lv || 1), en.x, y + 11); ctx.fillStyle = "#ffe0e0"; ctx.fillText(sk + "  Lv " + (en.lv || 1), en.x, y + 11);
+    ctx.restore();
+  }
+  function nemesisEvent(e) {
+    if (!run) return;
+    var me = e.victim === run.myId || e.victim === missionLocalId || e.by === run.myId || e.by === missionLocalId, nm = spName(e.form);
+    if (e.type === "nemesis.kill") {
+      burst(e.x, e.y, nemCol(e.tier), 24, 220); shake = Math.max(shake, 10);
+      var vName = e.victim != null && online() && online().playerName ? online().playerName(e.victim) : "";
+      showNoticeToast(e.tier <= 1 && (e.kills || 1) <= 1
+        ? (me ? "That " + nm + " remembers beating you. It grew stronger: watch for \u201c" + e.title + "\u201d, level " + e.lv + "."
+              : (vName || "A friend") + "'s partner was beaten by a " + nm + ". It is now \u201c" + e.title + "\u201d, level " + e.lv + ".")
+        : "\u201c" + e.title + "\u201d (" + nm + ") has beaten " + (me ? "you" : (vName || "another tamer")) + " too and grows: level " + e.lv + ".", "is-season is-war");
+      noticeToastTimer = 5.5; sfx("hurt");
+    } else if (e.type === "nemesis.rise") {
+      burst(e.x, e.y, nemCol(e.tier), 30, 260);
+      if (e.from !== e.form) addFloat(e.x, e.y - 40, spName(e.from) + " \u2192 " + nm + "!", nemCol(e.tier));
+      if (e.tier > 1) { showNoticeToast("A nemesis rises: now a " + ((D.NEMESIS && D.NEMESIS.titles[Math.min(e.tier, D.NEMESIS.titles.length) - 1]) || "monster") + (e.from !== e.form ? ", and it digivolved into " + nm : "") + ".", "is-season is-war"); noticeToastTimer = 4.5; }
+    } else if (e.type === "nemesis.down") {
+      burst(e.x, e.y, nemCol(e.tier), 40, 300); shake = Math.max(shake, 14);
+      showNoticeToast((e.by === run.myId || e.by === missionLocalId ? "Revenge! You beat " : "Someone beat ") + "\u201c" + e.title + "\u201d." + (e.by === run.myId || e.by === missionLocalId ? " +" + e.bits + " Bits, and its XP is scattered around it." : ""), "is-season");
+      noticeToastTimer = 5; sfx("level");
+    }
+  }
+  /* Open World respawns, bounties, a first Mega (modes-sim.js) */
+  function modeEvent(e) {
+    if (!run) return;
+    var me = e.id === run.myId || e.id === missionLocalId, who = (online() && online().playerName && online().playerName(e.id)) || "Another tamer";
+    if (e.type === "respawn") {
+      burst(e.x, e.y, "#ffe9a8", 16, 160);
+      if (!me) return;
+      camX = e.x; camY = e.y; run.ended = false;
+      showNoticeToast("Your partner fell, but you are not out. It is an egg again, back near the start where the land is gentle. Base level and stat points kept" +
+        (e.peak > 3 ? "; it earns extra XP until it is near job level " + e.peak + " again." : "."), "is-season");
+      noticeToastTimer = 6; sfx("level");
+    } else if (e.type === "bounty.set") {
+      showNoticeToast(me ? "You have beaten " + e.streak + " tamers in a row: there is a " + e.bits + " Bit bounty on your head!" : who + " is on a " + e.streak + " win streak: " + e.bits + " Bit bounty on them.", "is-season is-war");
+      noticeToastTimer = 4.5;
+    } else if (e.type === "bounty.claimed") {
+      showNoticeToast(me ? "Bounty claimed! +" + e.bits + " Bits." : who + " claimed a " + e.bits + " Bit bounty.", "is-season is-war");
+      noticeToastTimer = 4.5; if (me) sfx("level");
+    } else if (e.type === "mode.mega" && me) {
+      showNoticeToast("Mega reached at " + formatTime(e.at) + ". That time goes on the boards when the run ends.", "is-season");
+      noticeToastTimer = 4;
+    }
+  }
+  function drawBounty(o) {
+    var x = Math.round(o.mx), y = Math.round(o.my - 70 + Math.sin(run.time * 3) * 1.5);
+    ctx.save();
+    ctx.font = "bold 10px Trebuchet MS, sans-serif"; ctx.textAlign = "center"; ctx.lineWidth = 3;
+    ctx.strokeStyle = "rgba(10,10,20,0.9)"; ctx.fillStyle = "#ffd23a";
+    ctx.strokeText("BOUNTY " + o.bounty, x, y); ctx.fillText("BOUNTY " + o.bounty, x, y);
+    ctx.restore();
+  }
+  function pvpKoEvent(e) {
+    if (!run) return;
+    burst(e.x, e.y, "#ff6a6a", 18, 220);
+    if (e.loser === run.myId) {
+      showNoticeToast("Beaten by another tamer: your pair was knocked back home to the farm" + (e.bits ? " and lost " + e.bits + " Bits" : "") + ".", "is-season is-war");
+      noticeToastTimer = 5; sfx("hurt");
+      farmGo = null;
+      if (online() && online().isGuest && online().isGuest() && online().goFarm) online().goFarm();
+      else startFarm({ onDemand: true });
+    } else if (e.winner === run.myId) {
+      showNoticeToast("You beat another tamer's partner!" + (e.bits ? " +" + e.bits + " Bits" : "") + (e.bounty ? " And the bounty on them: +" + e.bounty + "." : ""), "is-season is-war");
+      noticeToastTimer = 4; sfx("level");
+    }
+  }
+  /* Ragnarok-style level tag beside the health bar: grey well below you (little XP), white near your
+   * level, orange above, red far above (it hits hard) */
+  function drawEnemyLevel(en, barX, barY, barH) {
+    var L = D.LEVELS, d = (en.lv || 1) - (run.level || 1), col = d >= 6 ? "#ff5a5a" : (d >= 2 ? "#ffb04a" : (d >= -L.freeBelow ? "#f2f2f2" : "#8a90a0"));
+    ctx.save();
+    ctx.font = "bold 9px Trebuchet MS, sans-serif"; ctx.textAlign = "right"; ctx.lineWidth = 3;
+    ctx.strokeStyle = "rgba(10,10,20,0.85)"; ctx.fillStyle = col;
+    ctx.strokeText(String(en.lv), barX - 2, barY + barH + 1); ctx.fillText(String(en.lv), barX - 2, barY + barH + 1);
+    ctx.restore();
+  }
+  /* an ally that has grown: its level in gold under its feet */
+  function drawAllyLevel(en) {
+    var t = "Lv " + en.alv, y = Math.round(en.y + 14);
+    ctx.save();
+    ctx.font = "bold 10px Trebuchet MS, sans-serif"; ctx.textAlign = "center"; ctx.lineWidth = 3;
+    ctx.strokeStyle = "rgba(10,10,20,0.85)"; ctx.fillStyle = "#ffe27a";
+    ctx.strokeText(t, en.x, y); ctx.fillText(t, en.x, y);
+    ctx.restore();
+  }
+
+  /* ---------- Going to the farm (Nov 20) ----------
+   * Press G (or the Farm chip): stand still for FARM_CFG.chargeSec with no
+   * enemy close and you are at the farm. The world keeps going meanwhile;
+   * leave the farm and you are back where you stood. */
+  var farmGo = null;
+  function farmOnDemand() { return !!(D.FARM_CFG && D.FARM_CFG.onDemand); }
+  /* the same rule as the simulation's (mission-sim.js _hostileNear), on what we can see */
+  function farmBlocked() {
+    var F = D.FARM_CFG || {}, r2 = Math.pow(F.blockRadius || 380, 2), i, en;
+    if (!run) return null;
+    for (i = 0; i < enemies.length; i++) {
+      en = enemies[i];
+      if (en.dead || en.zz || (en.rally != null && en.rally === run.myId) || (en.fac && trustsFac(en.fac))) continue;
+      if (dist2(en.x, en.y, run.x, run.y) < r2 || dist2(en.x, en.y, run.mx, run.my) < r2) return en;
+    }
+    return null;
+  }
+  function askFarm() {
+    if (!run || run.ended || state !== "playing" || !farmOnDemand() || isEggForm(run.form)) return;
+    if (farmGo) { farmGo = null; showNoticeToast("Farm trip called off."); noticeToastTimer = 2; return; }
+    if (farmBlocked()) { showNoticeToast("Not with enemies this close."); noticeToastTimer = 2.5; sfx("hurt"); return; }
+    farmGo = { left: (D.FARM_CFG.chargeSec || 2), x: run.x, y: run.y };
+    sfx("ui");
+  }
+  function tickFarmGo(dt) {
+    if (!farmGo || !run) return;
+    if (Math.abs(run.x - farmGo.x) + Math.abs(run.y - farmGo.y) > 6) { farmGo = null; showNoticeToast("Moved: farm trip called off."); noticeToastTimer = 2; return; }
+    if (farmBlocked()) { farmGo = null; showNoticeToast("An enemy came close: farm trip called off."); noticeToastTimer = 2.5; sfx("hurt"); return; }
+    burst(run.x + (Math.random() - 0.5) * 30, run.y - Math.random() * 30, "#7affb0", 1, 40);
+    farmGo.left -= dt;
+    if (farmGo.left > 0) return;
+    farmGo = null;
+    if (online() && online().isGuest && online().isGuest() && online().goFarm) { online().goFarm(); return; }
+    startFarm({ onDemand: true });
+  }
+  /* at the farm, the world keeps going (solo, or hosting without the online clock) */
+  function stepWorldAway(dt) {
+    if (!farmOnDemand() || !missionAuth || !run || run.ended) return;
+    if (online() && online().drivesClock()) return;
+    missionAcc += dt;
+    var step = missionAuth.dt || 0.04, guard = 0;
+    while (missionAcc >= step && guard < 8) { missionAuth.step(); missionAcc -= step; guard += 1; }
+    applyMissionSnapshot(takeMissionSnapshot());
+    tickNoticeToast(dt);
+  }
+
+  /* ---------- Faction trust (Nov 20, faction-sim.js) ---------- */
+  function trustsFac(fac) { return !!(run && run.trust && D.FACTIONS && (run.trust[fac] || 0) >= D.FACTIONS.trusted); }
+  function trustEvent(e) {
+    if (!run || e.id !== run.myId) return;
+    var n = biomeName(e.fac);
+    if (e.level === "trusted") showNoticeToast(n + " trusts you now: its Digimon leave you be, and your attacks pass over them", "is-season is-war");
+    else if (e.level === "allied") showNoticeToast(n + " fights at your side! A few of its Digimon will rally to you", "is-season is-war");
+    else if (e.level === "cooling") showNoticeToast(n + " no longer fights for you, but still trusts you", "is-season is-war");
+    else if (e.level === "hostile") showNoticeToast(n + " has turned against you", "is-season is-war");
+    noticeToastTimer = 4;
+  }
+  /* a friendly biome's Digimon: a small heart in its colour over it; one fighting for you also gets a ring */
+  function drawFriendMark(en) {
+    var c = warColor(en.fac), top = Math.round(en.y - (en.radius || 10) * 2 - (en.war ? 20 : 8)), x = Math.round(en.x - 4), mine = en.rally != null && en.rally === run.myId;
+    ctx.save();
+    if (mine) {
+      ctx.globalAlpha = 0.55 + Math.sin(run.time * 5 + en._id) * 0.15; ctx.strokeStyle = c; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.ellipse(en.x, en.y - 2, (en.radius || 10) + 6, ((en.radius || 10) + 6) * 0.5, 0, 0, Math.PI * 2); ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+    ctx.fillStyle = "rgba(10,10,20,0.85)";
+    ctx.fillRect(x - 1, top, 11, 7); ctx.fillRect(x + 1, top + 7, 7, 2); ctx.fillRect(x + 3, top + 9, 3, 1);
+    ctx.fillStyle = c;
+    ctx.fillRect(x, top + 1, 4, 4); ctx.fillRect(x + 5, top + 1, 4, 4); ctx.fillRect(x + 1, top + 5, 7, 2); ctx.fillRect(x + 3, top + 7, 3, 1);
+    if (mine) { ctx.fillStyle = "#ffffff"; ctx.fillRect(x + 1, top + 2, 1, 1); ctx.fillRect(x + 6, top + 2, 1, 1); }
+    ctx.restore();
+  }
+  /* the HUD strip: each biome you have any standing with, its trust, and whether it leaves you be or fights for you */
+  var trustSig = "";
+  function tickTrustHud() {
+    var box = $("hud-trust"), F = D.FACTIONS, list = [], k, sig, html, i, t, cls;
+    if (!box || !F) return;
+    if (!run || state !== "playing" || !run.trust) { if (!box.hidden) box.hidden = true; trustSig = ""; return; }
+    for (k in run.trust) if (run.trust[k] >= 1) list.push([k, run.trust[k]]);
+    list.sort(function (a, b) { return b[1] - a[1]; });
+    list = list.slice(0, 4);
+    sig = list.map(function (q) { return q[0] + Math.round(q[1]) + (run.allied && run.allied[q[0]] ? "A" : ""); }).join("|");
+    if (sig === trustSig) return;
+    trustSig = sig;
+    box.hidden = !list.length;
+    html = "";
+    for (i = 0; i < list.length; i++) {
+      k = list[i][0]; t = list[i][1];
+      cls = run.allied && run.allied[k] ? "is-ally" : (t >= F.trusted ? "is-trusted" : "");
+      html += '<div class="trust-row ' + cls + '" title="' + biomeName(k) + ": " + Math.round(t) + ' trust"><i style="background:' + warColor(k) + '"></i><b>' + biomeName(k) +
+        '</b><span class="trust-bar"><span style="width:' + Math.round(t) + '%;background:' + warColor(k) + '"></span><em style="left:' + F.trusted + '%"></em></span><s>' +
+        (cls === "is-ally" ? "★" : (cls ? "♥" : "")) + "</s></div>";
+    }
+    box.innerHTML = html;
+  }
+
+  /* a soldier of a biome war: a small pennant in its biome's colour */
+  function drawWarBanner(en) {
+    var top = Math.round(en.y - (en.radius || 10) * 2 - 6), x = Math.round(en.x - 1), c = warColor(en.war), wave = Math.sin(run.time * 6 + en._id) * 1.5;
+    ctx.save();
+    ctx.fillStyle = "rgba(10,10,20,0.85)"; ctx.fillRect(x - 1, top - 1, 3, 14);
+    ctx.fillStyle = "#e8e0d0"; ctx.fillRect(x, top, 1, 12);
+    ctx.fillStyle = "rgba(10,10,20,0.85)";
+    ctx.beginPath(); ctx.moveTo(x + 1, top - 1); ctx.lineTo(x + 11 + wave, top + 3); ctx.lineTo(x + 1, top + 7); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = c;
+    ctx.beginPath(); ctx.moveTo(x + 1, top); ctx.lineTo(x + 9 + wave, top + 3); ctx.lineTo(x + 1, top + 6); ctx.closePath(); ctx.fill();
+    ctx.restore();
+  }
+  /* contested ground: a haze of the attacker's colour that thickens as the cell is about to fall,
+   * with sparks crackling where the two sides meet */
+  function drawFronts() {
+    if (!fronts || !fronts.length || !D.world || !D.world.TERR) return;
+    var T = (D.sprites && D.sprites.TILE) || 48, span = D.world.TERR * T, cs = camSpan(), i, f, x, y, k, g, a, c, NB = [[1, 0], [-1, 0], [0, 1], [0, -1]], ex, ey, t = run.time;
+    ctx.save();
+    for (i = 0; i < fronts.length; i++) {
+      f = fronts[i]; x = (f[0] + 0.5) * span; y = (f[1] + 0.5) * span;
+      if (Math.abs(x - camX) > cs.w / 2 + span || Math.abs(y - camY) > cs.h / 2 + span) continue;
+      a = f[3] / 100; c = warColor(f[2]);
+      g = ctx.createRadialGradient(x, y, span * 0.1, x, y, span * 0.75);
+      ctx.globalAlpha = (0.1 + 0.22 * a) * (0.85 + 0.15 * Math.sin(t * 2 + f[0]));
+      g.addColorStop(0, c); g.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = g; ctx.fillRect(x - span, y - span, span * 2, span * 2);
+      for (k = 0; k < 4; k++) {
+        if (D.world.cellOwner(f[0] + NB[k][0], f[1] + NB[k][1]) !== f[2]) continue;
+        ex = x + NB[k][0] * span * 0.5; ey = y + NB[k][1] * span * 0.5;
+        for (var s2 = 0; s2 < 3; s2++) {
+          if (ph(t * 7 + s2, f[0] * 3 + k) > 0.35 + 0.4 * (1 - a)) continue;
+          ctx.globalAlpha = 0.5 + 0.5 * a; ctx.fillStyle = s2 ? c : "#ffffff";
+          ctx.fillRect(Math.round(ex + (ph(s2, t * 3 + k) - 0.5) * span * (NB[k][1] ? 0.9 : 0.15)), Math.round(ey + (ph(t * 3 + k, s2) - 0.5) * span * (NB[k][0] ? 0.9 : 0.15)), 3, 3);
+        }
+      }
+    }
+    ctx.restore();
+  }
+
   /* charred grass: a dark, ragged stain a tile wide, embers for the first seconds, fading as it grows back */
   function drawScorch() {
     if (!D.world || !D.world.burntInView) return;
@@ -5328,6 +5998,11 @@
     var vw = span.w, vh = span.h;
     if (D.world && D.world.drawGround) {
       D.world.drawGround(ctx, camX, camY, vw, vh);
+      drawPuddles();
+      drawNests();
+      drawFronts();
+      drawThinIce();
+      drawPrints();
       drawScorch();
       drawPatches();
       if (D.attackFx && D.attackFx.drawGround) D.attackFx.drawGround(ctx);
@@ -5521,7 +6196,8 @@
       ctx.textAlign = "left";
     }
     function paintTamer() {
-      if (D.sprites.drawTamer) D.sprites.drawTamer(ctx, run.x, run.y, run.facing, run.time, tamerFlash, run.moving, evoReady, run.tdir || "side", run.tamerId);
+      if (D.sprites.drawTamer) D.sprites.drawTamer(ctx, run.x, run.y, run.facing, run.time, tamerFlash, run.moving, evoReady, run.tdir || "side", run.tamerId, "me");
+      if (run.pvpFlag) drawPvpFlag(Math.round(run.x), Math.round(run.y - 66));
       /* the tamer's own (slow) XP bar, in violet so it is not mistaken for the partner's */
       if (state !== "evolution" && run.tamerXpNext > 0 && D.TAMER_LEVEL && !isEggForm(run.form)) {
         var tw = 26, tx0 = Math.round(run.x - tw / 2), ty0 = Math.round(run.y - 50), tr = clamp((run.tamerXp || 0) / run.tamerXpNext, 0, 1), tp = run.statPoints > 0;
@@ -5546,6 +6222,7 @@
     }
     var actors = [], propList, pi;
     function enqueue(yy, zz, fn) { actors.push({ y: yy, z: zz, draw: fn }); }
+    nameTags.length = 0;
     if (D.world && D.world.propsInView) {
       propList = D.world.propsInView(camX, camY, camSpan().w, camSpan().h);
       var useNow = usableProp();
@@ -5563,6 +6240,8 @@
               gy = pr.y - run.my;
               if (!sway && Math.abs(pr.x - run.mx) < 30 && gy > -6 && gy < 34) sway = Math.sin(run.time * 22 + pr.x) * 1.6;
             }
+            var fall = pr.fk && D.world.fallOf ? D.world.fallOf(pr.fk) : null;
+            if (fall) { drawFallen(pr, kind, fall); return; }
             if (D.sprites.drawProp) D.sprites.drawProp(ctx, kind, pr.x + sway, pr.y);
             else D.sprites.drawDecor(ctx, pr.x, pr.y, kind);
             if (pr.kind === "spire" && !spent) {
@@ -5591,6 +6270,7 @@
         enqueue(en.y, 1, function () {
           /* bosses are drawn bigger than the rank and file so they read at a glance */
           var bigMul = en.lord ? BOSS_LOOK.lordScale : (en.mega ? BOSS_LOOK.megaScale : (en.boss ? BOSS_LOOK.bossScale : 1));
+          if (en.nem) bigMul *= en.nemScale || 1;                                     /* a nemesis grows with every title */
           var pk = D.hitFx ? D.hitFx.punchOf(en._id) : null;
           if (pk) {
             /* just hit: squashed, and leaning away from the blow (pivot at its feet) */
@@ -5602,6 +6282,11 @@
             ctx.restore();
           } else D.sprites.drawEnemy(ctx, en.type, en.x, en.y, run.time, en.flash > 0, en.facing, bigMul, en._id, undefined, en.virus ? "virus" : null);
           if (en.virus) drawVirusMark(en);
+          if (en.zz) drawZzz(en);
+          if (en.war) drawWarBanner(en);
+          if (en.fac && (en.rally != null || trustsFac(en.fac))) drawFriendMark(en);
+          if (en.alv > 1) drawAllyLevel(en);
+          if (en.nem) drawNemesis(en);
           /* dust where feet land: every step for bosses, now and then for the pack */
           if (D.attackFx && D.sprites.footfall && !(D.ENEMIES[en.type] && D.ENEMIES[en.type].fly) && (bigMul > 1 || en._id % 3 === 0) &&
               D.sprites.footfall(en.type, run.time, frameStep, en._id)) D.attackFx.dust(en.x, en.y + 2, bigMul > 1);
@@ -5625,6 +6310,7 @@
           var barY = Math.round(en.y - en.radius * (en.boss && !en.mega ? 1.25 : 1) - (en.mega ? 22 : (en.boss ? 20 : 14)));
           var barX = Math.round(en.x - barW / 2);
           if (en.st) drawEnemyStatus(en, barX, barY);
+          if (en.lv && !en.rival && D.LEVELS) drawEnemyLevel(en, barX, barY, barH);
           if (!en.rival && (en.mega || en.boss || en.virus || (en.maxHp > 0 && en.hp < en.maxHp))) {
             ctx.fillStyle = "rgba(0,0,0,0.65)";
             ctx.fillRect(barX, barY, barW, barH);
@@ -5733,6 +6419,8 @@
           ctx.fillRect(Math.round(o.mx - 12), Math.round(o.my + 6), 24, 4);
           ctx.fillStyle = col;
           ctx.fillRect(Math.round(o.mx - 12), Math.round(o.my + 6), Math.round(24 * clamp((o.hp || 0) / (o.maxHp || 1), 0, 1)), 4);
+          if (pvpFoe(o)) drawPvpMark(o);
+          if (o.bounty) drawBounty(o);
         }
         if (o.faint > 0 || o.downed) {
           ctx.fillStyle = "rgba(192,160,255,0.9)";
@@ -5745,16 +6433,11 @@
       enqueue(o.y, 2, function () {
         var tFlash = o.tamerInvuln > 0 && Math.floor(o.tamerInvuln / D.PLAYER.invulnFlash) % 2 === 0;
         ctx.save();
-        if (D.sprites.drawTamer) D.sprites.drawTamer(ctx, o.x, o.y, o.facing || 1, run.time, tFlash, o.moving && !o.downed, false, o.tdir || "side", info.tamerId || "junior");
+        if (D.sprites.drawTamer) D.sprites.drawTamer(ctx, o.x, o.y, o.facing || 1, run.time, tFlash, o.moving && !o.downed, false, o.tdir || "side", info.tamerId || "junior", "ot" + o.id);
         ctx.restore();
-        var label = (info.name || "Tamer");
-        ctx.font = "bold 12px Trebuchet MS, sans-serif";
-        ctx.textAlign = "center";
-        ctx.lineWidth = 3;
-        ctx.strokeStyle = "rgba(8,10,24,0.85)";
-        ctx.strokeText(label, o.x, o.y - 62);
-        ctx.fillStyle = col;
-        ctx.fillText(label, o.x, o.y - 62);
+        if (o.pvpFlag) drawPvpFlag(Math.round(o.x), Math.round(o.y - 66));
+        /* their profile name under them (drawn over grass and all: drawNameTags) */
+        nameTags.push({ x: o.x, y: o.y, label: info.name || "Tamer", col: col });
       });
     });
     if (run.merchant) {
@@ -5808,6 +6491,7 @@
     drawBolts();
     drawLevelFx();
     if (D.hitFx) D.hitFx.draw(ctx);
+    drawNameTags();
     for (i = 0; i < floats.length; i++) {
       var f = floats[i];
       var pop = 1 + Math.sin(Math.min(1, f.pop / 0.12) * Math.PI) * 0.28;
@@ -5844,7 +6528,10 @@
     ctx.globalAlpha = a;
     ctx.fillStyle = p.color;
     ctx.strokeStyle = p.color;
-    if (p.type === "ring") {
+    if (p.type === "ripple") {
+      ctx.globalAlpha = a * 0.75; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.ellipse(p.x, p.y, p.size, p.size * 0.45, 0, 0, Math.PI * 2); ctx.stroke();
+    } else if (p.type === "ring") {
       ctx.globalAlpha = a * 0.7;
       ctx.lineWidth = 3;
       ctx.beginPath();
@@ -5936,7 +6623,7 @@
     } else if (si.index !== run.seasonIdx) {
       run.seasonIdx = si.index;
       seasonFlash = 1;
-      showNoticeToast("Year " + si.year + " — " + si.label + "! Enemies grow stronger", "is-season is-" + si.id);
+      showNoticeToast("Year " + si.year + " — " + si.label + "! Enemies grow stronger" + (si.id === "winter" ? " · the rivers are freezing over" : (si.id === "spring" && si.index > 0 ? " · the ice is breaking up" : "")), "is-season is-" + si.id);
       sfx("level");
       if (el.hudSeason) {
         el.hudSeason.classList.remove("is-new");
@@ -6078,7 +6765,9 @@
   }
   function miniTerrain(ctrTx, ctrTy, halfTiles, season) {
     var key = ctrTx + "," + ctrTy;
-    if (MINI.terrain && MINI.tCenter === key && MINI.tSeason === season) return MINI.terrain;
+    var tv = D.world.territoryVersion ? D.world.territoryVersion() : 0;
+    if (MINI.terrain && MINI.tCenter === key && MINI.tSeason === season && MINI.tTerr === tv) return MINI.terrain;
+    MINI.tTerr = tv;
     var size = halfTiles * 2 + 1;
     var c = MINI.terrain || document.createElement("canvas");
     if (c.width !== size) { c.width = size; c.height = size; }
@@ -6227,6 +6916,12 @@
       p = edge(pos(run.rival.x, run.rival.y), 6);
       D.px.drawText(g, "LV" + (run.rival.level || 1), Math.max(2, Math.min(p.x - 8, (MINI.size || 150) - 30)), Math.max(2, p.y + (p.y > 20 ? -14 : 8)), 1, "#ffd0ea");
     }
+    /* nemeses: a big pulsing mark in their colour, pinned to the edge when off the map */
+    var ni, nm2;
+    for (ni = 0; nemList && ni < nemList.length; ni++) {
+      nm2 = nemList[ni]; p = edge(pos(nm2[1], nm2[2]), 6);
+      g.globalAlpha = 0.7 + 0.3 * pulse; dot(p, 4 + Math.min(3, nm2[3] * 0.5) + pulse, nemCol(nm2[3]), "#140408"); g.globalAlpha = 1;
+    }
     /* infected Digimon: purple marks, pinned to the edge when off the map */
     var vi, ve;
     for (vi = 0; vi < enemies.length; vi++) {
@@ -6273,6 +6968,8 @@
   };
 
   function updateHud() {
+    tickTrustHud();
+    tickPvpChip();
     if (run && state !== "title") {
       updateSeason();
       var mmHide = state === "farm" || state === "brawl";
@@ -6319,7 +7016,14 @@
     el.hudTimer.textContent = clock.text;
     el.hudTimer.classList.toggle("is-overtime", !!clock.overtime);
     var fc = (D.farm && D.farm.farmCountdown) ? D.farm.farmCountdown(run) : null;
-    if (el.hudFarm) {
+    if (el.hudFarm && farmOnDemand()) {
+      /* the Farm button (Nov 20): greyed with an enemy close, a countdown while you stand still */
+      var near = state === "playing" ? farmBlocked() : null;
+      el.hudFarm.hidden = state !== "playing" || isEggForm(run.form);
+      el.hudFarm.textContent = farmGo ? "Going… " + Math.max(0, farmGo.left).toFixed(1) + "s" : (near ? "Farm: enemies near" : "Farm [G]");
+      el.hudFarm.classList.toggle("is-warn", !!near && !farmGo);
+      el.hudFarm.classList.toggle("is-urgent", !!farmGo);
+    } else if (el.hudFarm) {
       var showFarmCd = !!(fc && state === "playing");
       el.hudFarm.hidden = !showFarmCd;
       if (showFarmCd) {
@@ -6592,7 +7296,7 @@
 
   function persistSettings() {
     if (!D.storage) return;
-    D.storage.saveSettings({ reducedFx: reducedFx, selectedTamer: selectedTamer, selectedEgg: selectedEgg, cpuBots: selectedCpuBots });
+    D.storage.saveSettings({ reducedFx: reducedFx, selectedTamer: selectedTamer, selectedEgg: selectedEgg, cpuBots: selectedCpuBots, mode: selectedMode });
   }
 
   function setCpuBots(n) {
@@ -6871,6 +7575,8 @@
     return unlocked.length ? unlocked[0].id : "agumon";
   }
 
+  function modeDef(id) { var l = (D.MODES && D.MODES.list) || [], i; for (i = 0; i < l.length; i++) if (l[i].id === id) return l[i]; return null; }
+  function guestNow() { return !!(D.online && D.online.isGuest && D.online.isGuest()); }
   function confirmEggAndStart() {
     if (D.titleScene && D.titleScene.blockStart && D.titleScene.blockStart()) { sfx("ui"); return; }
     var line = resolveEggPick();
@@ -7187,7 +7893,6 @@
     tickEvoOffer(dt);
     tickDna(dt);
     tickBiome(dt);
-    tickBeat();
     tickBurst(dt);
     tickLevelWindow(dt);
     tickLevelFx(state === "playing" || state === "farm" ? dt : 0);
@@ -7212,6 +7917,7 @@
       D.brawl.update(dt);
     } else if (state === "farm" && D.farm && D.farm.update) {
       D.farm.update(dt);
+      stepWorldAway(dt);
     } else {
       D.input.poll();
       if (run && !run.ended && missionAuth && online() && (state === "levelup" || state === "paused" || (state === "shop" && shopReturnState !== "farm") || state === "evolution")) onlineIdle(dt);
@@ -7508,6 +8214,18 @@
       if (statsActive()) toggleStats();
     });
     window.addEventListener("keydown", function (ev) {
+      if (ev.repeat || !(ev.key === "g" || ev.key === "G")) return;
+      if (ev.target && /INPUT|TEXTAREA/.test(ev.target.tagName || "")) return;
+      askFarm();
+    });
+    if ($("hud-farm")) $("hud-farm").addEventListener("click", function () { askFarm(); });
+    window.addEventListener("keydown", function (ev) {
+      if (ev.repeat || debug || !(ev.key === "v" || ev.key === "V")) return;
+      if (ev.target && /INPUT|TEXTAREA/.test(ev.target.tagName || "")) return;
+      togglePvp();
+    });
+    if ($("hud-pvp")) $("hud-pvp").addEventListener("click", function () { togglePvp(); });
+    window.addEventListener("keydown", function (ev) {
       if (ev.repeat || !(ev.key === "k" || ev.key === "K")) return;
       if (ev.target && /INPUT|TEXTAREA/.test(ev.target.tagName || "")) return;
       if (skillsActive()) toggleSkills();
@@ -7729,6 +8447,7 @@
         if (s && s.reducedFx) { reducedFx = true; D.reducedFx = true; }
         if (s && s.selectedTamer && isKnownTamer(s.selectedTamer)) selectedTamer = s.selectedTamer;
         if (s && s.selectedEgg) selectedEgg = s.selectedEgg;
+        if (s && s.mode && modeDef(s.mode)) selectedMode = s.mode;
         if (s && s.cpuBots != null) selectedCpuBots = Math.max(0, Math.min(((D.BRAWL_CFG && D.BRAWL_CFG.botCountMax) || 5), s.cpuBots | 0));
         renderPartyOption();
       });
@@ -7835,6 +8554,9 @@
     eggs: menuEggs,
     eggFrame: function () { var l = menuEggs(), i; for (i = 0; i < l.length; i++) if (l[i].id === selectedEgg) return l[i].frame; return l.length ? l[0].frame : "egg_08"; },
     cpu: function () { return selectedCpuBots; },
+    mode: function () { return selectedMode; },
+    modes: function () { return (D.MODES && D.MODES.list) || []; },
+    setMode: function (id) { if (modeDef(id)) { selectedMode = id; persistSettings(); } return selectedMode; },
     setCpu: function (n) { return setCpuBots(n); },
     cpuMax: function () { return (D.BRAWL_CFG && D.BRAWL_CFG.botCountMax != null) ? D.BRAWL_CFG.botCountMax : 5; },
     online: function () { return !!online(); },

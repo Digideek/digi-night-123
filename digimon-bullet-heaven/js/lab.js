@@ -59,7 +59,7 @@
     if ($("lab-bits")) $("lab-bits").textContent = String(b);
     for (i = 0; i < L.length; i++) {
       u = L[i]; n = level(u.id); c = cost(u.id); can = c != null && c <= b;
-      h += "<div class='lab-card" + (c == null ? " is-max" : "") + (flashId === u.id ? " is-got" : "") + "' data-lab='" + u.id + "'><canvas width='54' height='54' class='lab-ico'></canvas>" +
+      h += "<div class='lab-card" + (c == null ? " is-max" : "") + (flashId === u.id ? " is-got" : "") + "' data-lab='" + u.id + "'><canvas width='64' height='64' class='lab-ico'></canvas>" +
         "<div class='lab-mid'><b>" + u.name + "</b><span>" + u.text + "</span><div class='lab-pips'>";
       for (j = 0; j < costs(u.id).length; j++) h += "<i" + (j < n ? " class='on'" : "") + "></i>";
       h += "</div><small>" + (n || u.unit === "slot" ? "Now " + amount(u, n) : "Not started") + (c != null ? "  →  " + amount(u, n + 1) : "  ·  maxed") + "</small></div>" +
@@ -67,7 +67,11 @@
     }
     grid.innerHTML = h;
     cards = grid.querySelectorAll(".lab-card");
-    for (i = 0; i < cards.length; i++) icon(cards[i].querySelector("canvas"), cards[i].getAttribute("data-lab"));
+    for (i = 0; i < cards.length; i++) {
+      u = cards[i].getAttribute("data-lab");
+      if (D.iconArt) D.iconArt.lab(cards[i].querySelector("canvas"), u, { max: cost(u) == null });   /* js/icon-art.js */
+      else icon(cards[i].querySelector("canvas"), u);
+    }
     if ($("lab-foot")) $("lab-foot").textContent = "Every finished run pays DigiBits, and each new Tamer Rank pays more. Boosts apply from your next run.";
   }
   function onClick(e) {

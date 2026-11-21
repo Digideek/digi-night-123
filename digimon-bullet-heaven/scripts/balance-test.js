@@ -28,7 +28,7 @@ ok(sp > un * 1.8, "at base level 18 a spent build hits " + sp.toFixed(2) + "x, a
 function hpAt(min, type, boss) {
   const sim = new mission.MissionSim({ seed: 2, hz: auth.TICK_HZ, data: D }); new auth.Authority({ sim: sim, seed: 2 });
   sim.phase = "playing"; sim.time = min * 60; if (!sim.players[0]) { sim.players.push({ id: "local", x: 0, y: 0 }); sim.localId = "local"; }
-  const e = sim.spawnEnemy(type, { x: 200, y: 0, keepType: true, boss: !!boss }); return e.maxHp;
+  const e = sim.spawnEnemy(type, { x: 3000, y: 0, keepType: true, boss: !!boss }); return e.maxHp;
 }
 const kind = Object.keys(D.ENEMIES).find(k => D.ENEMIES[k].stageDisplay === "Adult (Champion)" && !D.ENEMIES[k].boss);
 ok(hpAt(32, kind) > hpAt(15, kind) * 1.3 && hpAt(15, kind) > hpAt(4, kind) * 1.2, "the same Champion has " + Math.round(hpAt(4, kind)) + " HP at 4 min, " + Math.round(hpAt(15, kind)) + " at 15, " + Math.round(hpAt(32, kind)) + " at 32");

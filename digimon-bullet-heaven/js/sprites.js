@@ -2937,16 +2937,18 @@
   /* The projections have no names of their own: the player's profile name is the
    * character's name. `name` here is only the colour, shown on the select screen. */
   var TAMER_IDS = [
-    { id: "byte", name: "Cyan", blurb: "" },
-    { id: "glim", name: "Pink", blurb: "" },
-    { id: "zap", name: "Lime", blurb: "" },
-    { id: "ember", name: "Amber", blurb: "" },
-    { id: "nyx", name: "Violet", blurb: "" },
-    { id: "null", name: "White", blurb: "" },
-    { id: "rune", name: "Red", blurb: "" },
-    { id: "echo", name: "Blue", blurb: "" }
+    { id: "byte", name: "Cyan", blurb: "", glow: "#3ad8f0" },
+    { id: "glim", name: "Pink", blurb: "", glow: "#ff6ab8" },
+    { id: "zap", name: "Lime", blurb: "", glow: "#9be83a" },
+    { id: "ember", name: "Amber", blurb: "", glow: "#ff9a2a" },
+    { id: "nyx", name: "Violet", blurb: "", glow: "#9a6af0" },
+    { id: "null", name: "White", blurb: "", glow: "#e8ecf4" },
+    { id: "rune", name: "Red", blurb: "", glow: "#ff5a4a" },
+    { id: "echo", name: "Blue", blurb: "", glow: "#4a8aff" }
   ];
-  var TAMER_FRAME_DIRS = { down: { idle: 2, walk: 6 }, up: { idle: 2, walk: 6 }, side: { idle: 2, walk: 6 } };
+  /* Nov 20 (scripts/art/holo3.py): an eight-frame walk (contact, down, passing, up, twice) and a
+   * four-frame breathing idle in each view */
+  var TAMER_FRAME_DIRS = { down: { idle: 4, walk: 8 }, up: { idle: 4, walk: 8 }, side: { idle: 4, walk: 8 } };
   var tamerPacks = {};
   var tamerReady = false;
 
@@ -2997,8 +2999,9 @@
     var pack = art[dir] || art.side;
     var frames = pack[anim] || pack.idle;
     if (!frames || !frames.length) return null;
-    var idx = ((fi % frames.length) + frames.length) % frames.length;
-    return flash ? (frames[idx + "_flash"] || frames[idx]) : frames[idx];
+    var idx = ((fi % frames.length) + frames.length) % frames.length, fr = flash ? (frames[idx + "_flash"] || frames[idx]) : frames[idx];
+    if (fr) fr.__n = frames.length;
+    return fr;
   }
 
   function getTamerList() { return TAMER_IDS.slice(); }
@@ -3013,18 +3016,55 @@
     return sheets[key];
   }
 
-  function drawTamer(ctx, x, y, facing, t, flash, moving, evoReady, tdir, tamerId) {
+  /* ---------- how a projection walks and shimmers (Nov 20) ----------
+   * The walk is driven by distance, not the clock: one full cycle (two steps) per TAMER_STRIDE px,
+   * so the feet keep pace with the ground at any speed and stop mid-step when you stop. Each
+   * projection (keyed by the caller) keeps its own phase, the way it last faced and when it turned.
+   * On top of the frames: a soft glow in its own colour, a scan band rising through it now and then,
+   * a lean into the walk, a quick squash on a turn, and a sliced glitch when it is hit.
+   * D.sprites.onTamerStep(key, x, y, dir) is called as each foot lands (game.js: dust, ripples). */
+  var TAMER_STRIDE = 56, tamerState = {}, glowCache = {};
+  function tamerGlowCol(id) { for (var i = 0; i < TAMER_IDS.length; i++) if (TAMER_IDS[i].id === id) return TAMER_IDS[i].glow; return "#7cf0ff"; }
+  function tamerGlow(sheet, id, key) {
+    var k = key, c, g;
+    if (glowCache[k]) return glowCache[k];
+    if (typeof document === "undefined") return null;
+    c = document.createElement("canvas"); c.width = sheet.width + 16; c.height = sheet.height + 16;
+    g = c.getContext("2d");
+    g.shadowColor = tamerGlowCol(id); g.shadowBlur = 5; g.shadowOffsetX = 2000;
+    g.drawImage(sheet, 8 - 2000, 8);
+    glowCache[k] = c;
+    return c;
+  }
+  function stepTamerState(key, x, y, facing, moving, t) {
+    var S = tamerState[key], dx, dy, d, prev, cyc;
+    if (!S) S = tamerState[key] = { x: x, y: y, dist: 0, f: facing, turnT: -9, lastT: t, lastFoot: -1 };
+    dx = x - S.x; dy = y - S.y; d = Math.sqrt(dx * dx + dy * dy);
+    if (d > 80 || t < S.lastT - 0.5) d = 0;                       /* a teleport or a new run: no stride */
+    S.x = x; S.y = y; S.lastT = t;
+    if (moving) S.dist += d;
+    if (facing !== S.f) { S.f = facing; S.turnT = t; }
+    cyc = S.dist / TAMER_STRIDE;
+    prev = S.lastFoot;
+    S.foot = Math.floor(cyc * 2 + 0.25);                           /* a foot lands at frames 2 and 6 of 8 */
+    S.landed = moving && prev >= 0 && S.foot !== prev;
+    S.lastFoot = S.foot;
+    return S;
+  }
+  function drawTamer(ctx, x, y, facing, t, flash, moving, evoReady, tdir, tamerId, key) {
     var anim = moving ? "walk" : "idle";
-    /* six frames at 7 a second: an easy drift, not a flutter */
-    var fi = animFrame(t, moving, false, moving ? 7 : 2.4);
+    var S = key ? stepTamerState(key, x, y, facing, moving, t || 0) : null;
+    /* walk: by distance when we know who this is, else by the clock; idle: a slow breath */
+    var fi = moving ? (S ? Math.floor(S.dist / TAMER_STRIDE * 8) : animFrame(t, true, false, 16)) : animFrame(t, false, false, 2.6);
     var dir = (tdir === "up" || tdir === "down" || tdir === "side") ? tdir : "side";
-    var sheet = tamerReady ? getTamerFrame(tamerId, dir, anim, fi, flash) : null;
+    var sheet = tamerReady ? getTamerFrame(tamerId, dir, anim, fi, false) : null;
     var usedNew = !!sheet;
     if (!sheet) sheet = getTamerSheet(anim, fi, flash);
-    /* Official DW3 frames are pre-scaled to ~56px standing height. Fallback is the old 18x16 bake at 1.45. */
+    var SP = global.DBH && global.DBH.sprites;
+    if (S && S.landed && SP && SP.onTamerStep) { try { SP.onTamerStep(key, x, y, dir); } catch (e) {} }
     var mul = usedNew ? 1 : 1.45;
     var spread = usedNew ? 1.05 : TAMER_SET.spread * mul;
-    shadow(ctx, x, y, spread, 0.3);
+    shadow(ctx, x, y, spread * (moving ? 0.95 : 1), 0.3);
     if (evoReady) {
       var pulse = 1 + Math.sin((t || 0) * 10) * 0.15;
       ctx.save();
@@ -3036,16 +3076,49 @@
       ctx.fill();
       ctx.restore();
     }
-    var squashX = flash ? 1.12 : 1;
-    var squashY = flash ? 0.88 : 1;
-    /* New walk/idle already bob in the frames; don't double-bob. */
-    var bob = usedNew ? 0 : Math.sin((t || 0) * 5) * (moving ? 0 : 1) * mul;
     var flip = (!usedNew || dir === "side") && facing < 0;
+    var turn = S ? Math.max(0, 1 - ((t || 0) - S.turnT) / 0.14) : 0;               /* a quick squash on a turn */
+    var squashX = (flash ? 1.08 : 1) * (1 - turn * 0.22), squashY = (flash ? 0.94 : 1) * (1 + turn * 0.06);
+    var lean = moving && dir === "side" ? 0.06 : 0;                                    /* into the walk */
+    var bob = usedNew ? 0 : Math.sin((t || 0) * 5) * (moving ? 0 : 1) * mul;
+    var ox = Math.round(-sheet.width / 2), oy = Math.round(-sheet.height + 4);
+    /* the odd flicker a projection has (rare, brief) */
+    var fl = Math.sin((t || 0) * 13.7 + (x * 0.01)) * Math.sin((t || 0) * 3.1);
+    var alpha = fl > 0.97 ? 0.72 : 1;
     ctx.save();
     ctx.imageSmoothingEnabled = false;
     ctx.translate(Math.round(x), Math.round(y + bob));
+    if (lean) ctx.rotate(lean * (flip ? -1 : 1));
     ctx.scale((flip ? -1 : 1) * mul * squashX, mul * squashY);
-    ctx.drawImage(sheet, Math.round(-sheet.width / 2), Math.round(-sheet.height + 4));
+    if (usedNew) {
+      var gl = tamerGlow(sheet, tamerId, tamerId + "|" + dir + "|" + anim + "|" + (((fi % sheet.__n) + sheet.__n) % sheet.__n || 0) + "|" + sheet.width);
+      if (gl) { ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha = 0.38 + Math.sin((t || 0) * 2.2) * 0.08; ctx.drawImage(gl, ox - 8, oy - 8); ctx.restore(); }
+    }
+    ctx.globalAlpha = alpha;
+    if (flash && usedNew) {
+      /* hit: the projection tears into slices that jump sideways, then settles */
+      var k, sl = 4, h = sheet.height / sl, jit = Math.floor((t || 0) * 30);
+      for (k = 0; k < sl; k++) {
+        var sx = ((k + jit) % 3 - 1) * 2;
+        ctx.drawImage(sheet, 0, k * h, sheet.width, h, ox + sx, oy + k * h, sheet.width, h);
+      }
+      ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha = 0.45;
+      ctx.drawImage(getTamerFrame(tamerId, dir, anim, fi, true) || sheet, ox, oy);
+    } else {
+      ctx.drawImage(sheet, ox, oy);
+    }
+    if (usedNew && !flash) {
+      /* a scan band rising through it every few seconds */
+      var per = 3.2, ph = (((t || 0) + (x * 0.003)) % per) / per;
+      if (ph < 0.4) {
+        var by = oy + sheet.height * (1 - ph / 0.4) - 4;
+        ctx.save();
+        ctx.beginPath(); ctx.rect(ox, by, sheet.width, 4); ctx.clip();
+        ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha = 0.5;
+        ctx.drawImage(sheet, ox, oy);
+        ctx.restore();
+      }
+    }
     ctx.restore();
   }
 
