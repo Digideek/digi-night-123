@@ -173,7 +173,7 @@
       var bait = this.rivalBait ? 2 : 1, sk = [], k;          /* Rival Bait: it came for you, and it pays double */
       for (i = 0; i < D.xpOrbs; i++) { a = (Math.PI * 2 * i) / D.xpOrbs; this._spawnOrb("xp", e.x + Math.cos(a) * 32, e.y + Math.sin(a) * 26, Math.round(this._rivalRef() * D.xpMul * bait)); }
       this._spawnOrb("bits", e.x, e.y + 10, (D.bits + D.bitsPerWin * (rv.wins - 1)) * bait);
-      for (k in (rv.p.skills || {})) if (rv.p.skills[k] > 0) sk.push(k);
+      for (k in (rv.p.skills || {})) if (rv.p.skills[k] > 0 && k.charAt(0) !== "!") sk.push(k);
       this.emit({ type: "rival.down", name: rv.name, form: rv.p.form, level: rv.p.level, wins: rv.wins, losses: rv.losses, x: e.x, y: e.y, by: p ? p.id : null, back: D.away, skills: sk, bait: bait > 1 });
     };
     /* the XP a wild Digimon of the moment is worth (what is on the field now, remembered) */

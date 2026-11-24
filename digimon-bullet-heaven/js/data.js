@@ -422,6 +422,11 @@
       "Perfect (Ultimate)": [22, 32], "Ultimate (Mega)": [30, 42], "Ultimate (Mega+)": [40, 50] },
     farPx: 12000, farFrac: 0.6, bossLv: 3, lordLv: 6, hpPerLv: 0.05,
     hpMul: 1.8, dmgMul: 1.4, xpMul: 1.7,
+    /* by the wild one's stage (17z33): the signature sets made partners hit 0.92x / 0.91x / 1.05x /
+     * 1.14x / 1.21x / 1.30x as hard as before at Baby .. Mega (a typical build at a typical job
+     * level, every line); this cancels that and adds 5% on top, "as hard as before, a smidge harder" */
+    stageHp: { "Baby I": 0.97, "Baby II (In-Training)": 0.96, "Child (Rookie)": 1.1, "Adult (Champion)": 1.2, "Armor": 1.2,
+      "Perfect (Ultimate)": 1.27, "Ultimate (Mega)": 1.37, "Ultimate (Mega+)": 1.37 },
     dmgPerLvAbove: 0.05, dmgCapAbove: 1.0, xpPerLvAbove: 0.06, xpCapAbove: 0.6,
     freeBelow: 3, xpPerLvBelow: 0.15, xpFloor: 0.05,
     lowAt: 2, lowMul: 3,
@@ -685,7 +690,8 @@
     followPartner: false,                      /* the field's stage follows the clock only; it used to wait for the partner to digivolve */
     belowShare: 0.4,                           /* how much of the field is the stage below (was 0.2): little ones to cut through */
     group: { min: 3, max: 4, spread: 44 },
-    magnetRadius: 125, magnetSpeed: 430, levelMagnet: 650, xpOrbScale: 1.35
+    magnetRadius: 125, magnetSpeed: 430, levelMagnet: 650, xpOrbScale: 1.35,
+    driftReach: 2.5, driftSpeed: 38,        /* drops within 2.5x the magnet reach drift toward the nearest tamer at this pace (17z33) */
   };
 
   var LEASH = {

@@ -38,6 +38,52 @@
   var PASSIVE_BY = {};
   PASSIVES.forEach(function (p) { PASSIVE_BY[p.id] = p; });
 
+  /* Signature sets (17z33, moves.js SIG_INFO): a move that grows replaces the one it grew from, and
+   * the Rookie choice locks the other side (and what it would have grown into) for the run. Both are
+   * kept in the skills record itself, so they travel with it everywhere it goes:
+   *   skills["!" + id] = 1   locked: the other side of a choice was taken
+   *   skills["!" + id] = 2   grown: it became its upgrade and is gone */
+  var GONE = "!", LOCKED = 1, GREW = 2;
+  function sigOf(data, id) { return (data.SIG_INFO && data.SIG_INFO[id]) || null; }
+  function nameOf(data, id) { return (data.WEAPONS && data.WEAPONS[id] && data.WEAPONS[id].name) || id; }
+  /* the move this one is cut off by, if a choice upstream went the other way */
+  function lockedBy(data, skills, id) {
+    var g = sigOf(data, id), guard = 0;
+    while (g && guard++ < 8) {
+      if (skills && skills[GONE + id] === LOCKED) return g.rival || id;
+      if (!g.up) return null;
+      id = g.up; g = sigOf(data, id);
+    }
+    return null;
+  }
+  /* the side that was taken, or whatever it has grown into since */
+  function takenSide(data, skills, taken) {
+    var k = taken, n, guard = 0;
+    while (k && !(skills && skills[k] > 0) && guard++ < 8) { n = sigOf(data, k); k = n && n.upTo; }
+    return k || taken;
+  }
+  /* after a point goes into a signature move for the first time */
+  function learned(data, skills, id) {
+    var g = sigOf(data, id), was;
+    if (!g || !skills) return;
+    if (g.up && skills[g.up] > 0) {
+      was = skills[g.up];
+      skills[id] = Math.max(skills[id] || 1, Math.round(was * 0.75));   /* most of the old move's levels carry over */
+      delete skills[g.up];
+      skills[GONE + g.up] = GREW;
+    }
+    if (g.rival && !(skills[g.rival] > 0)) skills[GONE + g.rival] = LOCKED;
+  }
+  /* one line for the card / tree: what this move does to the others */
+  function sigNote(data, skills, id) {
+    var g = sigOf(data, id);
+    if (!g) return "";
+    if (g.up) return "Grows from " + nameOf(data, g.up) + " (replaces it)";
+    if (g.rival) return "Choice: locks " + nameOf(data, g.rival) + " for this run";
+    if (g.upTo) return "Grows into " + nameOf(data, g.upTo) + " later";
+    return "";
+  }
+
   function metaOf(data, id) { return (data.MOVE_META && data.MOVE_META[id]) || null; }
   function lvOf(skills, id) { return (skills && skills[id]) || 0; }
 
@@ -48,7 +94,8 @@
     for (s = 0; s < SLOTS.length; s++) if (!chain[SLOTS[s]]) chain[SLOTS[s]] = [];
     var out = { stage: chain.stage, family: chain.family, slots: {}, passives: PASSIVES }, s, i, k, m, have = {};
     for (s = 0; s < SLOTS.length; s++) {
-      out.slots[SLOTS[s]] = chain[SLOTS[s]].map(function (e) { have[e.id] = 1; return { id: e.id, tier: e.tier, slot: SLOTS[s] }; });
+      out.slots[SLOTS[s]] = chain[SLOTS[s]].filter(function (e) { return !(skills && skills[GONE + e.id] === GREW); })
+        .map(function (e) { have[e.id] = 1; return { id: e.id, tier: e.tier, slot: SLOTS[s] }; });
     }
     for (k in (skills || {})) {
       if (have[k] || PASSIVE_BY[k] || !(skills[k] > 0)) continue;
@@ -80,7 +127,12 @@
         if (e.id !== id) continue;
         if (lvOf(skills, id) >= MAX) return "Mastered";
         if (lvOf(skills, id) > 0) return null;                       /* already known: can always be raised */
+        var lb = lockedBy(data, skills, id);
+        if (lb) return "Locked: you took " + nameOf(data, takenSide(data, skills, lb));
         if (e.tier > t.stage) return "Reach " + (STAGE_NAME[e.tier] || "a later form");
+        var sg = sigOf(data, id);
+        if (sg && sg.up && !(lvOf(skills, sg.up) >= RULES.prereqLevel)) return "Needs " + nameOf(data, sg.up) + " Lv " + RULES.prereqLevel;
+        if (MULTI[e.slot]) return null;                              /* signatures and techniques stand on their own */
         /* the smaller move of the same kind, or any move of that kind at least as big */
         prev = null;
         for (var j = i - 1; j >= 0; j--) if (list[j].tier < e.tier) { prev = list[j]; break; }
@@ -176,7 +228,7 @@
       for (i = 0; i < list.length; i++) {
         id = list[i].id;
         if (blocked(data, form, skills, id)) continue;
-        pool.push({ id: id, w: lvOf(skills, id) > 0 ? (C.ownedWeight || 2) : (C.newWeight || 3) });
+        pool.push({ id: id, w: lvOf(skills, id) > 0 ? (C.ownedWeight || 2) : (C.newWeight || 3) * (sigOf(data, id) && sigOf(data, id).up ? 2 : 1) });
       }
     }
     for (i = 0; i < PASSIVES.length; i++) if (lvOf(skills, PASSIVES[i].id) < MAX) pool.push({ id: PASSIVES[i].id, w: C.passiveWeight || 1 });
@@ -191,7 +243,8 @@
   }
 
   var api = { MAX: MAX, MULTI: MULTI, SLOTS: SLOTS, SLOT_NAME: SLOT_NAME, STAGE_NAME: STAGE_NAME, RULES: RULES, PASSIVES: PASSIVES, PASSIVE_BY: PASSIVE_BY,
-    tree: tree, blocked: blocked, active: active, moveLevel: moveLevel, passiveMul: passiveMul, autoPick: autoPick, bestInSlot: bestInSlot, offer: offer };
+    tree: tree, blocked: blocked, active: active, moveLevel: moveLevel, passiveMul: passiveMul, autoPick: autoPick, bestInSlot: bestInSlot, offer: offer,
+    learned: learned, sigNote: sigNote, GONE: GONE };
   if (root.DBH) root.DBH.SKILLS = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));

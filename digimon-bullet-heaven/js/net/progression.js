@@ -559,9 +559,10 @@
     if (why) return { ok: false, reason: why };
     /* a skill not known yet can only be learned from the cards on offer */
     if (this.data.SKILL_CARDS && SK.offer && !(p.skills[id] > 0) && p.skillOffer && p.skillOffer.indexOf(id) < 0) return { ok: false, reason: "New skills come from level-up cards" };
-    var hpWas = this._skillHpMul(p);
+    var hpWas = this._skillHpMul(p), fresh = !(p.skills[id] > 0);
     p.skills[id] = (p.skills[id] || 0) + 1;
     p.skillPoints -= 1;
+    if (fresh && SK.learned) SK.learned(this.data, p.skills, id);     /* a signature that grows replaces its old move; a choice locks the other side */
     if (id === "vt" && p.maxHp) {
       var old = p.maxHp;
       p.maxHp = Math.round(p.maxHp / hpWas * this._skillHpMul(p));
@@ -902,8 +903,11 @@
     if (c.onDemand) {
       /* Nov 20: the world does not stop. The tamer and partner step out of it (p.atFarm: nothing can
        * reach them, they reach nothing) and come back to the same spot. Not with enemies close. */
-      if (p.atFarm) return { ok: true, already: true };
-      if (sim._hostileNear && sim._hostileNear(p, c.blockRadius || 380)) return { ok: false, reason: "Enemies are too close" };
+      /* already there only if a visit is really open; a PvP knock-out (pvp-sim.js) sets atFarm first and
+       * sends you here, and used to stop at this line, so no visit opened, farm.return found none to
+       * close and atFarm stayed on for good: partner frozen, invisible to friends (17z33) */
+      if (p.atFarm && sim.farm && sim.farm.active) return { ok: true, already: true };
+      if (!p.atFarm && sim._hostileNear && sim._hostileNear(p, c.blockRadius || 380)) return { ok: false, reason: "Enemies are too close" };
       p.atFarm = true;
       stay = 1e9;
     } else {

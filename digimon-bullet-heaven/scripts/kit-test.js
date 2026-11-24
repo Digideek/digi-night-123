@@ -24,9 +24,9 @@ for (const k of lines) {
   babies++;
   const open = []; const t = SK.tree(D, baby, { bubbleBlow: 1 });
   SK.SLOTS.forEach(s => t.slots[s].forEach(e => { if (!SK.blocked(D, baby, { bubbleBlow: 1 }, e.id)) open.push(e.id); }));
-  if (open.indexOf(D.MOVE_LINES[k].special) >= 0 && D.MOVE_TECHS.every(id => open.indexOf(id) >= 0) && open.length === 6) good++;
+  if (open.indexOf(D.MOVE_LINES[k].special) >= 0 && D.MOVE_TECHS.every(id => open.indexOf(id) >= 0) && open.length === 8) good++;
 }
-ok(babies > 0 && good === babies, "a Baby of every line can learn six moves now (Bubble Blow, its signature, four techniques): " + good + "/" + babies);
+ok(babies > 0 && good === babies, "a Baby of every line can learn eight moves now (Bubble Blow, its signature, its two Baby signatures, four techniques): " + good + "/" + babies);
 const tn = SK.tree(D, "numemon", {});
 ok(tn.slots.special.length === 1 && tn.slots.special[0].id === "gooTrap", "a form outside the named lines gets its element's signature (Numemon: " + W.gooTrap.name + ")");
 const act = SK.active(D, { bubbleBlow: 2, babyBurner: 3, byteBurst: 1, glitchChain: 4, pepperBreath: 1 });

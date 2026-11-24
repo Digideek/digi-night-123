@@ -588,9 +588,13 @@
     p._scrollForm = p.form;
     if (SK.PASSIVE_BY[id]) fits = true;
     else { tr = SK.tree(this.data, p.form, p.skills || {}); for (s in tr.slots) for (i = 0; i < tr.slots[s].length; i++) if (tr.slots[s][i].id === id) fits = true; }
+    /* a signature from a scroll keeps to the same rules as one from a card (17z33) */
+    if (fits && this.data.SIG_INFO && this.data.SIG_INFO[id] && !((p.skills || {})[id] > 0) && SK.blocked(this.data, p.form, p.skills || {}, id)) fits = false;
     if (!fits) return;
     p.skills = p.skills || {};
+    var fresh = !(p.skills[id] > 0);
     p.skills[id] = Math.min(SK.MAX || 10, (p.skills[id] || 0) + 1);
+    if (fresh && SK.learned) SK.learned(this.data, p.skills, id);
     p.scroll = null;
     this._syncMoves(p);
     this.emit({ type: "scroll.learned", id: p.id, skill: id, level: p.skills[id] });
@@ -2137,7 +2141,7 @@
       e.hp = e.maxHp = Math.round(((def && def.hp) || e.maxHp) * ((R && R.startHp) || 1));
       return;
     }
-    e.hp = e.maxHp = Math.round(e.maxHp * L.hpMul * (1 + L.hpPerLv * Math.max(0, e.lv - b[0])));
+    e.hp = e.maxHp = Math.round(e.maxHp * L.hpMul * ((L.stageHp && def && L.stageHp[def.stageDisplay]) || 1) * (1 + L.hpPerLv * Math.max(0, e.lv - b[0])));
     e.dmgMul = (e.dmgMul || 1) * L.dmgMul;
   };
   /* the gap between a Digimon's level and a partner's job level (data.js LEVELS) */
@@ -3110,32 +3114,46 @@
   };
 
   MissionSim.prototype._updateOrbs = function (dt) {
-    var i, o, p, d, rad, eaten;
-    var host = this.player(this.localId) || this.players[0];
+    var i, o, p, d, rad, eaten, pl, dm, mag, best, bd, n, tx, ty, sp;
     var pickR = this._player().pickupRadius || 18;
+    var PG = this.data.PACING || {}, base = PG.magnetSpeed || 220;
     for (i = this.orbs.length - 1; i >= 0; i--) {
       o = this.orbs[i];
       eaten = false;
+      rad = pickR;
+      /* Pickups home in on a tamer (17z33). Either the tamer or the partner coming near pulls a drop
+       * in, but it then flies to that player's tamer, the nearest one, and keeps to it. It used to
+       * chase whichever of tamer and partner was nearer this tick, so drops swung after a partner
+       * darting round a fight, and with friends it was tugged toward every player in turn. */
+      best = null; bd = 1e18;
       for (p = 0; p < this.players.length; p++) {
-        var pl = this.players[p];
+        pl = this.players[p];
+        if (pl.atFarm || pl.away) continue;
         d = Math.sqrt(dist2(o.x, o.y, pl.x, pl.y));
-        var dm = Math.sqrt(dist2(o.x, o.y, pl.mx, pl.my));
-        rad = pickR;
-        var PG = this.data.PACING || {};
-        var mag = (PG.magnetRadius || 90) * ((pl.stats && pl.stats.magnetMul) || 1);
+        dm = Math.sqrt(dist2(o.x, o.y, pl.mx, pl.my));
+        if (d < rad + 8 || dm < rad + 8) { this._eatOrb(pl, o); eaten = true; break; }
+        mag = (PG.magnetRadius || 90) * ((pl.stats && pl.stats.magnetMul) || 1);
         if (d < mag || dm < mag) o.magnet = true;
-        if (o.magnet && host) {
-          var tx = d < dm ? pl.x : pl.mx;
-          var ty = d < dm ? pl.y : pl.my;
-          var n = norm(tx - o.x, ty - o.y);
-          o.x += n.x * (PG.magnetSpeed || 220) * dt;
-          o.y += n.y * (PG.magnetSpeed || 220) * dt;
-        }
-        if (d < rad + 8 || dm < rad + 8) {
-          this._eatOrb(pl, o);
-          eaten = true;
-          break;
-        }
+        if (o.to === pl.id) { best = pl; bd = -1; }
+        else if (bd >= 0 && d < bd) { best = pl; bd = d; }
+        if (!o.magnet && d < mag * (PG.driftReach || 2.5) && (!o.near || d < o.nearD)) { o.near = pl; o.nearD = d; }
+      }
+      /* not pulled in yet but close by: drifts slowly toward the tamer */
+      if (!eaten && !o.magnet && o.near) {
+        n = norm(o.near.x - o.x, o.near.y - o.y);
+        o.x += n.x * (PG.driftSpeed || 38) * dt; o.y += n.y * (PG.driftSpeed || 38) * dt;
+      }
+      o.near = null; o.nearD = 0;
+      if (!eaten && o.magnet && best) {
+        o.to = best.id;
+        tx = best.hasTamer === false ? best.mx : best.x;
+        ty = best.hasTamer === false ? best.my : best.y;
+        /* starts at the old pace and speeds up, so it catches a tamer on the run */
+        o.v = Math.min(base * 2.2, (o.v || base * 0.8) + base * 1.6 * dt);
+        d = Math.sqrt(dist2(o.x, o.y, tx, ty));
+        sp = Math.min(o.v * dt, d);
+        if (d > 0.01) { n = norm(tx - o.x, ty - o.y); o.x += n.x * sp; o.y += n.y * sp; }
+        if (d - sp < rad + 8) { this._eatOrb(best, o); eaten = true; }
       }
       if (!eaten && o.kind === "heal") {
         for (p = 0; p < this.cpus.length; p++) {
@@ -3265,8 +3283,10 @@
     while (SK && (p.skillPoints || 0) > 0 && guard++ < 60) {
       id = SK.autoPick(this.data, p.form, p.skills || {});
       if (!id) break;
+      var fresh = !(p.skills[id] > 0);
       p.skills[id] = (p.skills[id] || 0) + 1;
       p.skillPoints -= 1;
+      if (fresh && SK.learned) SK.learned(this.data, p.skills, id);
     }
     this._syncMoves(p);
   };

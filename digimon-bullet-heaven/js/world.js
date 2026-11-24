@@ -9,7 +9,7 @@
   var CACHE_MAX = 72;
   var seed = 1;
   var cache = {};
-  var cacheOrder = [];
+  var cacheN = 0, useClock = 0;   /* chunks held; drawGround's frame count, for least-recently-used */
   var tileCache = {};
   var ready = false;
   var C, SCALE, TILE, faceH;
@@ -27,7 +27,6 @@
     season = id;
     /* Re-bake lazily: chunks and tiles are rebuilt as they are drawn. */
     dropAllChunks();
-    cacheOrder = [];
     tileCache = {};
     return true;
   }
@@ -572,18 +571,25 @@
     var R = D.gl && D.gl.renderer;
     if (ch && ch.canvas && R && R.release) R.release(ch.canvas);
   }
-  function dropChunk(key) { if (cache[key]) { glRelease(cache[key]); delete cache[key]; } }
-  function dropAllChunks() { var k; for (k in cache) glRelease(cache[k]); cache = {}; }
+  function dropChunk(key) { if (cache[key]) { glRelease(cache[key]); delete cache[key]; cacheN--; } }
+  function dropAllChunks() { var k; for (k in cache) glRelease(cache[k]); cache = {}; cacheN = 0; }
   function chunkKey(cx, cy) {
     return cx + "," + cy;
   }
 
+  /* Keep at most CACHE_MAX baked chunks; past that, throw away the one used longest ago, never
+   * one drawn this frame. (17z33: it used to keep an order list that kept the keys of chunks
+   * already thrown away by a biome flip or ice, so after a few flips near you it evicted chunks
+   * still on screen, rebuilt them the next frame, evicted the next... hundreds a second, forever.) */
   function remember(key, ch) {
+    if (cache[key]) dropChunk(key);
     cache[key] = ch;
-    cacheOrder.push(key);
-    if (cacheOrder.length > CACHE_MAX) {
-      var old = cacheOrder.shift();
-      dropChunk(old);
+    ch.used = useClock;
+    cacheN++;
+    if (cacheN > CACHE_MAX) {
+      var k, oldK = null, oldU = useClock;
+      for (k in cache) if (cache[k].used < oldU) { oldU = cache[k].used; oldK = k; }
+      if (oldK !== null) dropChunk(oldK);
     }
   }
 
@@ -730,7 +736,7 @@
 
   function getChunk(cx, cy) {
     var key = chunkKey(cx, cy);
-    if (cache[key]) return cache[key];
+    if (cache[key]) { cache[key].used = useClock; return cache[key]; }
     var ch = buildChunk(cx, cy);
     remember(key, ch);
     return ch;
@@ -747,6 +753,7 @@
     var cx1 = Math.floor(x1 / (CHUNK * TILE));
     var cy1 = Math.floor(y1 / (CHUNK * TILE));
     var cx, cy, ch, dx, dy;
+    useClock++;
     ctx.imageSmoothingEnabled = false;
     for (cy = cy0; cy <= cy1; cy++) {
       for (cx = cx0; cx <= cx1; cx++) {
@@ -980,7 +987,7 @@
   function iceTick() {
     var q = Math.floor(seasonIce() * 24), k, u, b, tx, ty;
     if (q !== iceQ) {
-      if (iceQ >= 0 || q > 0) { iceVer++; dropAllChunks(); cacheOrder = []; }
+      if (iceQ >= 0 || q > 0) { iceVer++; dropAllChunks(); }
       iceQ = q; iceLevel = q / 24;
     }
     if (clock >= iceNext) {
@@ -1269,7 +1276,6 @@
     colors();
     seed = (s == null ? 1 : (s | 0)) || 1;
     dropAllChunks();
-    cacheOrder = [];
     tileCache = {};
     matCache = {}; matCount = 0; bioCache = {}; bioCount = 0; lairCache = {};
     propCache = {}; propCount = 0; used = {}; burnt = {}; clock = 0;

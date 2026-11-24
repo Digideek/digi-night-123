@@ -78,6 +78,8 @@
       ln = L[k];
       for (i = 0; i < 6; i++) { putLine(ln.primary[i], ln.family); putLine(ln.melee[i], ln.family); }
       putLine(ln.aura, ln.family); putLine(ln.orbit, ln.family); putLine(ln.special, ln.family);
+      /* signature sets (17z33): the line's element unless the move says otherwise (Ash Snort is fire) */
+      for (i = 0; i < (ln.sigs || []).length; i++) put(ln.sigs[i], (D.SIG_LOOK && D.SIG_LOOK[ln.sigs[i]] && D.SIG_LOOK[ln.sigs[i]].el) || ln.family);
     }
     for (k in F) put(F[k].special, k);
     /* a family's own moves always carry that family's element */

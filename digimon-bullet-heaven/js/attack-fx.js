@@ -114,9 +114,23 @@
   var SHOT_STYLE = { pepperBreath: "fireball", megaFlame: "novablast", gigaDestroyer: "missile", terraForce: "sun", seaFoam: "foam", marchingFishes: "fish", harpoonTorpedo: "torpedo", gigaBlaster: "sun" };
   var MINE_STYLE = { webSnare: "web", hazardMine: "mark", curseMark: "mark", gooTrap: "puddle", bubbleTrap: "bubble" };
 
+  /* signature sets (17z33, moves.js SIG_LOOK): each move's own shape, and how its trap, ray,
+   * chain or thrown blade is drawn */
+  function mergeSigLooks() {
+    var S = D.SIG_LOOK || {}, k, o;
+    for (k in S) {
+      o = S[k];
+      if (o.sh && !MOVE_LOOK[k]) MOVE_LOOK[k] = { shape: o.sh };
+      if (o.ms && !MINE_STYLE[k]) MINE_STYLE[k] = o.ms;
+      if (o.bf && !BEAM_FX[k]) BEAM_FX[k] = o.bf;
+      if (o.cf && !CHAIN_FX[k]) CHAIN_FX[k] = o.cf;
+      if (o.of && !BOOM_FX[k]) BOOM_FX[k] = o.of;
+    }
+  }
   var famById = null;
   function buildIndex() {
     var F = D.MOVE_FAMILIES || {}, L = D.MOVE_LINES || {}, f, i, k;
+    mergeSigLooks();
     famById = { bubbleBlow: "bubble", headbutt: "beast", sludgeToss: "slime", pepperBreath: "fire", megaFlame: "fire", gigaDestroyer: "fire", terraForce: "fire",
       blueBlaster: "ice", howlingBlaster: "ice", gracefulCannon: "ice" };
     for (f in F) for (i = 0; i < F[f].ids.length; i++) if (!famById[F[f].ids[i]]) famById[F[f].ids[i]] = f;
@@ -134,6 +148,7 @@
     for (k in L) {
       for (i = 0; i < L[k].primary.length; i++) if (L[k].primary[i] && !famById[L[k].primary[i]]) famById[L[k].primary[i]] = L[k].family;
       if (L[k].special && !famById[L[k].special]) famById[L[k].special] = L[k].family;
+      for (i = 0; i < (L[k].sigs || []).length; i++) if (!famById[L[k].sigs[i]]) famById[L[k].sigs[i]] = (D.SIG_LOOK && D.SIG_LOOK[L[k].sigs[i]] && D.SIG_LOOK[L[k].sigs[i]].el) || L[k].family;
     }
     for (f in F) if (F[f].special && !famById[F[f].special]) famById[F[f].special] = f;
     for (k in (D.MOVE_TECH_LOOK || {})) famById[k] = D.MOVE_TECH_LOOK[k];

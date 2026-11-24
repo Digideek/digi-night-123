@@ -27,6 +27,11 @@
   var menuIndex = 0;
   var pendingLevels = 0;
   var missionAuth = null, missionAcc = 0, missionSeq = 0, missionLocalId = "local";
+  /* This screen's world is copied from someone else's simulation: no simulation at all, or an
+   * online guest, whose missionAuth is only a stand-in relaying the host's. (17z33: the world
+   * sync used plain !missionAuth, which is never true on a guest, so a guest's map never took
+   * the host's biome changes or puddles.) */
+  function followsHost() { return !missionAuth || !!(D.online && D.online.isGuest && D.online.isGuest()); }
   var ultShake = null;   /* a Mega ultimate on its way: the big shake when it goes off */
   var hpLag = null;   /* the partner's over-head health bar: where the white "just lost" chunk has drained to */
   var missionEvents = [];
@@ -996,9 +1001,9 @@
     run.ally = snap.ally || (snap.ally === null ? null : run.ally);
     replaceArr(enemies, snap.enemies);
     patches = snap.patches || [];
-    if (!missionAuth && snap.soak != null && D.world && D.world.setSoak) D.world.setSoak(snap.soak);
+    if (followsHost() && snap.soak != null && D.world && D.world.setSoak) D.world.setSoak(snap.soak);
     /* who holds the land (the host decides; a guest's world follows) */
-    if (snap.terr != null && snap.terr !== terrSeen && D.world && D.world.applyTerritory) { terrSeen = snap.terr; if (!missionAuth) D.world.applyTerritory(snap.terr); }
+    if (snap.terr != null && snap.terr !== terrSeen && D.world && D.world.applyTerritory) { terrSeen = snap.terr; if (followsHost()) D.world.applyTerritory(snap.terr); }
     fronts = snap.fronts || fronts;
     nestList = snap.nests || nestList;
     nemList = snap.nems || null;                                                    /* every nemesis alive (nemesis-sim.js) */
@@ -2072,6 +2077,7 @@
           "<canvas width='48' height='48' data-ico='" + (p ? p.icon : e) + "'></canvas>" +
           "<b>" + (p ? p.name : def.name) + "</b>" +
           "<i>" + (lv ? "Lv " + lv + " \u2192 " + (lv + 1) : "NEW") + "</i>" +
+          (!p && SK.sigNote && SK.sigNote(D, sk, e) ? "<em class='skill-tag'>" + SK.sigNote(D, sk, e) + "</em>" : "") +
           "<span>" + (p ? p.text + " per level" : (def.summary || "")) + "</span></button>";
       }
       html += "</div><button type='button' class='skill-skip' id='skill-skip'>Skip the cards: raise something I already know</button>";
@@ -2104,7 +2110,8 @@
         legacy = lv > 0 && !firing[e.id];
         html += "<div class='skill-row" + (why && !lv ? " is-locked" : "") + (firing[e.id] ? " is-firing" : "") + "'><canvas width='36' height='36' data-ico='" + e.id + "'></canvas>" +
           "<span class='skill-name'>" + def.name + "<span class='skill-sub'>" +
-          (firing[e.id] ? "In use" + (firing[e.id].bonus > 1.001 ? "  \u00b7  +" + Math.round((firing[e.id].bonus - 1) * 100) + "% damage" : "") : (legacy ? "Adds to the bigger move" : (why && !lv ? why : (SK.STAGE_NAME[e.tier] || "") + " move"))) + "</span></span>" +
+          (firing[e.id] ? "In use" + (firing[e.id].bonus > 1.001 ? "  \u00b7  +" + Math.round((firing[e.id].bonus - 1) * 100) + "% damage" : "") + (D.SIG_INFO && D.SIG_INFO[e.id] && D.SIG_INFO[e.id].upTo && D.WEAPONS[D.SIG_INFO[e.id].upTo] ? "  \u00b7  grows into " + D.WEAPONS[D.SIG_INFO[e.id].upTo].name + " later" : "")
+            : (legacy ? "Adds to the bigger move" : (why && !lv ? why : (SK.STAGE_NAME[e.tier] || "") + " move" + (SK.sigNote && SK.sigNote(D, sk, e.id) ? "  \u00b7  " + SK.sigNote(D, sk, e.id) : "")))) + "</span></span>" +
           "<span class='skill-lv'>Lv " + lv + "/" + SK.MAX + "</span>" +
           "<button type='button' data-skill='" + e.id + "'" + (why || pts < 1 || cardOnly(e.id, lv) ? " disabled" : "") + ">+</button></div>";
       }
@@ -4335,6 +4342,12 @@
   function maybeStartFarm() {
     if (!run || !D.farm) return false;
     if (state === "evolution" || state === "brawl" || state === "levelup" || state === "farm" || state === "shop") return false;
+    /* knocked home by another tamer while a window was open (the skill tree, an evolution...): the
+     * simulation already has us at the farm, so open it as soon as we are back in play (17z33) */
+    if (missionAuth && missionAuth.sim && !followsHost()) {
+      var lpF = missionAuth.sim.player && missionAuth.sim.player(missionLocalId);
+      if (lpF && lpF.atFarm && !(D.farm.isActive && D.farm.isActive())) return startFarm({ onDemand: true });
+    }
     if (missionAuth) {
       if (missionAuth.sim && missionAuth.sim.phase === "farm") return startFarm({ scheduled: true, fromAuth: true });
       if (!run.pendingFarm) return false;
@@ -5563,7 +5576,7 @@
     var near, d;
     if (e.type === "war.flip") {
       /* a guest's world learns it from the snapshot's territory too; this keeps it prompt */
-      if (!missionAuth && D.world && D.world.setOwner) D.world.setOwner(e.cx, e.cy, e.to);
+      if (followsHost() && D.world && D.world.setOwner) D.world.setOwner(e.cx, e.cy, e.to);
       d = Math.sqrt((e.x - run.x) * (e.x - run.x) + (e.y - run.y) * (e.y - run.y));
       near = d < 1400;
       if (near) burst(e.x, e.y, warColor(e.to), 10, 160);
@@ -6030,21 +6043,34 @@
   }
   /* contested ground: a haze of the attacker's colour that thickens as the cell is about to fall,
    * with sparks crackling where the two sides meet */
+  /* A contested border (17z33): a crisp line of pixel blocks along the edge the attacker is pushing
+   * across, in its colour, brighter and denser as it gains ground, with sparks on it. It used to be
+   * a soft glow twice the size of every contested cell; a few dozen of those piled up into a fog
+   * that washed out the screen whenever the biomes fought near you. */
   function drawFronts() {
     if (!fronts || !fronts.length || !D.world || !D.world.TERR) return;
-    var T = (D.sprites && D.sprites.TILE) || 48, span = D.world.TERR * T, cs = camSpan(), i, f, x, y, k, g, a, c, NB = [[1, 0], [-1, 0], [0, 1], [0, -1]], ex, ey, t = run.time;
+    var T = (D.sprites && D.sprites.TILE) || 48, span = D.world.TERR * T, cs = camSpan(), i, f, x, y, k, a, c, NB = [[1, 0], [-1, 0], [0, 1], [0, -1]], ex, ey, t = run.time, j, n, step, along, px, py, horiz, on;
     ctx.save();
     for (i = 0; i < fronts.length; i++) {
       f = fronts[i]; x = (f[0] + 0.5) * span; y = (f[1] + 0.5) * span;
       if (Math.abs(x - camX) > cs.w / 2 + span || Math.abs(y - camY) > cs.h / 2 + span) continue;
       a = f[3] / 100; c = warColor(f[2]);
-      g = ctx.createRadialGradient(x, y, span * 0.1, x, y, span * 0.75);
-      ctx.globalAlpha = (0.1 + 0.22 * a) * (0.85 + 0.15 * Math.sin(t * 2 + f[0]));
-      g.addColorStop(0, c); g.addColorStop(1, "rgba(0,0,0,0)");
-      ctx.fillStyle = g; ctx.fillRect(x - span, y - span, span * 2, span * 2);
       for (k = 0; k < 4; k++) {
         if (D.world.cellOwner(f[0] + NB[k][0], f[1] + NB[k][1]) !== f[2]) continue;
         ex = x + NB[k][0] * span * 0.5; ey = y + NB[k][1] * span * 0.5;
+        horiz = NB[k][1] !== 0;                       /* the shared edge runs left-right */
+        /* the line: blocks every 16 px, marching slowly toward the defender; more of them lit as pressure builds */
+        step = 16; n = Math.floor(span / step);
+        ctx.fillStyle = c;
+        for (j = 0; j < n; j++) {
+          on = ph(j + f[0] * 7 + k, f[1] * 5 + Math.floor(t * 1.5)) < 0.35 + 0.6 * a;
+          if (!on) continue;
+          along = -span / 2 + (j + 0.5) * step;
+          px = horiz ? ex + along : ex - NB[k][0] * 3;
+          py = horiz ? ey - NB[k][1] * 3 : ey + along;
+          ctx.globalAlpha = 0.28 + 0.42 * a;
+          ctx.fillRect(Math.round(px - 2), Math.round(py - 2), 4, 4);
+        }
         for (var s2 = 0; s2 < 3; s2++) {
           if (ph(t * 7 + s2, f[0] * 3 + k) > 0.35 + 0.4 * (1 - a)) continue;
           ctx.globalAlpha = 0.5 + 0.5 * a; ctx.fillStyle = s2 ? c : "#ffffff";
@@ -6337,7 +6363,10 @@
       return;
     }
     var time = run ? run.time : titleTime;
-    if (D.sprites.drawParallax) {
+    if (run && D.world && D.world.drawGround) {
+      /* in a run the ground covers the whole screen, so the sky behind it was a full-screen
+         layer nobody saw (17z33); the cleared frame is the same dark blue if a gap ever shows */
+    } else if (D.sprites.drawParallax) {
       D.sprites.drawParallax(ctx, camX, camY, viewW, viewH, time, reducedFx);
     } else {
       ctx.fillStyle = D.PALETTE.bg0;
@@ -8257,19 +8286,31 @@
     requestAnimationFrame(frame);
   }
 
-  /* Keeping up on any machine (Nov 16). The frame is fill-rate bound: almost
-   * all of its cost is pixels, not game logic. So when frames run slow for
-   * a while the picture is drawn at a lower resolution and stretched (PERF.q
-   * steps down, never back up in the same session), and a browser that is
-   * drawing without the graphics card gets told so once. */
-  var PERF = { q: 1, steps: [1, 0.75, 0.55, 0.4], i: 0, acc: 0, n: 0, wait: 3, soft: false, told: false, slowMs: 30 };
+  /* Keeping up on any machine (Nov 16, reworked 17z33). The frame is fill-rate
+   * bound: almost all of its cost is pixels, not game logic. So when frames run
+   * slow for a while the picture is drawn at a lower resolution and stretched
+   * with crisp pixels (PERF.q). It used to step down and never come back, so
+   * one storm or a burst of lightning fires left the game blurry for the rest
+   * of the session. Now:
+   *  - it only steps down after two slow stretches in a row (~5 s), not one spike
+   *  - with a real graphics card it never goes below 75%
+   *  - once frames are comfortably fast again it steps back up; if that
+   *    turns out too much, it waits longer before trying again
+   * A browser drawing without the graphics card still starts low and is told so once. */
+  var PERF = { q: 1, steps: [1, 0.75, 0.55, 0.4], i: 0, acc: 0, n: 0, wait: 3, soft: false, told: false,
+    slowMs: 30, fastMs: 19, slowRuns: 0, fastRuns: 0, floor: 1, upT: 0, backoff: 1 };
   function perfProbe() {
     try {
       var gl = D.gl && D.gl.renderer && D.gl.renderer.gl, ext = gl && gl.getExtension("WEBGL_debug_renderer_info");
       var name = ext ? String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) || "") : "";
       PERF.name = name;
-      if (/swiftshader|llvmpipe|software|basic render/i.test(name)) { PERF.soft = true; PERF.i = 2; PERF.q = PERF.steps[2]; }
+      if (/swiftshader|llvmpipe|software|basic render/i.test(name)) { PERF.soft = true; PERF.i = 2; PERF.q = PERF.steps[2]; PERF.floor = PERF.steps.length - 1; }
     } catch (e) {}
+  }
+  function perfSet(i) {
+    PERF.i = i; PERF.q = PERF.steps[i]; PERF.wait = 3;
+    PERF.acc = PERF.n = 0; PERF.slowRuns = PERF.fastRuns = 0;
+    resize();
   }
   function perfTick(rawDt) {
     if (state !== "playing" && state !== "farm") { PERF.acc = PERF.n = 0; return; }
@@ -8278,15 +8319,31 @@
       showNoticeToast("This browser is drawing without your graphics card, so the game is running in low detail. Turn on graphics (hardware) acceleration in the browser's settings and restart it.");
       noticeToastTimer = 9;
     }
+    if (PERF.upT > 0) PERF.upT -= rawDt;
     if (PERF.wait > 0) { PERF.wait -= rawDt; return; }
     if (rawDt > 0.5) return;                      /* a tab switch or a hitch, not a slow machine */
     PERF.acc += rawDt; PERF.n += 1;
     if (PERF.n < 90) return;
     var avg = (PERF.acc / PERF.n) * 1000;
     PERF.acc = PERF.n = 0;
-    if (avg > PERF.slowMs && PERF.i < PERF.steps.length - 1) {
-      PERF.i += 1; PERF.q = PERF.steps[PERF.i]; PERF.wait = 3;
-      resize();
+    if (avg > PERF.slowMs) {
+      PERF.fastRuns = 0;
+      PERF.slowRuns += 1;
+      if (PERF.slowRuns >= 2 && PERF.i < PERF.floor) {
+        if (PERF.upT > 0) PERF.backoff = Math.min(8, PERF.backoff * 2);   /* we just stepped up and it was too much */
+        perfSet(PERF.i + 1);
+      }
+    } else if (avg < PERF.fastMs && PERF.i > 0) {
+      PERF.slowRuns = 0;
+      PERF.fastRuns += 1;
+      /* ~10 s of easy frames, longer each time stepping up didn't hold */
+      if (PERF.fastRuns >= 4 * PERF.backoff && !(PERF.soft && PERF.i <= 2)) {
+        perfSet(PERF.i - 1);
+        PERF.upT = 20;
+      }
+    } else {
+      PERF.slowRuns = 0;
+      PERF.fastRuns = 0;
     }
   }
   D.perf = PERF;
@@ -8299,6 +8356,8 @@
     canvas.height = Math.max(1, Math.floor(viewH * dpr));
     canvas.style.width = viewW + "px";
     canvas.style.height = viewH + "px";
+    /* drawn smaller than the screen: stretch it with crisp pixels, not a blur */
+    canvas.style.imageRendering = canvas.width < viewW * (window.devicePixelRatio || 1) - 1 ? "pixelated" : "auto";
     if (D.sprites && D.sprites.setViewSize) D.sprites.setViewSize(viewW, viewH);
     if (D.gl && D.gl.renderer && D.gl.renderer.resize) D.gl.renderer.resize(viewW, viewH, dpr);
     if (state === "shop") updateShopScrollHint();

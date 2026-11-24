@@ -492,6 +492,558 @@
   D.MOVE_TECHS = TECHS;
   D.MOVE_TECH_LOOK = TECH_LOOK;
 
+  /* ---- Signature sets (17z33) ----
+   * Each line's Baby, In-Training, Rookie and Champion has signature moves of its own, made
+   * for what that Digimon is. Twelve per line, always in this order (SIG_ROLE):
+   *   0 Baby seed        1 Baby keeper
+   *   2 In-Training: grows from 0 (replaces it)        3 In-Training keeper
+   *   4 Rookie: grows from 2 (replaces it)             5 / 6 Rookie choice: take one, the other is locked for the run
+   *   7 Rookie keeper
+   *   8 Champion: grows from 4                         9 grows from 5    10 grows from 6 (so only one of them, by your choice)
+   *   11 Champion keeper
+   * So a partner holds 2 at Baby, 2 new at In-Training, 3 new at Rookie and 3 new at Champion; the
+   * keepers stay as they are, the growing move keeps getting bigger and the old one goes.
+   * [name, kind, card text, look]   look: d drop (fall / rise), el element, sh shape, ms mine look,
+   * bf beam look, cf chain look, of boomerang look (attack-fx.js) */
+  var SIG_ROLE = [
+    { t: 0, mul: 0.9 }, { t: 0, mul: 0.9 },
+    { t: 1, up: 0, mul: 1.1 }, { t: 1, mul: 1.0 },
+    { t: 2, up: 2, mul: 1.3 }, { t: 2, br: 6, mul: 1.15 }, { t: 2, br: 5, mul: 1.15 }, { t: 2, mul: 1.05 },
+    { t: 3, up: 4, mul: 1.55 }, { t: 3, up: 5, mul: 1.45 }, { t: 3, up: 6, mul: 1.45 }, { t: 3, mul: 1.2 }
+  ];
+  var SIG_SETS = {
+    agumon: [
+      ["Fizz Bubbles", "fan", "Botamon blows a close spray of warm, fizzing bubbles.", { sh: "bubble" }],
+      ["Fuzz Puff", "burst", "Botamon puffs its black fuzz up big and bounces everything near it away."],
+      ["Boiling Bubbles", "fan", "Koromon's bubbles come out boiling: more of them, and they scald.", { sh: "bubble" }],
+      ["Bounce Drop", "strike", "Koromon hops high and lands on the target ears-first.", { d: "fall", sh: "blob" }],
+      ["Flame Gargle", "fan", "Agumon gargles its fire into a scattering spray of embers.", { sh: "flame" }],
+      ["Dash Claw", "beam", "Agumon lunges claws-first through everything in a line.", { bf: "fist" }],
+      ["Scorch Mark", "mine", "Agumon burns claw marks into the ground; they flare up under the next enemy across.", { ms: "mark" }],
+      ["Stomp Quake", "strike", "Agumon stomps and a quake bursts up under the target.", { d: "rise" }],
+      ["Meteor Breath", "strike", "Greymon breathes fire into the sky; it falls on the target as a blazing rock.", { d: "fall", sh: "flame" }],
+      ["Horn Charge", "beam", "Greymon drives its horns through everything in a long line.", { bf: "fist" }],
+      ["Wildfire Field", "mine", "Greymon scorches the ground into traps that flare up one after another.", { ms: "mark" }],
+      ["Tail Sweep", "burst", "Greymon swings its whole tail round and throws everything near it back."]
+    ],
+    gabumon: [
+      ["Jelly Bubbles", "fan", "Punimon spits a spray of cold, wobbly bubbles.", { sh: "bubble" }],
+      ["Squish Bounce", "burst", "Punimon squashes flat and springs back, bouncing enemies away."],
+      ["Frost Beads", "fan", "Tsunomon's bubbles freeze in the air into little beads of ice.", { sh: "shard" }],
+      ["Horn Chip", "boomerang", "Tsunomon flicks a chip of ice off its horn; it cuts out through enemies and back.", { sh: "shard" }],
+      ["Chill Breath", "beam", "Gabumon breathes a thin ray of frost through a line of enemies."],
+      ["Horn Hook", "beam", "Gabumon charges horn-first through everything in its path.", { bf: "fist" }],
+      ["Snow Cover", "mine", "Gabumon kicks snow over the ground; it freezes round the next enemy to step in.", { ms: "puddle" }],
+      ["Pelt Burst", "burst", "Gabumon pulls its fur pelt tight, then bursts out in a ring of frost."],
+      ["Icicle Rain", "strike", "Garurumon howls up a cloud that drops a spear of ice on the target.", { d: "fall", sh: "shard" }],
+      ["Wolf Rush", "beam", "Garurumon bolts through a line of enemies, biting as it goes.", { bf: "bite" }],
+      ["Permafrost", "mine", "Garurumon freezes patches of ground that snap shut on whatever crosses them.", { ms: "puddle" }],
+      ["Pack Howl", "chain", "Garurumon's howl echoes from enemy to enemy, chilling each one."]
+    ],
+    veemon: [
+      ["Bubble Burp", "fan", "Chibomon burps a spray of blue bubbles.", { sh: "bubble" }],
+      ["Tummy Roll", "burst", "Chibomon rolls round in a circle and bowls over everything near it."],
+      ["Demi Spray", "fan", "DemiVeemon's bubbles come out fast and hot: a stinging spray.", { sh: "bubble" }],
+      ["Leap Bonk", "strike", "DemiVeemon leaps and lands head-first on the target.", { d: "fall" }],
+      ["Vee Spit", "fan", "Veemon spits a hot blue fireball that breaks into a spray.", { sh: "flame" }],
+      ["Boom Kick", "beam", "Veemon's flying kick ploughs through a line of enemies.", { bf: "fist" }],
+      ["Sky Dive", "strike", "Veemon jumps high and dives down on the target.", { d: "fall" }],
+      ["Brave Shout", "burst", "Veemon shouts so loud it knocks everything near it back."],
+      ["X-Burst", "strike", "ExVeemon's blue fire gathers into an X that bursts up under the target.", { d: "rise", sh: "star" }],
+      ["Dragon Kick", "beam", "ExVeemon's long-legged kick tears through everything in a line.", { bf: "fist" }],
+      ["Wing Dive", "strike", "ExVeemon climbs on its wings and dives, blowing the target apart.", { d: "fall" }],
+      ["Cross Cutter", "boomerang", "ExVeemon throws an X of blue light that cuts out through enemies and back.", { sh: "star" }]
+    ],
+    guilmon: [
+      ["Fire Bubbles", "fan", "Jyarimon puffs a spray of small fiery bubbles.", { sh: "bubble" }],
+      ["Tiny Chomp", "beam", "Jyarimon snaps its oversized jaws at whatever is in front of it.", { bf: "bite" }],
+      ["Hot Hiccup", "fan", "Gigimon hiccups a burst of embers.", { sh: "flame" }],
+      ["Tantrum Roll", "burst", "Gigimon throws a rolling tantrum, shoving everything near it away."],
+      ["Pyro Spray", "fan", "Guilmon spits a fan of red-hot sparks.", { sh: "orb" }],
+      ["Claw Dig", "strike", "Guilmon digs, and its claws burst up under the target.", { d: "rise" }],
+      ["Hazard Glare", "chain", "The Hazard mark on Guilmon's chest glares; its curse jumps from enemy to enemy.", { cf: "zig" }],
+      ["Hunter Pounce", "strike", "Guilmon pounces on the target from a distance.", { d: "fall" }],
+      ["Furnace Roar", "beam", "Growlmon roars a long column of fire through a line.", { bf: "jet" }],
+      ["Plasma Rake", "strike", "Growlmon's arm blades flash up out of the ground under the target.", { d: "rise", sh: "crescent" }],
+      ["Hazard Field", "chain", "Growlmon's Hazard mark burns red; its curse leaps through a whole crowd.", { cf: "zig" }],
+      ["Tail Crush", "burst", "Growlmon swings its heavy tail round, flattening everything close."]
+    ],
+    wormmon: [
+      ["Leaf Puff", "fan", "Leafmon shakes loose a spray of tiny leaves.", { sh: "leaf" }],
+      ["Sap Bubble", "mine", "Leafmon leaves a sticky bubble of sap that pops under the next enemy.", { ms: "bubble" }],
+      ["Twig Spray", "fan", "Minomon flings sharp bits of its twig cocoon.", { sh: "shard" }],
+      ["Cocoon Spin", "burst", "Minomon spins inside its cocoon and knocks everything back."],
+      ["Thread Lash", "chain", "Wormmon whips a silk thread that snaps from enemy to enemy.", { cf: "vine" }],
+      ["Cocoon Wrap", "mine", "Wormmon wraps the ground in silk that cocoons the first enemy in.", { ms: "web" }],
+      ["Bug Rush", "beam", "Wormmon wriggles at speed through a line of enemies.", { bf: "fist" }],
+      ["Leaf Ambush", "burst", "Wormmon bursts out of a pile of leaves, scattering everything near it."],
+      ["Stinger Chain", "chain", "Stingmon darts from enemy to enemy, stinging each one.", { cf: "zig" }],
+      ["Silk Prison", "mine", "Stingmon lays silk traps that bind enemy after enemy.", { ms: "web" }],
+      ["Spike Dash", "beam", "Stingmon zips through a line of enemies, arm spike out.", { bf: "fist" }],
+      ["Wing Buzz", "burst", "Stingmon's wings buzz so hard the air throws everything near it back.", { el: "wind" }]
+    ],
+    hagurumon: [
+      ["Chip Spit", "fan", "Choromon spits a spray of tiny data chips.", { sh: "cube" }],
+      ["Boot Pulse", "burst", "Choromon's lights flash and a pulse of data throws enemies back."],
+      ["Rocket Puff", "fan", "Missimon puffs out a spread of tiny rockets.", { sh: "bolt" }],
+      ["Rocket Hop", "strike", "Missimon launches itself and crashes down on the target.", { d: "fall" }],
+      ["Cog Volley", "fan", "Hagurumon spits a fan of little cogs.", { sh: "gear" }],
+      ["Gear Grind", "beam", "Hagurumon rolls on its rim through a line, grinding it down.", { bf: "fist", sh: "gear" }],
+      ["Oil Slick", "mine", "Hagurumon leaks oil that bursts into sparks under the next enemy.", { ms: "puddle" }],
+      ["Static Clank", "chain", "Hagurumon's gears throw a spark that jumps from enemy to enemy.", { cf: "zig" }],
+      ["Cluster Missile", "strike", "Guardromon lobs a missile that comes down on the target and bursts.", { d: "fall", sh: "bolt" }],
+      ["Iron Bulldoze", "beam", "Guardromon stomps forward through a line, flattening it.", { bf: "fist" }],
+      ["Minefield", "mine", "Guardromon plants proximity mines that go off one by one.", { ms: "mark" }],
+      ["Guard Pulse", "burst", "Guardromon's armour vents a shockwave that throws everything near it back."]
+    ],
+    gotsumon: [
+      ["Grit Puff", "fan", "Cotsucomon spits a spray of grit.", { sh: "blob" }],
+      ["Rock Roll", "burst", "Cotsucomon curls up and rolls, bowling everything over."],
+      ["Gravel Spit", "fan", "Kakkinmon spits gravel and sharp stone chips.", { sh: "shard" }],
+      ["Clang Bash", "beam", "Kakkinmon rams its hard little head through a line.", { bf: "fist" }],
+      ["Rock Shower", "strike", "Gotsumon hurls stones up; they rain down on the target.", { d: "fall", sh: "blob" }],
+      ["Quake Punch", "strike", "Gotsumon punches the ground and rocks burst up under the target.", { d: "rise", sh: "blob" }],
+      ["Pebble Trap", "mine", "Gotsumon leaves loose stones that blow apart under the next enemy.", { ms: "mark" }],
+      ["Grumble Stomp", "burst", "Gotsumon's grumpy stomp throws everything near it back."],
+      ["Boulder Lob", "strike", "Monochromon flings a boulder high; it lands on the target and shatters.", { d: "fall", sh: "blob" }],
+      ["Horn Ram", "beam", "Monochromon charges horn-first through a line.", { bf: "fist" }],
+      ["Landslide", "mine", "Monochromon loosens the ground into traps that cave in under enemies.", { ms: "mark" }],
+      ["Ash Snort", "fan", "Monochromon snorts a hot spray of ash and cinders.", { el: "fire", sh: "flame" }]
+    ],
+    keramon: [
+      ["Glitch Puff", "fan", "Kuramon sprays a puff of corrupted bits.", { sh: "cube" }],
+      ["Tendril Grab", "chain", "Kuramon's tendrils latch onto one enemy after another.", { cf: "vine" }],
+      ["Bug Spray", "fan", "Tsumemon spits a spray of buggy code.", { sh: "cube" }],
+      ["Nail Swipe", "beam", "Tsumemon slashes its nails through a line of enemies.", { bf: "bite" }],
+      ["Bug Burst", "strike", "Keramon plants a bug in the ground that bursts up under the target.", { d: "rise", sh: "cube" }],
+      ["Giggle Hex", "chain", "Keramon's creepy giggle hops from enemy to enemy, cursing each.", { cf: "zig" }],
+      ["Crash Trap", "mine", "Keramon leaves a corrupted patch that crashes the next enemy to touch it.", { ms: "mark" }],
+      ["Blink Pop", "burst", "Keramon blinks out and back, popping everything near it away."],
+      ["Nightmare Drop", "strike", "Vilemon drops a ball of nightmares on the target.", { d: "fall", sh: "orb" }],
+      ["Hex Cackle", "chain", "Vilemon's cackle curses a whole crowd, jumping from one to the next.", { cf: "slash" }],
+      ["Doom Trap", "mine", "Vilemon curses patches of ground that go off under enemy after enemy.", { ms: "mark" }],
+      ["Shadow Swoop", "beam", "Vilemon swoops low on its bat wings through a line of enemies.", { bf: "fist" }]
+    ],
+    biyomon: [
+      ["Seed Fluff", "fan", "Nyokimon blows a spray of seed fluff.", { sh: "leaf" }],
+      ["Sprout Pop", "mine", "Nyokimon plants a sprout that pops under the next enemy.", { ms: "bubble" }],
+      ["Petal Flurry", "fan", "Yokomon shakes a flurry of petals off its flower.", { sh: "leaf" }],
+      ["Root Hop", "strike", "Yokomon hops on its roots and lands on the target.", { d: "fall" }],
+      ["Spiral Gust", "fan", "Biyomon flaps a spinning spray of wind.", { sh: "leaf" }],
+      ["Talon Hook", "beam", "Biyomon dives through a line of enemies, talons first.", { bf: "fist" }],
+      ["Spark Wing", "boomerang", "Biyomon flings a burning feather that cuts out through enemies and back.", { el: "fire", sh: "flame" }],
+      ["Pink Whirl", "burst", "Biyomon spins on one foot and blows everything near it away."],
+      ["Firestorm Wings", "strike", "Birdramon beats a storm of fire down on the target.", { d: "fall", el: "fire", sh: "flame" }],
+      ["Dive Talon", "beam", "Birdramon swoops through a long line, talons raking.", { bf: "fist" }],
+      ["Blazing Plume", "boomerang", "Birdramon throws a blazing plume that sears out through enemies and back.", { el: "fire", sh: "flame" }],
+      ["Thermal Ring", "burst", "Hot air bursts off Birdramon's wings in a ring.", { el: "fire" }]
+    ],
+    hawkmon: [
+      ["Down Puff", "fan", "Pururumon puffs a spray of downy feathers.", { sh: "leaf" }],
+      ["Flutter Bump", "burst", "Pururumon flutters its little wings and bumps everything away."],
+      ["Pip Gust", "fan", "Poromon flaps a gusty spray of feathers.", { sh: "leaf" }],
+      ["Beak Peck", "beam", "Poromon pecks its way through a line of enemies.", { bf: "bite" }],
+      ["Quill Volley", "fan", "Hawkmon throws a fan of sharp quills.", { sh: "shard" }],
+      ["Beak Dive", "strike", "Hawkmon drops from above, beak-first, on the target.", { d: "fall" }],
+      ["Headband Snap", "boomerang", "Hawkmon's headband feather snaps out and whirls back.", { sh: "leaf" }],
+      ["Wing Gale", "burst", "Hawkmon's strong wingbeat blows everything near it back."],
+      ["Quill Storm", "strike", "Aquilamon rains a storm of quills down on the target.", { d: "fall", sh: "shard" }],
+      ["Sky Hunter", "strike", "Aquilamon folds its wings and dives on the target.", { d: "fall" }],
+      ["Horn Gale", "boomerang", "Aquilamon's horns spin a blade of wind out through enemies and back.", { sh: "crescent" }],
+      ["Gale Charge", "beam", "Aquilamon flies low and hard through a line of enemies.", { bf: "fist" }]
+    ],
+    tentomon: [
+      ["Sticky Puff", "fan", "Pabumon spits a spray of sticky bubbles.", { sh: "bubble" }],
+      ["Goo Bounce", "burst", "Pabumon wobbles and springs, bouncing everything near it away."],
+      ["Mochi Puff", "fan", "Motimon puffs a spray of soft, stretchy blobs.", { sh: "blob" }],
+      ["Stretch Smack", "beam", "Motimon stretches out and smacks through a line of enemies.", { bf: "fist" }],
+      ["Spark Spray", "fan", "Tentomon crackles a spray of sparks.", { el: "machine", sh: "bolt" }],
+      ["Mandible Snap", "beam", "Tentomon snaps its mandibles through a line of enemies.", { bf: "bite" }],
+      ["Buzz Field", "mine", "Tentomon leaves a charged patch that zaps the next enemy to cross it.", { el: "machine", ms: "mark" }],
+      ["Wing Hum", "burst", "Tentomon's wings hum and the air throws everything near it back."],
+      ["Thunder Call", "strike", "Kabuterimon calls a bolt down on the target.", { d: "fall", el: "machine", sh: "bolt" }],
+      ["Horn Spear", "beam", "Kabuterimon drives its great horn through a line of enemies.", { bf: "fist" }],
+      ["Storm Grid", "mine", "Kabuterimon charges the ground into traps that discharge one after another.", { el: "machine", ms: "mark" }],
+      ["Four-Wing Zap", "chain", "Lightning jumps from enemy to enemy off Kabuterimon's four wings.", { el: "machine", cf: "zig" }]
+    ],
+    gomamon: [
+      ["Splash Puff", "fan", "Pichimon sprays a puff of tiny bubbles.", { sh: "bubble" }],
+      ["Splashdown", "burst", "Pichimon belly-flops and the splash pushes everything near it away."],
+      ["Spout Spray", "fan", "Bukamon blows a spray out of its spout.", { sh: "drop" }],
+      ["Tail Flop", "strike", "Bukamon flops onto the target tail-first.", { d: "fall", sh: "drop" }],
+      ["Squirt Jet", "beam", "Gomamon squirts a jet of water through a line of enemies.", { bf: "jet" }],
+      ["Fish Swarm", "chain", "A school of fish darts from enemy to enemy.", { cf: "vine" }],
+      ["Puddle Trap", "mine", "Gomamon leaves a deep puddle that drags the next enemy under.", { ms: "puddle" }],
+      ["Belly Slide", "beam", "Gomamon slides on its belly through a line of enemies.", { bf: "fist" }],
+      ["Tusk Jet", "beam", "Ikkakumon fires a high-pressure water jet through a long line.", { bf: "jet" }],
+      ["Shoal Storm", "chain", "A whole shoal swarms from enemy to enemy.", { cf: "vine" }],
+      ["Tide Pool", "mine", "Ikkakumon floods patches of ground that swallow enemies one after another.", { ms: "puddle" }],
+      ["Tusk Quake", "strike", "Ikkakumon stamps and icy water bursts up under the target.", { d: "rise", sh: "drop" }]
+    ],
+    patamon: [
+      ["Glow Bubbles", "fan", "Poyomon floats out a spray of glowing bubbles.", { sh: "bubble" }],
+      ["Jelly Drift", "burst", "Poyomon drifts down soft and pushes everything near it away."],
+      ["Puff Bubbles", "fan", "Tokomon puffs a spray of warm bubbles.", { sh: "bubble" }],
+      ["Nibble Rush", "beam", "Tokomon's surprising teeth chomp through a line of enemies.", { bf: "bite" }],
+      ["Air Puffs", "fan", "Patamon inhales and spits a spray of air puffs.", { el: "wind", sh: "bubble" }],
+      ["Ear Glide", "boomerang", "Patamon spreads its ears and glides out through enemies and back."],
+      ["Halo Ward", "mine", "Patamon leaves a little circle of light that bursts under the next enemy.", { ms: "mark" }],
+      ["Tumble Ram", "strike", "Patamon dives at the target and bonks it.", { d: "fall" }],
+      ["Holy Pillar", "strike", "Angemon calls a column of light down on the target.", { d: "fall", sh: "star" }],
+      ["Staff Spin", "boomerang", "Angemon hurls its staff; it spins out through enemies and back.", { of: "seal" }],
+      ["Sanctuary Seal", "mine", "Angemon seals patches of ground with light that judge whoever crosses them.", { ms: "mark" }],
+      ["Six-Wing Flash", "burst", "Angemon opens its six wings in a flash that throws everything back."]
+    ],
+    palmon: [
+      ["Pollen Puff", "fan", "Pupumon puffs a spray of pollen.", { sh: "leaf" }],
+      ["Bud Pop", "mine", "Pupumon drops a little bud that pops under the next enemy.", { ms: "bubble" }],
+      ["Sprout Spray", "fan", "Tanemon shakes a spray of seeds off its sprout.", { sh: "leaf" }],
+      ["Root Wiggle", "strike", "Tanemon's roots wriggle up under the target.", { d: "rise" }],
+      ["Thorn Spray", "fan", "Palmon sprays sharp thorns from its fingertips.", { sh: "shard" }],
+      ["Ivy Whip", "chain", "Palmon's vines whip from enemy to enemy.", { cf: "vine" }],
+      ["Stink Bloom", "mine", "Palmon's flower leaves a smelly patch that bursts under the next enemy.", { ms: "puddle" }],
+      ["Leaf Twirl", "burst", "Palmon twirls and its leaves throw everything near it back."],
+      ["Needle Rain", "strike", "Togemon fires a cluster of needles high; they rain down on the target.", { d: "fall", sh: "shard" }],
+      ["Hundred Jab", "beam", "Togemon throws a flurry of punches through a line of enemies.", { bf: "fist" }],
+      ["Desert Bloom", "mine", "Togemon plants cactus flowers that burst into needles under enemies.", { ms: "mark" }],
+      ["Spine Burst", "burst", "Togemon puffs out every spine and throws back everything near it."]
+    ],
+    renamon: [
+      ["Fluff Puff", "fan", "Relemon puffs a spray of fluff.", { sh: "leaf" }],
+      ["Tail Bop", "burst", "Relemon swishes its tail and bops everything near it away."],
+      ["Fox Sparks", "fan", "Viximon flicks a spray of tiny sparks off its tail.", { sh: "flame" }],
+      ["Kit Pounce", "strike", "Viximon pounces on the target.", { d: "fall" }],
+      ["Crystal Shards", "strike", "Renamon flings crystal shards up; they rain down on the target.", { d: "fall", sh: "shard" }],
+      ["Phantom Kick", "beam", "Renamon blurs through a line of enemies with a kick.", { bf: "fist" }],
+      ["Fox Charm", "mine", "Renamon leaves a paper charm on the ground that bursts under the next enemy.", { ms: "mark" }],
+      ["Mirage", "boomerang", "A shimmering copy of Renamon darts out through enemies and back."],
+      ["Foxfire Rain", "strike", "Kyubimon rains blue foxfire on the target.", { d: "fall", el: "fire", sh: "flame" }],
+      ["Flame Wheel", "beam", "Kyubimon rolls into a wheel of blue fire through a line.", { bf: "jet", el: "fire" }],
+      ["Spirit Seal", "mine", "Kyubimon lays fox charms that burst into spirit fire under enemies.", { ms: "mark", el: "fire" }],
+      ["Nine-Tail Flare", "burst", "Kyubimon fans its nine tails and blue flame throws everything near it back.", { el: "fire" }]
+    ],
+    zubamon: [
+      ["Seed Spark", "fan", "Sakumon sprays sparks of light.", { sh: "star" }],
+      ["Shell Roll", "burst", "Sakumon rolls in its shell and bumps everything near it away."],
+      ["Glint Spray", "fan", "Sakuttomon sprays sharp glints of light.", { sh: "star" }],
+      ["Sprout Slice", "boomerang", "Sakuttomon flings a tiny blade that cuts out through enemies and back.", { sh: "crescent" }],
+      ["Blade Flurry", "fan", "Zubamon's arm blades fling a fan of light edges.", { sh: "crescent" }],
+      ["Rising Edge", "strike", "Zubamon calls a blade of light up out of the ground under the target.", { d: "rise", sh: "crescent" }],
+      ["Twin Cutter", "boomerang", "Zubamon throws both arm blades; they cross out through enemies and back.", { sh: "crescent" }],
+      ["Iron Will", "burst", "Zubamon braces and its will bursts out, throwing everything near it back."],
+      ["Edge Rain", "strike", "ZubaEagermon calls a rain of blades down on the target.", { d: "fall", sh: "crescent" }],
+      ["Eagle Uppercut", "strike", "ZubaEagermon's blade erupts out of the ground under the target.", { d: "rise", sh: "crescent" }],
+      ["Cross Edge", "boomerang", "ZubaEagermon's twin blades cross and cut out through a crowd and back.", { sh: "crescent" }],
+      ["Eager Dash", "beam", "ZubaEagermon dashes through a line of enemies, blades out.", { bf: "fist" }]
+    ],
+    armadillomon: [
+      ["Mud Puff", "fan", "Tsubumon spits a spray of mud.", { sh: "blob" }],
+      ["Bounce Ball", "burst", "Tsubumon bounces like a ball and bumps everything near it away."],
+      ["Mud Bubbles", "fan", "Upamon blows a spray of muddy bubbles.", { sh: "bubble" }],
+      ["Belly Flop", "strike", "Upamon flops onto the target.", { d: "fall", sh: "blob" }],
+      ["Dirt Kick", "fan", "Armadillomon kicks a spray of dirt and stones.", { sh: "blob" }],
+      ["Rolling Charge", "beam", "Armadillomon rolls into a ball and charges through a line.", { bf: "fist" }],
+      ["Burrow Trap", "mine", "Armadillomon digs a pit that collapses under the next enemy.", { ms: "mark" }],
+      ["Dig Up", "strike", "Armadillomon burrows and pops up under the target.", { d: "rise", sh: "blob" }],
+      ["Rock Rain", "strike", "Ankylomon thumps the ground; rocks fly up and come down on the target.", { d: "fall", sh: "blob" }],
+      ["Megaton Roll", "beam", "Ankylomon rolls its armoured bulk through a line of enemies.", { bf: "fist" }],
+      ["Sinkhole", "mine", "Ankylomon opens pits that swallow enemies one by one.", { ms: "mark" }],
+      ["Spike Quake", "burst", "Ankylomon slams down and its spikes send a shockwave out."]
+    ],
+    salamon: [
+      ["Snowflake Puff", "fan", "YukimiBotamon blows a spray of snowflakes.", { el: "ice", sh: "star" }],
+      ["Fluff Drift", "burst", "YukimiBotamon drifts down and its fluff pushes everything near it away."],
+      ["Kitty Bubbles", "fan", "Nyaromon blows a spray of bubbles.", { sh: "bubble" }],
+      ["Whisker Spark", "chain", "Nyaromon's whiskers twitch and a spark hops between enemies.", { cf: "zig" }],
+      ["Puppy Sparkle", "fan", "Salamon shakes a spray of sparkles off its fur.", { sh: "star" }],
+      ["Ring Toss", "boomerang", "Salamon flings a ring of light that spins out through enemies and back.", { of: "seal" }],
+      ["Pawprint Charm", "mine", "Salamon leaves glowing pawprints that burst under the next enemy.", { ms: "mark" }],
+      ["Pounce Tackle", "strike", "Salamon pounces on the target.", { d: "fall" }],
+      ["Starfall", "strike", "Gatomon calls a falling star down on the target.", { d: "fall", sh: "star" }],
+      ["Ring Spinner", "boomerang", "Gatomon throws its holy ring; it slices a path out and back.", { of: "seal" }],
+      ["Nine Lives Trap", "mine", "Gatomon leaves pawprints that go off under enemy after enemy.", { ms: "mark" }],
+      ["Feline Flurry", "beam", "Gatomon blurs through a line in a storm of scratches.", { bf: "fist" }]
+    ],
+    terriermon: [
+      ["Bubble Pop", "fan", "Zerimon pops out a spray of green bubbles.", { sh: "bubble" }],
+      ["Ear Bounce", "burst", "Zerimon bounces on its ears and bumps everything near it away."],
+      ["Gummy Spray", "fan", "Gummymon spits a spray of springy green blobs.", { sh: "blob" }],
+      ["Ear Whip", "boomerang", "Gummymon flings its long ear out through enemies and back.", { sh: "crescent" }],
+      ["Pellet Spray", "fan", "Terriermon puffs a spread of hard air pellets.", { sh: "bolt" }],
+      ["Bunny Dash", "beam", "Terriermon spins its ears and zooms through a line.", { bf: "fist" }],
+      ["Momentai Mine", "mine", "Terriermon leaves a cheeky bubble that bursts under the next enemy. Momentai!", { ms: "bubble" }],
+      ["Ear Hover", "strike", "Terriermon hovers on its ears and drops on the target.", { d: "fall" }],
+      ["Gargo Shell", "strike", "Gargomon lobs a shell that lands on the target and bursts.", { d: "fall", sh: "bolt" }],
+      ["Gargo Charge", "beam", "Gargomon barrels through a line of enemies, guns blazing.", { bf: "fist" }],
+      ["Trip Mines", "mine", "Gargomon drops a scatter of mines that burst under enemies.", { ms: "mark" }],
+      ["Gatling Spin", "burst", "Gargomon spins on the spot and its guns throw everything back."]
+    ]
+  };
+  var SIG_INFO = {}, SIG_LOOK = {};
+  /* they all fire at once, so each hits softer than a lone signature: fully levelled, the whole set
+   * comes to about 1.5x the partner's main shot at Champion and ~2.5x at Mega (17z33 balance check) */
+  var SIG_POWER = 0.55;
+  (function () {
+    var k, L, f, set, ids, i, s, R, id, col, glow, lv, j, cdK;
+    for (k in SIG_SETS) {
+      L = LINES[k]; set = SIG_SETS[k];
+      if (!L || set.length !== SIG_ROLE.length) continue;
+      f = FAM[L.family];
+      col = L.look ? L.look.pal[L.look.shape === "orb" ? 2 : 1] : f.c; glow = L.look ? L.look.glow : f.g;
+      ids = [];
+      for (i = 0; i < set.length; i++) {
+        s = set[i]; R = SIG_ROLE[i];
+        id = moveId(s[0]);
+        if (W[id]) id = k + id.charAt(0).toUpperCase() + id.slice(1);
+        id = kit(id, s[0], s[1], col, glow, s[2], s[3] && s[3].d ? { drop: s[3].d } : null);
+        ids.push(id);
+        if (!id) continue;
+        /* power by role: the growing move gets stronger at each step, the choices a little stronger than a keeper */
+        cdK = 1 / (1 + (R.mul - 1) * 0.45);
+        for (j = 0; j < W[id].levels.length; j++) {
+          lv = W[id].levels[j];
+          lv.damage = Math.max(1, Math.round(lv.damage * R.mul * SIG_POWER));
+          lv.cooldown = Math.round(lv.cooldown * cdK * 100) / 100;
+          if (lv.hops && R.mul >= 1.3) lv.hops += 1;
+          if (lv.count && R.mul >= 1.3) lv.count += 1;
+          if (lv.max && R.mul >= 1.3) lv.max += 1;
+        }
+        W[id].sig = true;
+        if (s[3]) SIG_LOOK[id] = s[3];
+        if (L.own) L.own.push(id);
+      }
+      for (i = 0; i < ids.length; i++) {
+        if (!ids[i]) continue;
+        R = SIG_ROLE[i];
+        SIG_INFO[ids[i]] = { line: k, tier: R.t, role: i, up: R.up != null ? ids[R.up] : null, rival: R.br != null ? ids[R.br] : null, upTo: null,
+          keeper: R.up == null && R.br == null && i !== 0 };
+      }
+      for (i = 0; i < ids.length; i++) if (ids[i] && SIG_INFO[ids[i]].up && SIG_INFO[SIG_INFO[ids[i]].up]) SIG_INFO[SIG_INFO[ids[i]].up].upTo = ids[i];
+      L.sigs = ids.filter(function (x) { return !!x; });
+    }
+  })();
+  /* ---- Signature sets, Ultimate and Mega (17z33) ----
+   * Each stage adds three more, in this order: [growing move, choice path A, choice path B, keeper].
+   * The growing move grows from the stage before's; path A grows from the Rookie choice's first side,
+   * path B from its second, so only the side you took keeps growing; the keeper stays as it is.
+   * A line with no Ultimate or Mega simply stops (Hawkmon's line ends at Aquilamon). */
+  var SIG_HIGH_ROLE = { 4: [1.8, 1.7, 1.7, 1.35], 5: [2.1, 2.0, 2.0, 1.55] };
+  var SIG_HIGH = {
+    agumon: {
+      4: [["Hatch Barrage", "strike", "MetalGreymon's chest hatch fires a missile high; it comes down on the target.", { d: "fall", sh: "bolt" }],
+        ["Trident Lunge", "beam", "MetalGreymon drives its metal claw arm through a long line.", { bf: "fist" }],
+        ["Napalm Field", "mine", "MetalGreymon's missiles leave burning craters that blow under enemies.", { ms: "mark" }],
+        ["Iron Wing Gust", "burst", "MetalGreymon beats its metal wings and blasts everything near it back."]],
+      5: [["Sun Meteor", "strike", "WarGreymon hurls a ball of fire skyward; it crashes down on the target like a small sun.", { d: "fall", sh: "orb" }],
+        ["Cyclone Drill", "beam", "WarGreymon spins into a drill and bores through a line.", { bf: "fist" }],
+        ["Inferno Carpet", "mine", "WarGreymon sets the ground ablaze in traps that erupt one after another.", { ms: "mark" }],
+        ["Shield Bash", "burst", "WarGreymon slams its shield down; the shockwave throws everything back."]]
+    },
+    gabumon: {
+      4: [["Frost Moon", "strike", "WereGarurumon calls a frozen crescent down on the target.", { d: "fall", sh: "crescent" }],
+        ["Howling Kick", "beam", "WereGarurumon kicks through a line in one long dash.", { bf: "fist" }],
+        ["Ice Floe", "mine", "WereGarurumon freezes the ground into slick traps that grip enemies.", { ms: "puddle" }],
+        ["Pack Combo", "chain", "WereGarurumon leaps from enemy to enemy, punching each.", { cf: "slash" }]],
+      5: [["Glacier Barrage", "strike", "MetalGarurumon fires ice missiles skyward; they rain on the target.", { d: "fall", sh: "shard" }],
+        ["Steel Fang Rush", "beam", "MetalGarurumon charges through a line, jaws of frozen steel.", { bf: "bite" }],
+        ["Frozen Wastes", "mine", "MetalGarurumon freezes whole stretches of ground into traps.", { ms: "puddle" }],
+        ["Cold Vents", "burst", "Every vent on MetalGarurumon bursts frost at once, throwing back everything near."]]
+    },
+    veemon: {
+      4: [["Sonic Updraft", "strike", "Wingdramon's wings whip a sonic pillar up under the target.", { d: "rise" }],
+        ["Sky Ram", "beam", "Wingdramon dives through a long line at full speed.", { bf: "fist" }],
+        ["Tempest Dive", "strike", "Wingdramon drops out of the clouds on the target.", { d: "fall" }],
+        ["Gale Shroud", "burst", "Wingdramon's wingbeat throws everything near it back.", { el: "wind" }]],
+      5: [["Dragon Quake", "strike", "Imperialdramon slams down and blue fire erupts under the target.", { d: "rise" }],
+        ["Imperial Charge", "beam", "Imperialdramon charges through a line like a falling star.", { bf: "fist" }],
+        ["Dragon's Descent", "strike", "Imperialdramon drops from the sky on the target.", { d: "fall" }],
+        ["Positron Spray", "fan", "Imperialdramon's back cannon sprays scattered positron bolts.", { sh: "orb" }]]
+    },
+    guilmon: {
+      4: [["Blast Furnace", "beam", "WarGrowlmon's chest vents pour fire through a long line.", { bf: "jet" }],
+        ["Plasma Rise", "strike", "WarGrowlmon's plasma blades rise out of the ground under the target.", { d: "rise", sh: "crescent" }],
+        ["Hazard Pulse", "chain", "The Digital Hazard pulses through a crowd, enemy to enemy.", { cf: "zig" }],
+        ["Missile Rack", "strike", "WarGrowlmon fires a missile that drops on the target.", { d: "fall", sh: "bolt" }]],
+      5: [["Lance Ray", "beam", "Gallantmon thrusts its lance and a ray of light runs through a line.", { bf: "laser" }],
+        ["Lance Spike", "strike", "Gallantmon's lance erupts out of the ground under the target.", { d: "rise", sh: "crescent" }],
+        ["Crimson Verdict", "chain", "Red light leaps from foe to foe across the whole field.", { cf: "slash" }],
+        ["Aegis Bash", "burst", "Gallantmon swings its shield out and throws back everything near it."]]
+    },
+    wormmon: {
+      4: [["Hive Chain", "chain", "DinoBeemon zips from enemy to enemy faster than the eye can follow.", { cf: "zig" }],
+        ["Amber Trap", "mine", "DinoBeemon seals the ground in sticky amber traps.", { ms: "web" }],
+        ["Lance Dive", "beam", "DinoBeemon dives lance-first through a line.", { bf: "fist" }],
+        ["Hyper Buzz", "burst", "DinoBeemon's wings roar and throw everything near it back.", { el: "wind" }]]
+    },
+    hagurumon: {
+      4: [["Rocket Rain", "strike", "Andromon fires a cluster of rockets that rain on the target.", { d: "fall", sh: "bolt" }],
+        ["Spiral Edge", "beam", "Andromon's spinning blade arm cuts through a line.", { bf: "fist" }],
+        ["Proximity Grid", "mine", "Andromon lays a grid of mines that go off one after another.", { ms: "mark" }],
+        ["Overclock", "burst", "Andromon vents its reactor; the blast throws everything back."]],
+      5: [["Atomic Shells", "strike", "HiAndromon's arm cannons lob atomic shells onto the target.", { d: "fall", sh: "bolt" }],
+        ["Plasma Edge", "beam", "HiAndromon fires a cutting laser through a line.", { bf: "laser" }],
+        ["Nano Mines", "mine", "HiAndromon scatters nano-mines that burst under enemies.", { ms: "mark" }],
+        ["Signal Jam", "chain", "HiAndromon's jamming wave leaps from enemy to enemy.", { cf: "zig" }]]
+    },
+    gotsumon: {
+      4: [["Egg Bomb", "strike", "Digitamamon lobs a rotten egg that splatters on the target.", { d: "fall", sh: "blob", el: "dark" }],
+        ["Shell Ram", "beam", "Digitamamon rolls its shell through a line.", { bf: "fist" }],
+        ["Nightmare Nest", "mine", "Digitamamon leaves cracked eggs that burst under enemies.", { ms: "mark", el: "dark" }],
+        ["Yolk Splash", "burst", "Digitamamon's shell cracks and a burst of yolk throws everything back."]],
+      5: [["Staff Meteor", "strike", "Jijimon bonks the sky with its staff and a rock falls on the target.", { d: "fall", sh: "blob" }],
+        ["Walking Stick Jab", "beam", "Jijimon pokes its stick through a line with startling force.", { bf: "fist" }],
+        ["Cave-In Scold", "mine", "Jijimon scolds the ground until it caves in under enemies.", { ms: "mark" }],
+        ["Wise Glare", "chain", "Jijimon's glare jumps from enemy to enemy, stopping each in its tracks.", { cf: "zig" }]]
+    },
+    keramon: {
+      4: [["Spider Drop", "strike", "Infermon drops from above, legs first, on the target.", { d: "fall", sh: "orb" }],
+        ["Network Crawl", "chain", "Infermon's legs skitter from enemy to enemy.", { cf: "vine" }],
+        ["Data Web", "mine", "Infermon spins corrupted webs that snap shut under enemies.", { ms: "web" }],
+        ["Cocoon Burst", "burst", "Infermon curls into its shell, then bursts out and throws everything back."]],
+      5: [["Corruption Rain", "strike", "Diaboromon rains corrupted data on the target.", { d: "fall", sh: "cube" }],
+        ["Endless Copy", "chain", "Diaboromon copies itself from enemy to enemy.", { cf: "zig" }],
+        ["System Crash", "mine", "Diaboromon crashes patches of ground that go off under enemy after enemy.", { ms: "mark" }],
+        ["Long Arm Lance", "beam", "Diaboromon's long arms thrust through a line.", { bf: "fist" }]]
+    },
+    biyomon: {
+      4: [["Firebird Dive", "strike", "Garudamon hurls a firebird that dives onto the target.", { d: "fall", el: "fire", sh: "flame" }],
+        ["Garuda Charge", "beam", "Garudamon charges through a line, fists of flame first.", { bf: "fist" }],
+        ["Flame Boomerang", "boomerang", "Garudamon throws a wheel of fire that sears out through enemies and back.", { el: "fire", sh: "flame" }],
+        ["Wind Mantle", "burst", "Garudamon spreads its wings and the wind throws everything near it back."]],
+      5: [["Phoenix Rain", "strike", "Phoenixmon scatters burning feathers that come down on the target.", { d: "fall", el: "fire", sh: "flame" }],
+        ["Crimson Dive", "beam", "Phoenixmon dives through a long line wreathed in flame.", { bf: "jet", el: "fire" }],
+        ["Rebirth Plume", "boomerang", "Phoenixmon throws a plume of undying fire that cuts out and back.", { el: "fire", sh: "flame" }],
+        ["Sacred Flame", "chain", "Phoenixmon's flame leaps from enemy to enemy.", { el: "fire", cf: "vine" }]]
+    },
+    tentomon: {
+      4: [["Horn Thunder", "strike", "MegaKabuterimon calls a fork of lightning down on the target.", { d: "fall", el: "machine", sh: "bolt" }],
+        ["Beetle Lance", "beam", "MegaKabuterimon drives its huge horn through a line.", { bf: "fist" }],
+        ["Static Nest", "mine", "MegaKabuterimon charges the ground into traps that zap enemy after enemy.", { el: "machine", ms: "mark" }],
+        ["Shell Slam", "burst", "MegaKabuterimon slams its shell down and throws everything back."]],
+      5: [["Giga Thunder", "strike", "HerculesKabuterimon brings down a storm bolt on the target.", { d: "fall", el: "machine", sh: "bolt" }],
+        ["Hercules Charge", "beam", "HerculesKabuterimon charges through a line with its golden horn.", { bf: "fist" }],
+        ["Electro Field", "mine", "HerculesKabuterimon turns the ground into a field of live traps.", { el: "machine", ms: "mark" }],
+        ["Golden Swarm", "chain", "Golden sparks swarm from enemy to enemy.", { el: "machine", cf: "zig" }]]
+    },
+    gomamon: {
+      4: [["Pressure Jet", "beam", "Zudomon blasts a jet of seawater through a long line.", { bf: "jet" }],
+        ["Narwhal Swarm", "chain", "A swarm of narwhals spears from enemy to enemy.", { cf: "vine" }],
+        ["Floe Trap", "mine", "Zudomon floods patches of ground and freezes them round enemies.", { ms: "puddle" }],
+        ["Hammer Quake", "strike", "Zudomon smashes its hammer down and the ground bursts under the target.", { d: "rise", sh: "drop" }]],
+      5: [["Arctic Torrent", "beam", "Vikemon blows a freezing torrent through a line.", { bf: "jet" }],
+        ["Kraken Shoal", "chain", "A frenzied shoal tears from enemy to enemy.", { cf: "vine" }],
+        ["Glacial Lake", "mine", "Vikemon floods the field with icy pools that drag enemies under.", { ms: "puddle" }],
+        ["Flail Storm", "burst", "Vikemon swings its morning stars round and throws everything back."]]
+    },
+    patamon: {
+      4: [["Blade of Light", "strike", "MagnaAngemon brings a blade of light down on the target.", { d: "fall", sh: "star" }],
+        ["Light Arc", "boomerang", "MagnaAngemon throws a crescent of light that cuts out and back.", { sh: "crescent" }],
+        ["Gate Seal", "mine", "MagnaAngemon draws gates of light on the ground that open under enemies.", { ms: "mark" }],
+        ["Eight-Wing Gust", "burst", "MagnaAngemon's eight wings beat once and throw everything back."]],
+      5: [["Heaven's Bolt", "strike", "Seraphimon calls a bolt from the heavens onto the target.", { d: "fall", sh: "star" }],
+        ["Halo Disc", "boomerang", "Seraphimon throws a disc of holy light out through enemies and back.", { of: "seal" }],
+        ["Judgment Circle", "mine", "Seraphimon draws circles of judgment that burst under enemies.", { ms: "mark" }],
+        ["Choir Ray", "beam", "Seraphimon fires a lance of holy light through a line.", { bf: "laser" }]]
+    },
+    palmon: {
+      4: [["Petal Shower", "strike", "Lillymon sends a flurry of petals down on the target.", { d: "fall", sh: "leaf" }],
+        ["Flower Ray", "beam", "Lillymon's flower fires a ray through a line.", { bf: "laser" }],
+        ["Garden Trap", "mine", "Lillymon plants flowers that burst open under enemies.", { ms: "puddle" }],
+        ["Fairy Dance", "burst", "Lillymon spins in a ring of petals that throws everything back."]],
+      5: [["Thorn Rose Rain", "strike", "Rosemon showers thorned roses onto the target.", { d: "fall", sh: "leaf" }],
+        ["Thorn Whip", "beam", "Rosemon's thorn whip lashes through a long line.", { bf: "fist" }],
+        ["Rose Thicket", "mine", "Rosemon grows thickets that snare and stab enemies.", { ms: "web" }],
+        ["Ivy Embrace", "chain", "Rosemon's vines wind from enemy to enemy.", { cf: "vine" }]]
+    },
+    renamon: {
+      4: [["Talisman Rain", "strike", "Taomon throws talismans that fall on the target and burst.", { d: "fall", sh: "star" }],
+        ["Ink Stroke", "beam", "Taomon paints a stroke of ink fire through a line.", { bf: "jet" }],
+        ["Ward Seal", "mine", "Taomon lays warding seals that burst under enemies.", { ms: "mark" }],
+        ["Yin-Yang Ward", "burst", "Taomon's ward spins out and throws everything near it back."]],
+      5: [["Spirit Fox Fall", "strike", "Sakuyamon's spirit foxes dive onto the target.", { d: "fall", sh: "flame" }],
+        ["Fox Drive", "beam", "Sakuyamon drives through a line with its staff of rings.", { bf: "fist" }],
+        ["Shrine Seal", "mine", "Sakuyamon consecrates the ground; it bursts under enemies.", { ms: "mark" }],
+        ["Spirit Chain", "chain", "Sakuyamon's fox spirits leap from enemy to enemy.", { cf: "slash" }]]
+    },
+    zubamon: {
+      4: [["Blade Storm", "strike", "Duramon calls a storm of blades down on the target.", { d: "fall", sh: "crescent" }],
+        ["Edge Eruption", "strike", "Duramon's blade erupts out of the ground under the target.", { d: "rise", sh: "crescent" }],
+        ["Spinning Blade", "boomerang", "Duramon throws itself as a spinning blade, out and back.", { sh: "crescent" }],
+        ["Steel Gale", "beam", "Duramon cuts through a line in one stroke.", { bf: "fist" }]],
+      5: [["Holy Sword Rain", "strike", "Durandamon rains holy swords on the target.", { d: "fall", sh: "crescent" }],
+        ["Sword Pillar", "strike", "A great sword of light bursts up under the target.", { d: "rise", sh: "crescent" }],
+        ["Durandal Wheel", "boomerang", "Durandamon throws a wheel of blades that cuts out and back.", { sh: "crescent" }],
+        ["Knight's Oath", "burst", "Durandamon plants its sword and a shockwave throws everything back."]]
+    },
+    armadillomon: {
+      4: [["Meteor Shower", "strike", "Meteormon calls meteors down on the target.", { d: "fall", sh: "blob" }],
+        ["Comet Roll", "beam", "Meteormon rolls through a line like a comet.", { bf: "fist" }],
+        ["Crater Trap", "mine", "Meteormon leaves craters that cave in under enemies.", { ms: "mark" }],
+        ["Stardust Burst", "burst", "Meteormon's rocky body bursts with stardust and throws everything back."]]
+    },
+    salamon: {
+      4: [["Arrow Rain", "strike", "Angewomon fires an arrow skyward that comes down as a shaft of light.", { d: "fall", sh: "star" }],
+        ["Halo Ribbon", "boomerang", "Angewomon casts a ribbon of light that loops out and back.", { of: "seal" }],
+        ["Charm Circle", "mine", "Angewomon draws charm circles that burst under enemies.", { ms: "mark" }],
+        ["Charm Kiss", "chain", "Angewomon blows a kiss that charms from enemy to enemy.", { cf: "zig" }]],
+      5: [["Dragon Star Fall", "strike", "Magnadramon calls stars down on the target.", { d: "fall", sh: "star" }],
+        ["Dragon Coil", "boomerang", "Magnadramon's coiling light loops out through enemies and back.", { of: "seal" }],
+        ["Holy Dragon Seal", "mine", "Magnadramon seals the ground with holy marks that burst under enemies.", { ms: "mark" }],
+        ["Holy Breath", "beam", "Magnadramon breathes holy fire through a line.", { bf: "jet" }]]
+    },
+    terriermon: {
+      4: [["Rapid Missile", "strike", "Rapidmon fires a homing missile that drops on the target.", { d: "fall", sh: "bolt" }],
+        ["Rapid Dash", "beam", "Rapidmon dashes through a line in a green blur.", { bf: "fist" }],
+        ["Target Mines", "mine", "Rapidmon marks targets on the ground that blow under enemies.", { ms: "mark" }],
+        ["Ring Spin", "burst", "Rapidmon spins and the rings round its arms throw everything back."]],
+      5: [["Giant Missile", "strike", "MegaGargomon drops a giant missile on the target.", { d: "fall", sh: "bolt" }],
+        ["Mega Charge", "beam", "MegaGargomon tramples through a line.", { bf: "fist" }],
+        ["Barrage Field", "mine", "MegaGargomon carpets the ground with mines.", { ms: "mark" }],
+        ["Pummel Quake", "strike", "MegaGargomon punches the ground and it bursts under the target.", { d: "rise" }]]
+    }
+  };
+  (function () {
+    var k, L, f, col, glow, st, set, prev, i, s, id, mul, j, lv, cdK, out, rec;
+    function addOne(k, L, s, mul, tier, upId, role) {
+      var id = moveId(s[0]);
+      if (W[id]) id = k + id.charAt(0).toUpperCase() + id.slice(1);
+      id = kit(id, s[0], s[1], col, glow, s[2], s[3] && s[3].d ? { drop: s[3].d } : null);
+      if (!id) return null;
+      cdK = 1 / (1 + (mul - 1) * 0.45);
+      for (j = 0; j < W[id].levels.length; j++) {
+        lv = W[id].levels[j];
+        lv.damage = Math.max(1, Math.round(lv.damage * mul * SIG_POWER));
+        lv.cooldown = Math.max(0.8, Math.round(lv.cooldown * cdK * 100) / 100);
+        if (lv.hops) lv.hops += mul >= 1.7 ? 2 : 1;
+        if (lv.count) lv.count += mul >= 1.7 ? 2 : 1;
+        if (lv.max) lv.max += mul >= 1.7 ? 2 : 1;
+      }
+      W[id].sig = true;
+      if (s[3]) SIG_LOOK[id] = s[3];
+      if (L.own) L.own.push(id);
+      SIG_INFO[id] = { line: k, tier: tier, role: role, up: upId || null, rival: null, upTo: null, keeper: !upId };
+      if (upId && SIG_INFO[upId]) SIG_INFO[upId].upTo = id;
+      L.sigs.push(id);
+      return id;
+    }
+    for (k in SIG_HIGH) {
+      L = LINES[k];
+      if (!L || !L.sigs || L.sigs.length !== 12) continue;
+      f = FAM[L.family];
+      col = L.look ? L.look.pal[L.look.shape === "orb" ? 2 : 1] : f.c; glow = L.look ? L.look.glow : f.g;
+      prev = [L.sigs[8], L.sigs[9], L.sigs[10]];             /* Champion: growing move, path A, path B */
+      for (st = 4; st <= 5; st++) {
+        set = SIG_HIGH[k][st];
+        if (!set || set.length !== 4) continue;
+        out = [];
+        for (i = 0; i < 4; i++) out.push(addOne(k, L, set[i], SIG_HIGH_ROLE[st][i], st, i < 3 ? prev[i] : null, (st === 4 ? "u" : "m") + i));
+        prev = [out[0], out[1], out[2]];
+      }
+    }
+  })();
+  D.SIG_INFO = SIG_INFO;
+  D.SIG_LOOK = SIG_LOOK;
+
   var TYPE_FAMILY = [
     [/fire|flame|dragon|dinosaur|reptile|ceratopsian|dramon/i, "fire"],
     [/ice|snow/i, "ice"],
@@ -569,6 +1121,7 @@
       push("aura", f.ids[7], 3); push("orbit", f.ids[8], 4);
     }
     push("special", ln ? ln.special : f.special, 0);
+    if (ln && ln.sigs) for (i = 0; i < ln.sigs.length; i++) push("special", ln.sigs[i], SIG_INFO[ln.sigs[i]].tier);
     for (i = 0; i < TECHS.length; i++) push("tech", TECHS[i], 0);
     return out;
   }
@@ -648,6 +1201,7 @@
     for (i = 0; i < 6; i++) { note(LINES[k2].primary[i], "primary", i); note(LINES[k2].melee[i], "melee", i); }
     note(LINES[k2].aura, "aura", 3); note(LINES[k2].orbit, "orbit", 4);
     note(LINES[k2].special, "special", 0);
+    for (i = 0; i < (LINES[k2].sigs || []).length; i++) note(LINES[k2].sigs[i], "special", SIG_INFO[LINES[k2].sigs[i]].tier);
   }
   for (fam in FAM) note(FAM[fam].special, "special", 0);
   for (i = 0; i < TECHS.length; i++) note(TECHS[i], "tech", 0);
