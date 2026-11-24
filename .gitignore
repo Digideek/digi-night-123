@@ -4,3 +4,4 @@ Thumbs.db
 *.log
 cloudflared.exe
 data/
+__pycache__/

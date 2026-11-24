@@ -1436,3 +1436,137 @@ so real devices are much faster in absolute terms; what matters is the ratio.
   the air, both took damage, no errors. `pvp-realtime-test.js`: real moves land; it moves ~1,200 px in
   8 s, never still more than 0.6 s; it stays within ~100 px of a tamer walking off. `pvp-test.js`
   updated.
+
+## 2026-11-17z33 — No more stuck blur, no ground rebuild storm, biomes in sync online
+- **Host invisible, partner frozen after a PvP loss** (`progression.js` farm.enter, `game.js`
+  maybeStartFarm). A PvP knock-out sets `atFarm` and opens the farm; farm.enter saw atFarm already
+  set and returned "already there" without opening a visit, so farm.return found nothing to close and
+  atFarm stayed on: the sim stopped moving that partner and friends' screens left that tamer out
+  (they skip anyone at the farm). Guests leave through farmDone, which clears it, so only the host
+  (and solo) got stuck, matching the report (host: lagging, blurry, invisible to the friend,
+  partner stuck; lava on the host's map only). Now farm.enter only says "already" when a visit is
+  really open, and doesn't refuse a knocked-out tamer for enemies being close. A knock-out while a
+  window is open (skill tree, evolution) now opens the farm as soon as you are back in play instead
+  of leaving you flagged with no farm. Checked with the server and two browsers: KO, leave the farm:
+  atFarm clears and the friend sees the host again; KO during the level window: the farm opens after.
+- **The "blur" in the photo was the war fronts** (`game.js` `drawFronts`): every contested cell drew a
+  soft radial glow twice its own size in the attacker's colour; with a few dozen contested cells
+  round you they piled into a pale green/blue fog over the middle of the screen. Now a crisp line
+  of 4 px blocks along the edge being pushed across, in the attacker's colour, more of it lit and
+  brighter as the pressure builds, with the sparks kept. No soft glow at all.
+- **Guests never saw biome changes** (`game.js` `followsHost`). The host's world is the simulation's;
+  a guest's world is meant to copy the host's territory (snapshot `terr`), the `war.flip` events and
+  puddle depth (`soak`). All three were gated on `!missionAuth`, but on a guest missionAuth is the
+  stand-in that relays the host, never null, so a guest's map stayed on the native borders while the
+  host's moved (and puddles never filled for guests). Reported as "biomes are not in sync", with
+  "he can't see me / my Digimon is stuck" alongside: two maps that disagree on what is tall grass,
+  water and ice, plus the ground rebuild storm below hogging the screen that had the flips.
+  Now gated on "no simulation here, or an online guest". Checked with the real server and two
+  browsers: after border flips host and guest hold the same territory string (6 cells each), each
+  sees the other move, and the guest's partner follows its tamer on the host.
+- **The real lag** (`world.js` chunk cache): reported as starting "as soon as the biomes start to
+  change around me", on the host's screen only. The baked-ground cache kept an order list of chunk
+  keys for evicting old ones, but a chunk thrown away early (a biome flip redraws the 3x3 chunks
+  round a cell; ice does the same) left its key in the list. After a handful of flips near you the
+  list was full of keys for chunks on screen, so every rebuild evicted a chunk still in view, which
+  was rebuilt the next frame and evicted the next: measured ~430 chunk rebuilds a second while
+  standing still after 40 nearby flips (0 before). Bigger screens show more chunks, so it starts
+  sooner. Now a plain least-recently-used cache: each chunk notes the last frame it was used, and
+  the one used longest ago goes, never one drawn this frame. Same test: 0 rebuilds a second; moving
+  ~9,000 px across biomes throws away 44 chunks and the ground is complete.
+- The game went blurry mid-run and stayed that way. The auto-quality step (`game.js` `PERF`) lowered the
+  drawing resolution whenever frames ran slow and was built never to raise it again, so one storm or
+  a burst of lightning fires could leave it at 55% or 40% for the rest of the session, smoothed up to
+  full size (the blur).
+- Now: it only steps down after two slow stretches in a row (~5 s); with a real graphics card it
+  never goes below 75%; once frames are comfortably fast (<19 ms) for ~10 s it steps back up, and if
+  stepping up turns out too much it waits longer each time before trying again (up to 8x). A browser
+  drawing without the graphics card still starts low, as before.
+- When it is drawing below screen resolution the canvas is stretched with crisp pixels
+  (`image-rendering: pixelated`) instead of a blur.
+- Lag: in a run the parallax sky was painted full-screen under the ground, which always covers it:
+  one whole-screen layer per frame for nothing; skipped. Measured overdraw (clear day ~7.5x the
+  screen, night storm ~8.6x) is otherwise ground, the day/night tint, rain overcast and the two
+  vignette layers.
+- Checked headless: under a sustained 45 ms/frame load it dropped 1 -> 0.75 and held there, and
+  came back to 1 ~10 s after the load ended; no page errors.
+
+## 2026-11-17z33 (cont.) — Signature sets: moves of their own for every Baby, In-Training, Rookie and Champion
+- Asked for: more signature moves that belong only to that Digimon and fit it (2 for Baby and
+  In-Training, 3 for Rookie and Champion), keeping what you learned at earlier stages, some moves that
+  upgrade into a better one and replace it while others stay as they are, and a few branching
+  choices locked for the whole run.
+- **228 new moves** (`moves.js` SIG_SETS / SIG_ROLE): 12 per line for all 19 lines, each named and
+  shaped for that Digimon (Botamon's Fizz Bubbles, Koromon's Bounce Drop, Greymon's Meteor Breath,
+  Tentomon's Buzz Field, Togemon's Hundred Jab...). The full list is in SIGNATURE_MOVES.md.
+  Same slot order in every line:
+  - Baby: a seed move that grows, and a keeper
+  - In-Training: the seed grows (replaces it), plus a keeper
+  - Rookie: it grows again; a choice of two (taking one locks the other for the run); a keeper
+  - Champion: it grows a last time; the Rookie choice grows into its own Champion move (the locked
+    side's stays locked); a keeper
+  So a partner gains 2 / 2 / 3 / 3 moves at the four stages, as asked.
+- Built from the seven signature kinds (ray, drop / rise, ground trap, boomerang, shockwave, chain,
+  spray) with each move's own shape, trap, ray, chain or blade look (attack-fx.js mergeSigLooks) and
+  element (elements.js; Ash Snort is fire, Kabuterimon's moves are electric). Power by role: the
+  growing move gets stronger each step (x0.9 -> 1.1 -> 1.3 -> 1.55, a little faster too, and an
+  extra hop / shot / mine from Rookie), choices x1.15 / x1.45, keepers x0.9 to x1.2; all still grow
+  with the partner's stage like every signature.
+- Rules (`skill-tree.js`): a growing move needs the one before it at Lv 3; learning it removes the
+  old one and keeps ~75% of its levels (skills["!" + old] = 2). Taking one side of a choice locks the
+  other (skills["!" + other] = 1), and the lock follows down the chain to the Champion move. The
+  marks live in the skills record, so they sync online and reset with it. Level-up cards never offer
+  a locked or grown move; growing moves turn up twice as often. Signatures no longer need "the
+  smaller move of the same kind" (they all fire). Same rules for CPU partners, rivals (auto-pick) and
+  rival skill scrolls.
+- Skill window: cards carry a tag ("Grows from Boiling Bubbles (replaces it)", "Choice: locks Scorch
+  Mark for this run"); the tree shows "Locked: you took Dash Claw", "grows into X later", and the
+  help text explains both.
+- `scripts/signature-test.js` (new): 12 per line, unique, all with elements; the Agumon line stage by
+  stage (opens, grows, replaces, locks, lock follows to Champion, keepers stay open); 200 card offers
+  never show a locked or grown move; 76 auto-built partners over every line never hold both sides or
+  a move next to its upgrade; through the simulation a locked pick is refused and learned moves fire.
+  kit-test updated (a Baby now has 8 moves to pick from). Checked in the browser as Agumon: cards and
+  tree read right, all five learned signatures fired on enemies, no errors.
+
+## 2026-11-17z33 (cont.) — Signature sets: Ultimate and Mega
+- 136 more (`moves.js` SIG_HIGH): each Ultimate and each Mega adds three, in the same pattern as
+  Champion: the growing move grows again (Meteor Breath -> Hatch Barrage -> Sun Meteor), the Rookie
+  choice grows again along the side you took (Horn Charge -> Trident Lunge -> Cyclone Drill; the
+  other side stays locked to the end), and a new keeper (Iron Wing Gust, Shield Bash). 16 lines have
+  both; Wormmon's (DinoBeemon) and Armadillomon's (Meteormon) end at Ultimate; Hawkmon's line has no
+  Ultimate or Mega, so it ends at Aquilamon. 364 signature moves in all; SIGNATURE_MOVES.md lists
+  every one by line.
+- Power: Ultimate x1.8 / 1.7 / 1.7 / 1.35, Mega x2.1 / 2.0 / 2.0 / 1.55 (growing, path A, path B,
+  keeper), with an extra two shots / hops / mines from Ultimate. Balance check: with everything
+  levelled, all signatures together were 2.6x the main shot at Champion and 4.4x at Mega, which
+  buried the shots; every new signature now hits at 0.55 (SIG_POWER): 1.6x at Champion, 2.5x at Mega.
+- signature-test.js: counts per line by the stages it has; the Agumon line grows on to WarGreymon;
+  the locked side stays locked to Mega; MetalGreymon's moves open and WarGreymon's wait; each step of
+  a growing move hits harder; auto-built partners through all six stages keep the rules. Checked in
+  the browser as WarGreymon: the tree reads right and the Ultimate and Mega moves fire, no errors.
+
+## 2026-11-17z33 (cont.) — Difficulty held where it was, a smidge harder
+- Asked: keep it as hard as before the signature sets, maybe a smidge harder (last playtest was
+  "pretty close to exactly where I needed it").
+- Measured (tools: a typical card-picking build at a typical job level per stage, 60 runs per line,
+  every line, against the same with the signature sets taken out): partners now hit 0.92x / 0.91x /
+  1.05x / 1.14x / 1.21x / 1.30x as hard at Baby / In-Training / Rookie / Champion / Ultimate / Mega
+  (more moves spread the early points thinner; later the extra moves add up).
+- `data.js` LEVELS.stageHp: wild Digimon's health by their stage 0.97 / 0.96 / 1.1 / 1.2 (Armor too) /
+  1.27 / 1.37, which cancels that and leaves every stage ~5% tougher to kill than before. Applied in
+  `_levelUp`, so lords and bosses follow; the gentle start zone is untouched. Damage unchanged.
+
+## 2026-11-17z33 (cont.) — Drops come to you
+- Reported: with the magnet, drops no longer come to the character; they fly round the screen.
+- Cause (`mission-sim.js` `_updateOrbs`): once pulled in, a drop chased whichever of tamer and partner
+  was nearer *that tick*, so it swung after a partner darting round a fight; and it was moved toward
+  every player in turn, so with friends it was tugged back and forth.
+- Now: the tamer or the partner coming within magnet reach pulls a drop in, but it flies to a tamer,
+  the nearest, and keeps to that one (to the partner only if there is no tamer); it starts at the old
+  pace and speeds up to 2.2x so it catches a tamer on the run. New: a drop within 2.5x the magnet
+  reach drifts toward the nearest tamer at 38 px/s (data.js PACING driftReach / driftSpeed). Players
+  at the farm or away don't pull. The partner still picks up anything it touches.
+- `scripts/pickup-test.js` (new): a drop pulled in by the partner goes straight to the tamer and never
+  swings back; a tamer running at 260 px/s is caught in 0.4 s; a nearby drop drifts ~40 px a second;
+  far ones stay put; with two tamers it goes straight to the nearer one.
