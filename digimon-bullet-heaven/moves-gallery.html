@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Digi Night — signature move gallery</title>
+<style>
+  body { margin: 0; background: #0b0e1a; color: #dfe6ff; font: 13px system-ui, sans-serif; }
+  header { padding: 10px 14px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  header h1 { font-size: 16px; margin: 0 12px 0 0; }
+  header button { background: #1a2140; color: #dfe6ff; border: 1px solid #34407a; border-radius: 6px; padding: 4px 9px; cursor: pointer; font: inherit; }
+  header button.on { background: #ffd23a; color: #1a1400; border-color: #ffd23a; }
+  #info { padding: 0 14px 6px; color: #8f9ac8; }
+  canvas { display: block; margin: 0 auto; image-rendering: pixelated; }
+</style>
+</head>
+<body>
+<header><h1>Signature moves</h1><span id="lines"></span><button id="slow">Slow motion</button></header>
+<div id="info">Every signature move of a line, looping. Click a box to fire that one again. Each box: name · kind · form · motif · colours · trail · impact (+N: grown that many times).</div>
+<canvas id="cv" width="1500" height="860"></canvas>
+<script src="js/data.js"></script>
+<script>DBH.sprites = DBH.sprites || {};</script>
+<script src="js/ro-stats.js"></script>
+<script src="js/evolution-tree.js"></script>
+<script src="js/species-catalog.js"></script>
+<script src="js/moves.js"></script>
+<script src="js/attack-fx.js"></script>
+<script src="js/sig-fx.js"></script>
+<script src="js/sig-fx-draw.js"></script>
+<script>
+(function () {
+  var D = DBH, cv = document.getElementById("cv"), ctx = cv.getContext("2d"), FX = D.attackFx, R = D.sigFx.recipes();
+  var lines = {}, id, cur = null, cells = [], bullets = [], timers = [], T = 0, slow = false;
+  for (id in R) (lines[R[id].line] = lines[R[id].line] || []).push(R[id]);
+  var order = { 0: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 5 };
+  Object.keys(lines).forEach(function (l) { lines[l].sort(function (a, b) { return D.SIG_INFO[a.id].tier - D.SIG_INFO[b.id].tier || D.SIG_INFO[a.id].role - D.SIG_INFO[b.id].role; }); });
+  var bar = document.getElementById("lines");
+  Object.keys(lines).forEach(function (l) { var b = document.createElement("button"); b.textContent = l; b.onclick = function () { show(l); }; b.id = "b-" + l; bar.appendChild(b); });
+  document.getElementById("slow").onclick = function () { slow = !slow; this.classList.toggle("on", slow); };
+  var CW = 300, CH = 172, COLS = 5;
+  function show(l) {
+    cur = l; cells = []; bullets.length = 0; timers.length = 0; FX.clear();
+    Array.prototype.forEach.call(bar.children, function (b) { b.classList.toggle("on", b.id === "b-" + l); });
+    lines[l].forEach(function (r, i) { var c = { r: r, x: (i % COLS) * CW, y: Math.floor(i / COLS) * CH, next: 0.2 + i * 0.07 }; c.cx = c.x + 50; c.cy = c.y + 100; c.tx = c.x + 215; c.ty = c.y + 100; cells.push(c); });
+    location.hash = l;
+  }
+  cv.onclick = function (ev) { var b = cv.getBoundingClientRect(), x = (ev.clientX - b.left) * cv.width / b.width, y = (ev.clientY - b.top) * cv.height / b.height; cells.forEach(function (c) { if (x > c.x && x < c.x + CW && y > c.y && y < c.y + CH) c.next = T; }); };
+  function later(t, fn) { timers.push({ t: T + t, fn: fn }); }
+  function fire(c) {
+    var r = c.r, w = D.WEAPONS[r.id], lv = w.levels[Math.min(w.levels.length - 1, 2 + Math.min(2, r.grand))], ang = Math.atan2(c.ty - c.cy, c.tx - c.cx), i, a;
+    FX.event({ type: "fx", k: "cast", w: r.id, x: c.cx, y: c.cy, a: ang });
+    if (w.type === "projectile") {
+      for (i = 0; i < (lv.count || 3); i++) { a = ang + ((i - ((lv.count || 3) - 1) / 2) * (lv.spread || 0.2)); bullets.push({ x: c.cx, y: c.cy, vx: Math.cos(a) * (lv.speed || 280), vy: Math.sin(a) * (lv.speed || 280), radius: lv.radius || 6, life: 0.6, wid: r.id, kind: "projectile", hitAt: c.tx, c: c }); }
+    } else if (w.type === "burst") FX.event({ type: "fx", k: "burst", w: r.id, x: c.cx + 60, y: c.cy, r: Math.min(70, lv.radius || 60) });
+    else if (w.type === "beam") { FX.event({ type: "fx", k: "beam", w: r.id, x: c.cx, y: c.cy, a: 0, len: 175, wd: lv.width || 18 }); later(0.08, function () { FX.event({ type: "fx", k: "hit", w: r.id, x: c.tx, y: c.ty, a: 0 }); }); }
+    else if (w.type === "strike") { FX.event({ type: "fx", k: "drop", w: r.id, x: c.tx, y: c.ty + 10, t: 0.45, r: 40, up: D.SIG_LOOK[r.id] && D.SIG_LOOK[r.id].d === "rise" ? 1 : 0 }); later(0.45, function () { FX.event({ type: "fx", k: "boom", w: r.id, x: c.tx, y: c.ty + 10, a: -Math.PI / 2, r: 40 }); }); }
+    else if (w.type === "mine") { var m = { x: c.tx - 30, y: c.ty + 10, vx: 0, vy: 0, radius: 9, life: 2.2, wid: r.id, kind: "projectile", mine: 1, c: c }; bullets.push(m); }
+    else if (w.type === "boomerang") bullets.push({ x: c.cx, y: c.cy, vx: 330, vy: 0, radius: lv.radius || 9, life: 1.1, wid: r.id, kind: "projectile", boom: 1, t0: T, c: c });
+    else if (w.type === "chain") FX.event({ type: "fx", k: "chain", w: r.id, x: c.cx, y: c.cy, pts: [c.cx, c.cy, c.tx - 60, c.ty - 40, c.tx, c.ty, c.tx + 50, c.ty + 40, c.tx + 70, c.ty - 30] });
+  }
+  var last = performance.now(), manual = /shot/.test(location.search);
+  function frame(now) {
+    var dt = Math.min(0.05, (now - last) / 1000) * (slow ? 0.25 : 1);
+    last = now;
+    tick(dt);
+    if (!manual) requestAnimationFrame(frame);
+  }
+  function tick(dt) {
+    var i, b, c;
+    T += dt;
+    for (i = timers.length - 1; i >= 0; i--) if (T >= timers[i].t) { timers[i].fn(); timers.splice(i, 1); }
+    cells.forEach(function (c) { if (T >= c.next) { c.next = T + 2.1; fire(c); } });
+    for (i = bullets.length - 1; i >= 0; i--) {
+      b = bullets[i]; b.life -= dt;
+      if (b.boom) { var u = (T - b.t0) / 1.1; b.vx = u < 0.5 ? 330 * (1 - u * 2) + 40 : -360; b.x += b.vx * dt; }
+      else { b.x += b.vx * dt; b.y += b.vy * dt; }
+      if (!b.mine && !b.boom && b.x >= b.hitAt) { FX.event({ type: "fx", k: "hit", w: b.wid, x: b.x, y: b.y, a: Math.atan2(b.vy, b.vx) }); bullets.splice(i, 1); continue; }
+      if (b.life <= 0) { if (b.mine) FX.event({ type: "fx", k: "boom", w: b.wid, x: b.x, y: b.y, r: 50 }); bullets.splice(i, 1); }
+    }
+    FX.update(dt);
+    ctx.fillStyle = "#121730"; ctx.fillRect(0, 0, cv.width, cv.height);
+    cells.forEach(function (c) {
+      ctx.fillStyle = "#171d3a"; ctx.fillRect(c.x + 3, c.y + 3, CW - 6, CH - 6);
+      ctx.fillStyle = "#2a3266"; ctx.beginPath(); ctx.ellipse(c.cx, c.cy + 12, 14, 5, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "#f0a040"; ctx.fillRect(c.cx - 8, c.cy - 10, 16, 20);
+      ctx.fillStyle = "#3a2a2a"; [[c.tx - 60, c.ty - 40], [c.tx, c.ty], [c.tx + 50, c.ty + 40], [c.tx + 70, c.ty - 30]].forEach(function (p) { ctx.fillRect(p[0] - 7, p[1] - 7, 14, 14); });
+      var r = c.r; ctx.fillStyle = "#ffffff"; ctx.font = "bold 13px system-ui"; ctx.fillText(r.name + (r.grand ? "  +" + r.grand : ""), c.x + 10, c.y + 20);
+      ctx.fillStyle = "#8f9ac8"; ctx.font = "11px system-ui"; ctx.fillText(r.type + " · " + r.form + " · " + r.motif + " · " + r.palName + (r.variant ? "~" + r.variant : ""), c.x + 10, c.y + 35);
+      ctx.fillText(r.trail + " · " + r.impact + " · " + r.cast, c.x + 10, c.y + 48);
+    });
+    bullets.forEach(function (b) { D.sprites.drawProjectile(ctx, b, T); });
+    FX.draw(ctx);
+  }
+  show((location.hash || "").slice(1) && lines[location.hash.slice(1)] ? location.hash.slice(1) : Object.keys(lines)[0]);
+  requestAnimationFrame(frame);
+  /* for screenshots (?shot): fire every move at once, then step the clock by hand */
+  window.__gallery = { show: show, lines: lines, fireAll: function () { cells.forEach(function (c) { c.next = 1e9; fire(c); }); }, step: function (sec) { var n = Math.round(sec * 60); while (n-- > 0) tick(1 / 60); } };
+})();
+</script>
+</body>
+</html>

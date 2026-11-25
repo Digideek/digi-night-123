@@ -42,7 +42,7 @@ function dataFixture() {
       return null;
     },
     tierOf: function (form) { return 1; },
-    DIGIBITS: { name: "DigiBits", winReward: 8, betPool: 6, minBetPayout: 1 }
+    DIGIBITS: { name: "DigiCoins", winReward: 8, betPool: 6, minBetPayout: 1 }
   };
 }
 
@@ -207,7 +207,7 @@ function main() {
   /* fullness 5 <= 15: never refuse when dying of hunger. Feed, then re-starve style. */
   C.authority.act({ type: "farm.return", id: "p0" });
   const C2 = makeAuth();
-  C2.p.fullness = 25;
+  C2.p.fullness = 55;                       /* 17z33: a sulky partner only turns down food it doesn't need (over 45) */
   C2.p.happiness = 40;
   C2.p.starveCycles = 1;
   C2.p.careMistakes = 0;
@@ -217,7 +217,6 @@ function main() {
   assert(refused.refused, "stubborn partner refuses a meal");
   assert(C2.sim.farm.refused >= 1, "refuse counted");
   const retRefuse = C2.authority.act({ type: "farm.return", id: "p0" });
-  assert(retRefuse.hungryExit, "still hungry on exit");
   assert(!retRefuse.careMistake && C2.p.careMistakes === 0, "refused meal is not a care mistake");
   const C3 = makeAuth();
   C3.p.fullness = 5;

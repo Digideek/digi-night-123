@@ -52,14 +52,14 @@
   var clicks = [];
   var rsX = 0, rsY = 0;
   /* Pinch zoom + two-finger yaw. Defaults match the pre-WebGL camera. */
-  var camera = { zoom: 1, rot: 0, minZoom: 0.7, maxZoom: 1.8, gesturing: false };
+  var camera = { zoom: 1, rot: 0, minZoom: 0.7, maxZoom: 2, gesturing: false, stops: [0.7, 1, 2], sharp: {} };
   var pointers = Object.create(null);
   var pinch = { active: false, dist: 0, angle: 0, zoom0: 1, rot0: 0 };
   var GLYPHS = {
-    keyboard: { move: "WASD", aim: "Mouse", interact: "E", feed: "F", capture: "E", shop: "Q", pause: "Esc", menu: "Tab", confirm: "Enter", back: "Esc", punch: "Space", slots: "1–9", dash: "Shift", burst: "R", farm: "G", skills: "K", stats: "T", pvp: "V", send: "Click", yes: "Y", no: "N" },
-    mouse:    { move: "WASD", aim: "Mouse", interact: "E", feed: "F", capture: "E", shop: "Q", pause: "Esc", menu: "Tab", confirm: "Enter", back: "Esc", punch: "Space", slots: "1–9", dash: "Shift", burst: "R", farm: "G", skills: "K", stats: "T", pvp: "V", send: "Click", yes: "Y", no: "N" },
-    gamepad:  { move: "LS", aim: "RS", interact: "Y", capture: "X", feed: "LB", shop: "Y", pause: "Start", menu: "Start", confirm: "A", back: "B", punch: "A", slots: "LB/RB", dash: "RT", burst: "RB", farm: "LT", skills: "View", stats: "R3", pvp: "L3", send: "RT", yes: "A", no: "B" },
-    touch:    { move: "", aim: "", interact: "", feed: "", capture: "", shop: "", pause: "", menu: "", confirm: "", back: "", punch: "", slots: "", dash: "", burst: "", farm: "", skills: "", stats: "", pvp: "", send: "", yes: "", no: "", camera: "Pinch / twist" }
+    keyboard: { move: "WASD", aim: "Mouse", interact: "E", feed: "F", capture: "E", shop: "Q", pause: "Esc", menu: "Tab", confirm: "Enter", back: "Esc", punch: "Space", slots: "1–9", dash: "Shift", burst: "R", farm: "E", skills: "K", stats: "T", inv: "I", pvp: "V", send: "Click", yes: "Y", no: "N" },
+    mouse:    { move: "WASD", aim: "Mouse", interact: "E", feed: "F", capture: "E", shop: "Q", pause: "Esc", menu: "Tab", confirm: "Enter", back: "Esc", punch: "Space", slots: "1–9", dash: "Shift", burst: "R", farm: "E", skills: "K", stats: "T", inv: "I", pvp: "V", send: "Click", yes: "Y", no: "N" },
+    gamepad:  { move: "LS", aim: "RS", interact: "Y", capture: "X", feed: "LB", shop: "Y", pause: "Start", menu: "Start", confirm: "A", back: "B", punch: "A", slots: "LB/RB", dash: "RT", burst: "RB", farm: "LT", skills: "View", stats: "R3", inv: "", pvp: "L3", send: "RT", yes: "A", no: "B" },
+    touch:    { move: "", aim: "", interact: "", feed: "", capture: "", shop: "", pause: "", menu: "", confirm: "", back: "", punch: "", slots: "", dash: "", burst: "", farm: "", skills: "", stats: "", inv: "", pvp: "", send: "", yes: "", no: "", camera: "Pinch / twist" }
   };
   var listeners = { confirm: [], back: [], pause: [], nav: [], shop: [], capture: [], useMedicine: [], interact: [], slot: [], slotDelta: [], menu: [], source: [] };
 
@@ -82,7 +82,10 @@
   function setSource(src) {
     var changed = lastSource !== src;
     lastSource = src;
-    if (typeof document !== "undefined" && document.body) document.body.classList.toggle("pad-ui", src === "gamepad");
+    if (typeof document !== "undefined" && document.body) {
+      document.body.classList.toggle("pad-ui", src === "gamepad");
+      document.body.classList.toggle("kb-ui", src === "keyboard");     /* 17z33: hides the on-screen stick */
+    }
     if (src === "touch") setTouchUi(true);
     else if (src === "gamepad" || src === "keyboard") setTouchUi(false);
     if (changed) emit("source", src);
@@ -162,7 +165,7 @@
     }
     if (k === "Tab") { e.preventDefault(); emit("menu"); }
     if (k === "p" || k === "P") emit("pause");
-    if (k === "q" || k === "Q") emit("shop");
+    /* 17z33: no shop key: the shop is Jijimon, walk up to him and press E */
     if (k === "r" || k === "R") emit("useMedicine");
     if (k === "e" || k === "E") emit("interact");
     if (k === "f" || k === "F") emit("feed");
@@ -293,7 +296,42 @@
   }
 
   function setCamZoom(z) { camera.zoom = clampCamZoom(z); }
-  function resetCamera() { camera.zoom = 1; camera.rot = 0; camera.gesturing = false; }
+  /* Crisp zoom (17z33, Isaac). Trees, rocks, the tamer and the ground are drawn on a fixed art-pixel grid
+   * (1 world unit per art pixel; the ground 3). They are pixel-perfect only when one art pixel covers a
+   * whole number of the screen's own pixels: zoom x pixel density = a whole number. In between, some
+   * art pixels come out a pixel wider than others and the picture looks smeary. So the wheel (and a pinch,
+   * when you let go) only stops on those zooms, plus one wider view for seeing more (not pixel-perfect).
+   * Digimon sprites are each scaled to their own height, so no single zoom is exact for all of them.
+   *   k: screen pixels per CSS pixel (devicePixelRatio, capped at 2 like the canvas) */
+  function zoomStops(k) {
+    var out = [], sharp = {}, n, z, hasWide = false;
+    k = k > 0 ? k : 1;
+    for (n = 1; n <= 8; n++) {
+      z = Math.round(n / k * 1000) / 1000;
+      if (z >= 0.75 && z <= camera.maxZoom + 1e-9) { out.push(z); sharp[z] = true; if (z < 0.95) hasWide = true; }
+    }
+    if (!hasWide) out.unshift(camera.minZoom);
+    return { stops: out, sharp: sharp };
+  }
+  function setPixelDensity(k) {
+    var r = zoomStops(k), was = camera.k ? camera.stops[nearestStop(camera.zoom)] : null;
+    camera.stops = r.stops; camera.sharp = r.sharp; camera.k = k;
+    camera.zoom = camera.stops[was == null ? nearestStop(1, true) : nearestStop(was)];
+  }
+  /* the stop closest to z (a tie goes to the closer view) */
+  function nearestStop(z, sharpOnly) {
+    var i, best = 0, d, bd = 1e9;
+    for (i = 0; i < camera.stops.length; i++) {
+      if (sharpOnly && !camera.sharp[camera.stops[i]]) continue; d = Math.abs(camera.stops[i] - z); if (d < bd - 1e-6 || (Math.abs(d - bd) < 1e-6 && camera.stops[i] > camera.stops[best])) { bd = d; best = i; } }
+    return best;
+  }
+  function stepZoom(dir) {
+    var i = nearestStop(camera.zoom), j = Math.max(0, Math.min(camera.stops.length - 1, i + dir));
+    if (Math.abs(camera.stops[i] - camera.zoom) > 0.01) j = dir > 0 ? (camera.stops[i] > camera.zoom ? i : Math.min(camera.stops.length - 1, i + 1)) : (camera.stops[i] < camera.zoom ? i : Math.max(0, i - 1));
+    camera.zoom = camera.stops[j];
+    emit("zoom", { zoom: camera.zoom, sharp: !!camera.sharp[camera.zoom] });
+  }
+  function resetCamera() { camera.zoom = camera.stops[nearestStop(1, true)]; camera.rot = 0; camera.gesturing = false; }
 
   function isJoyPointer(id) { return joy.pointerId != null && id === joy.pointerId; }
 
@@ -340,6 +378,7 @@
   }
 
   function endPinch() {
+    if (pinch.active) { camera.zoom = camera.stops[nearestStop(camera.zoom)]; emit("zoom", { zoom: camera.zoom, sharp: !!camera.sharp[camera.zoom] }); }
     pinch.active = false;
     camera.gesturing = camFingers().length >= 2;
   }
@@ -511,6 +550,7 @@
     window.addEventListener("mousedown", function (e) {
       if (e.button === 0 && !fakeMouse(e)) setSource("mouse");
     });
+    var wheelAcc = 0, wheelAt = 0;
     window.addEventListener("wheel", function (e) {
       var canvas = document.getElementById("game");
       if (!canvas) return;
@@ -522,8 +562,10 @@
        * item slots (hold Ctrl there to zoom). */
       var atFarm = global.DBH && global.DBH.state === "farm";
       if (!atFarm || e.ctrlKey || e.metaKey) {
-        var next = camera.zoom * (e.deltaY > 0 ? 0.92 : 1.08);
-        setCamZoom(next);
+        /* one notch, one crisp step (a trackpad's small deltas add up to a notch first) */
+        wheelAcc += e.deltaMode ? e.deltaY * 40 : e.deltaY;
+        if (Math.abs(wheelAcc) < 50 && Date.now() - wheelAt > 250) wheelAcc = e.deltaY > 0 ? 50 : -50;
+        if (Math.abs(wheelAcc) >= 50) { stepZoom(wheelAcc > 0 ? -1 : 1); wheelAcc = 0; wheelAt = Date.now(); }
         return;
       }
       emit("slotDelta", e.deltaY > 0 ? 1 : -1);
@@ -574,6 +616,7 @@
   global.DBH = global.DBH || {};
   global.DBH.input = {
     setup: setup,
+    releaseKeys: function () { keys = Object.create(null); },   /* chat opening: let go of anything held */
     poll: poll,
     on: on,
     bindJoystick: bindJoystick,
@@ -596,6 +639,9 @@
     pushClick: function (c) { clicks.push(c); if (clicks.length > 4) clicks.shift(); },
     camera: camera,
     setCamZoom: setCamZoom,
+    setPixelDensity: setPixelDensity,
+    zoomStops: zoomStops,
+    stepZoom: stepZoom,
     resetCamera: resetCamera,
     glyph: glyph,
     prompt: prompt,

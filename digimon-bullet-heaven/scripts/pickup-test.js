@@ -1,6 +1,6 @@
 /* node scripts/pickup-test.js : drops home in on a tamer (17z33). Pulled in by the tamer or the
  * partner, they fly to the nearest tamer and keep to it, speeding up to catch a tamer on the run;
- * close ones drift in slowly; with two players a drop goes to one of them, not back and forth. */
+ * nothing drifts any more: a drop waits until it's inside a tamer's magnet circle (17z33, reworked). */
 const path = require("path"), root = path.join(__dirname, "..");
 global.window = global;
 require(path.join(root, "js/data.js"));
@@ -20,27 +20,30 @@ function world() {
   return sim;
 }
 const dt = 1 / 25;
-/* 1: the partner pulls it in, it flies to the tamer, not the partner */
+const R = D.PACING.magnetRadius;
+/* 1: a drop waits where it fell until it's inside the tamer's magnet circle; the partner doesn't pull it */
 let sim = world(), p = sim.player("local");
-p.x = 0; p.y = 0; p.mx = 400; p.my = 0;
-sim.orbs.push({ id: 1, kind: "bits", x: 420, y: 60, value: 5, vx: 0, vy: 0, magnet: false });
-let minToMon = 1e9, steps = 0, path1 = [];
-while (sim.orbs.length && steps < 200) { sim._updateOrbs(dt); steps++; const o = sim.orbs[0]; if (o) { path1.push(o.x); minToMon = Math.min(minToMon, Math.hypot(o.x - p.mx, o.y - p.my)); } }
-ok(!sim.orbs.length && path1.every((x, i) => i === 0 || x <= path1[i - 1] + 0.01), "pulled in by the partner, a drop flies straight to the tamer (" + steps + " ticks) and never swings back");
-/* 2: a tamer running away is still caught */
-sim = world(); p = sim.player("local"); p.x = 0; p.y = 0; p.mx = -300; p.my = 0;
-sim.orbs.push({ id: 2, kind: "xp", x: 100, y: 0, value: 5, vx: 0, vy: 0, magnet: false });
-steps = 0; while (sim.orbs.length && steps < 400) { p.x -= 260 * dt; sim._updateOrbs(dt); steps++; }
-ok(!sim.orbs.length, "a tamer running at 260 px/s is still caught (" + (steps * dt).toFixed(1) + " s)");
-/* 3: close but outside the magnet: drifts in slowly */
-sim = world(); p = sim.player("local"); p.x = 0; p.y = 0; p.mx = 0; p.my = 2000;
-sim.orbs.push({ id: 3, kind: "xp", x: 250, y: 0, value: 5, vx: 0, vy: 0, magnet: false });
-sim._updateOrbs(dt); const x1 = sim.orbs[0].x;
-for (let k = 0; k < 25; k++) sim._updateOrbs(dt);
-ok(x1 < 250 && sim.orbs.length && sim.orbs[0].x < 250 - 30 && sim.orbs[0].x > 250 - 60, "a drop just outside the magnet drifts toward the tamer at a stroll (" + Math.round(250 - sim.orbs[0].x) + " px in a second)");
-sim.orbs[0].x = 2000; const x2 = sim.orbs[0].x; sim._updateOrbs(dt);
-ok(sim.orbs[0].x === x2, "far away it stays put");
-/* 4: two players: it goes to one and is eaten, never tugged back and forth */
+p.x = 0; p.y = 0; p.mx = 200; p.my = 0;
+sim.orbs.push({ id: 1, kind: "bits", x: 205, y: 10, value: 5, vx: 0, vy: 0, magnet: false });
+for (let k = 0; k < 50; k++) sim._updateOrbs(dt);
+ok(sim.orbs.length === 1 && sim.orbs[0].x === 205 && sim.orbs[0].y === 10 && !sim.orbs[0].magnet, "right next to the partner, out of the tamer's circle: it stays exactly where it fell");
+sim.orbs[0].x = R * 2; sim.orbs[0].y = 0; for (let k = 0; k < 25; k++) sim._updateOrbs(dt);
+ok(sim.orbs.length === 1 && sim.orbs[0].x === R * 2, "just outside the circle (" + R * 2 + " px): no drifting");
+/* 2: inside the circle: it flies straight in and is taken */
+sim.orbs[0].x = R - 5; let steps = 0, path1 = [];
+while (sim.orbs.length && steps < 200) { sim._updateOrbs(dt); steps++; if (sim.orbs[0]) path1.push(sim.orbs[0].x); }
+ok(!sim.orbs.length && path1.every((x, i) => i === 0 || x <= path1[i - 1] + 0.01), "inside it (" + (R - 5) + " px): straight to the tamer, taken in " + steps + " ticks");
+ok(R <= 60, "the circle starts small: " + R + " px (you nearly walk over a drop)");
+/* 3: a pulled-in drop catches a tamer on the run */
+sim = world(); p = sim.player("local"); p.x = 0; p.y = 0;
+sim.orbs.push({ id: 2, kind: "xp", x: R - 10, y: 0, value: 5, vx: 0, vy: 0, magnet: false });
+steps = 0; while (sim.orbs.length && steps < 400) { sim._updateOrbs(dt); p.x -= 260 * dt; steps++; }
+ok(!sim.orbs.length, "a tamer running away at 260 px/s is still caught (" + (steps * dt).toFixed(1) + " s)");
+/* 4: pickup range grows it */
+sim = world(); p = sim.player("local"); p.x = 0; p.y = 0; p.statLevels = { magnet: 3 }; p._statsKey = null; sim._stats(p);
+sim.orbs.push({ id: 5, kind: "bits", x: R * 1.6, y: 0, value: 5, vx: 0, vy: 0, magnet: false }); sim._updateOrbs(dt);
+ok(sim.orbs.length && sim.orbs[0].magnet && Math.abs(p.stats.magnetMul - Math.pow(1.22, 3)) < 1e-9, "three Magnet Field picks: the circle is x" + p.stats.magnetMul.toFixed(2) + ", so a drop " + Math.round(R * 1.6) + " px off comes in");
+/* 5: two players: it goes to one and is eaten, never tugged back and forth */
 sim = world(); p = sim.player("local");
 sim.players.push({ id: "g1", hasTamer: true, x: 300, y: 0, mx: 300, my: 40, stats: {} });
 p.x = 0; p.y = 0; p.mx = 0; p.my = 40;

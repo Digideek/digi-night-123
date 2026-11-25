@@ -7,7 +7,7 @@ const S = require(path.join(root, "js/seasons.js"));
 const W = require(path.join(root, "js/weather.js"));
 function assert(c, m) { if (!c) { console.log("FAIL " + m); process.exitCode = 1; } else console.log("  ok  " + m); }
 const len = S.CFG.lengthSec;
-assert(len === 360, "season is 6 minutes");
+assert(len === 486, "season is about 8 minutes (486 s)");
 let i = S.info(0); assert(i.year === 1 && i.id === "spring", "starts Year 1 Spring");
 i = S.info(len - 0.01); assert(i.id === "spring", "still spring at 5:59");
 i = S.info(len); assert(i.year === 1 && i.id === "summer", "summer at 6:00");

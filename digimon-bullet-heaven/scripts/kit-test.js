@@ -34,6 +34,8 @@ ok(act.length === 4 && act.filter(a => a.slot === "tech").length === 2 && act.so
 ok(D.ELEMENTS.moveElement("babyBurner", "botamon") === "fire" && D.ELEMENTS.moveElement("icicleFang", "punimon") === "ice", "a signature carries its line's element");
 
 /* the kinds */
+/* these check how each move behaves, not how hard it hits: no equipped-move focus bonus (skill-tree.js EQUIP) */
+if (D.SKILLS && D.SKILLS.EQUIP) D.SKILLS.EQUIP.focus = 1;
 function world(form, id, lvl) {
   const sim = new mission.MissionSim({ seed: 5, hz: auth.TICK_HZ, data: D }); new auth.Authority({ sim: sim, seed: 5 });
   sim.phase = "playing"; sim.time = 60; sim.skillTree = true;

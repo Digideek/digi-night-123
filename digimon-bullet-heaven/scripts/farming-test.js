@@ -97,7 +97,7 @@ check("Garden: plant, grow in battle time, harvest", function () {
   r = A.authority.act({ type: "farm.plant", id: "p0", plot: 0, seed: "seed_carrot" });
   assert(!r.ok && r.reason === "far", "planted from across the yard");
 });
-check("Balanced meals give bonus joy and healing", function () {
+check("Balanced meals give bonus joy, and meals don't heal (17z33)", function () {
   const A = makeAuth();
   A.p.bag = { meat: 3, carrot: 3 };
   A.p.foodCounts = { meat: 3, carrot: 2 };
@@ -105,7 +105,37 @@ check("Balanced meals give bonus joy and healing", function () {
   A.authority.act({ type: "farm.enter", id: "p0" });
   const r = A.authority.act({ type: "farm.feed", id: "p0", food: "carrot" });
   assert(r.ok && r.balanced, "feed not balanced");
-  assert(A.p.hp > 40, "no healing");
+  assert(A.p.hp === 40, "a meal healed it");
+});
+check("Each vegetable gives its own lasting boost, capped (17z33)", function () {
+  const crops = D.CROP_ORDER, stats = crops.map((c) => D.FOOD[c].stat);
+  assert(new Set(stats).size === crops.length, "two vegetables share a stat: " + stats.join(","));
+  const A = makeAuth();
+  const base = Object.assign({}, A.sim._stats(A.p));
+  A.p.foodCounts = { carrot: 2, cucumber: 2, tomato: 2, corn: 2, cabbage: 2, potato: 2 };
+  const s = A.sim._stats(A.p);
+  const near = (a, b) => Math.abs(a - b) < 1e-9;
+  assert(near(s.monSpeedMul / base.monSpeedMul, 1 + 2 * D.FOOD.carrot.per), "carrot speed");
+  assert(near(base.cooldownMul / s.cooldownMul, 1 + 2 * D.FOOD.cucumber.per), "cucumber attack rate");
+  assert(near(s.damageMul / base.damageMul, 1 + 2 * D.FOOD.tomato.per), "tomato damage");
+  assert(near(s.magnetMul / base.magnetMul, 1 + 2 * D.FOOD.corn.per), "corn pickup range");
+  assert(near((base.allyGuard || 1) / s.allyGuard, 1 + 2 * D.FOOD.cabbage.per), "cabbage defence");
+  assert(near(s.allyMaxHp / (base.allyMaxHp || 1), 1 + 2 * D.FOOD.potato.per), "potato max health");
+  A.p.foodCounts = { tomato: 50 };
+  assert(near(A.sim._stats(A.p).damageMul / base.damageMul, 1 + D.VEG_MAX * D.FOOD.tomato.per), "not capped at " + D.VEG_MAX);
+  A.p.foodCounts = { meat: 30, fish: 30, berry: 30 };
+  const f = A.sim._stats(A.p);
+  assert(near(f.damageMul, base.damageMul) && near(f.monSpeedMul, base.monSpeedMul), "field food gave a stat boost");
+});
+check("Throwing things out of the bag (17z33)", function () {
+  const A = makeAuth();
+  A.p.bag = { meat: 4, berry: 1 };
+  let r = A.authority.act({ type: "bag.discard", id: "p0", item: "meat", n: 1 });
+  assert(r.ok && A.p.bag.meat === 3, "discard 1");
+  r = A.authority.act({ type: "bag.discard", id: "p0", item: "meat", n: 9999 });
+  assert(r.ok && r.n === 3 && !A.p.bag.meat, "discard all");
+  r = A.authority.act({ type: "bag.discard", id: "p0", item: "fish", n: 1 });
+  assert(!r.ok, "discarded something it didn't have");
 });
 check("Enemies can drop seeds", function () {
   const A = makeAuth();

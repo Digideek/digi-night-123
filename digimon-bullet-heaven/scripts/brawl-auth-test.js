@@ -23,7 +23,7 @@ function dataFixture() {
     FOOD: { meat: { fullness: 20, happiness: 4 } },
     CARE: { fullnessDecayPerSec: 0, fullnessMax: 100, happinessMax: 100 },
     BRAWL_CFG: { partyCap: 6, maxPlayers: 6, alwaysDownBots: 1, soloMode: "skip", oddsSeconds: 0.08, reviveSeconds: 0.04, maxFightSeconds: 40, baseHp: 96, baseDamage: 11, regenPerSec: 2.2, attackCd: 0.48, botCount: 0 },
-    DIGIBITS: { name: "DigiBits", winReward: 8, betPool: 6, minBetPayout: 1 },
+    DIGIBITS: { name: "DigiCoins", winReward: 8, betPool: 6, minBetPayout: 1 },
     tierOf: function (form) { return form === "wargreymon" ? 5 : 1; },
     brawlMods: function () { return { hpMul: 1, regen: 1, extraMove: 0 }; }
   };

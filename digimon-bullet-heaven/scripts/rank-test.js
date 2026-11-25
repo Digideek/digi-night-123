@@ -1,4 +1,4 @@
-/* Tamer Rank: the curve, what a run pays, rank-ups paying DigiBits and titles. */
+/* Tamer Rank: the curve, what a run pays, rank-ups paying DigiCoins and titles. */
 var assert = require("assert");
 var store = {};
 global.window = global; global.localStorage = { getItem: function (k) { return k in store ? store[k] : null; }, setItem: function (k, v) { store[k] = String(v); } };

@@ -508,12 +508,12 @@
 
   function renderPayout(m, root) {
     if (!root) return;
-    var pay = m.payout || { awards: [], currency: "DigiBits", localBits: 0, mysterious: false, legendaryDrop: [] };
+    var pay = m.payout || { awards: [], currency: "DigiCoins", localBits: 0, mysterious: false, legendaryDrop: [] };
     var html = "<div class='brawl-panel-inner brawl-payout-card'>";
     html += "<p class='brawl-revive-kicker'>PAYOUT</p>";
-    html += "<h2>" + escapeHtml(pay.currency || "DigiBits") + "</h2>";
+    html += "<h2>" + escapeHtml(pay.currency || "DigiCoins") + "</h2>";
     if (!pay.awards || !pay.awards.length) {
-      html += "<p class='sub'>No " + escapeHtml(pay.currency || "DigiBits") + " this time.</p>";
+      html += "<p class='sub'>No " + escapeHtml(pay.currency || "DigiCoins") + " this time.</p>";
     } else {
       html += "<ul class='brawl-payout-list'>";
       var i, a, who, why;
@@ -531,7 +531,7 @@
       html += "<p class='brawl-mystery'>A mysterious reward found its way to you.</p>";
     }
     if (pay.localBits != null) {
-      html += "<p class='sub'>You have " + pay.localBits + " " + escapeHtml(pay.currency || "DigiBits") + ".</p>";
+      html += "<p class='sub'>You have " + pay.localBits + " " + escapeHtml(pay.currency || "DigiCoins") + ".</p>";
     }
     html += "<div class='row center'><button type='button' class='btn' id='btn-brawl-payout-done'>Continue</button></div>";
     html += "</div>";
@@ -1332,7 +1332,7 @@
         defeatedLegendary: defeatedLegendary
       });
     }
-    return { awards: [], currency: "DigiBits", localBits: 0, mysterious: false, legendaryDrop: [] };
+    return { awards: [], currency: "DigiCoins", localBits: 0, mysterious: false, legendaryDrop: [] };
   }
 
   function toScreen(x, y, vw, vh) {

@@ -2,10 +2,12 @@
  *
  *   Crest Pieces  plug into the Digivice (1 slot; the Lab's Digivice Port adds a second)
  *   Charms        worn by the partner (1 slot)
- *   One-run items one per run: a consumable, or a rival's scroll
+ *   One-run items up to three per run (the Lab's Kit Bag: four), each used up by it; a rival's
+ *                 scroll takes one of the places
  *
  * They are found, not bought: bosses drop charms and consumables, biome lords
- * drop Crest Pieces, a beaten rival leaves a scroll of one of its skills.
+ * drop Crest Pieces, a beaten rival leaves a scroll of one of its skills. One-run items also turn up
+ * by luck: now and then from any wild Digimon you beat, more often from big ones and spire chests.
  * The stash is part of the game save (game.js save.items). What the gear does
  * inside a run is in net/mission-sim.js (_gear, _gearStart, _scrollTry); the
  * screen-side effects (minimap, warnings) are read in game.js through fxOn().
@@ -25,21 +27,26 @@
     var s = (D.stash && D.stash.get()) || {};
     s.gear = s.gear || {}; s.cons = s.cons || {}; s.scrolls = s.scrolls || [];
     s.eq = s.eq || {}; s.eq.crest = s.eq.crest || [];
+    if (!s.eq.uses) s.eq.uses = s.eq.use ? [s.eq.use] : [];        /* 17z33: several one-run items (was one, eq.use) */
     return s;
   }
   function write() { if (D.stash) D.stash.write(); }
   function slots() { return 1 + ((D.lab && D.lab.level) ? Math.min(1, D.lab.level("port")) : 0); }
+  /* how many one-run items a run can take: three, four with the Lab's Kit Bag */
+  function useSlots() { return (cfg().useSlots || 3) + ((D.lab && D.lab.level) ? Math.min(1, D.lab.level("kit")) : 0); }
   function skillName(id) {
     var w = D.WEAPONS && D.WEAPONS[id], p = D.SKILLS && D.SKILLS.PASSIVE_BY && D.SKILLS.PASSIVE_BY[id];
     return (w && w.name) || (p && (p.name || p.label)) || id;
   }
   /* what is really in force: only things still owned, only as many crests as there are slots */
   function loadout() {
-    var s = stash(), e = s.eq, out = { crest: [], charm: null, use: null, scroll: null }, i, it;
+    var s = stash(), e = s.eq, out = { crest: [], charm: null, use: null, uses: [], scroll: null }, i, it, room;
     for (i = 0; i < e.crest.length && out.crest.length < slots(); i++) { it = byId(e.crest[i]); if (it && it.kind === "crest" && s.gear[it.id] && out.crest.indexOf(it.id) < 0) out.crest.push(it.id); }
     it = byId(e.charm); if (it && it.kind === "charm" && s.gear[it.id]) out.charm = it.id;
-    it = byId(e.use); if (it && it.kind === "cons" && (s.cons[it.id] || 0) > 0) out.use = it.id;
-    if (!out.use && e.scroll != null && s.scrolls[e.scroll]) out.scroll = s.scrolls[e.scroll].skill;
+    room = useSlots() - (e.scroll != null && s.scrolls[e.scroll] ? 1 : 0);
+    for (i = 0; i < e.uses.length && out.uses.length < room; i++) { it = byId(e.uses[i]); if (it && it.kind === "cons" && (s.cons[it.id] || 0) > 0 && out.uses.indexOf(it.id) < 0) out.uses.push(it.id); }
+    out.use = out.uses[0] || null;
+    if (e.scroll != null && s.scrolls[e.scroll]) out.scroll = s.scrolls[e.scroll].skill;
     return out;
   }
   function fxOn(key) {
@@ -52,7 +59,7 @@
     var l = loadout(), n = [], i;
     for (i = 0; i < l.crest.length; i++) n.push(byId(l.crest[i]).name);
     if (l.charm) n.push(byId(l.charm).name);
-    if (l.use) n.push(byId(l.use).name);
+    for (i = 0; i < l.uses.length; i++) n.push(byId(l.uses[i]).name);
     if (l.scroll) n.push("Scroll: " + skillName(l.scroll));
     return n;
   }
@@ -69,7 +76,7 @@
     for (r = want; r >= 1; r--) { pool = L.filter(function (x) { return x.kind === kind && RANK[x.rarity] === r; }); if (pool.length) return pool[Math.floor(rnd() * pool.length)]; }
     return null;
   }
-  /* put it in the stash; gear already owned becomes DigiBits. Returns what to tell the player. */
+  /* put it in the stash; gear already owned becomes DigiCoins. Returns what to tell the player. */
   function give(it, from) {
     var s = stash(), C = cfg(), note = { id: it.id, name: it.name, rarity: it.rarity, kind: it.kind, text: it.text, from: from || "" }, b;
     if (it.kind === "cons") s.cons[it.id] = Math.min(C.maxStack || 9, (s.cons[it.id] || 0) + 1);
@@ -96,13 +103,16 @@
   function announce(run, note, x, y) {
     if (!note) return;
     if (run) (run._loot = run._loot || []).push(note);
-    if (D.itemToast) D.itemToast((note.dupe ? note.name + " again: +" + note.dupe + " DigiBits" : "Found: " + note.name + (note.kind === "scroll" ? "" : " (" + (KIND[note.kind] || "item") + ")")) + ".  " + (note.dupe ? "" : note.text), note.rarity, x, y, note.name);
+    if (D.itemToast) D.itemToast((note.dupe ? note.name + " again: +" + note.dupe + " DigiCoins" : "Found: " + note.name + (note.kind === "scroll" ? "" : " (" + (KIND[note.kind] || "item") + ")")) + ".  " + (note.dupe ? "" : note.text), note.rarity, x, y, note.name);
     if (D.audio) D.audio.sfx(note.rarity === "prismatic" ? "base" : "job");
   }
   /* game events: the drops, and the one-run items doing their thing */
   function onEvent(e, localId, run) {
     var Dr = cfg().drop, it, sk;
     if (!e || !D.ITEMS) return;
+    /* 17z33: a lucky find out on the map */
+    if (e.type === "kill" && !e.boss && e.killer === localId && rnd() < ((e.big || e.elite) ? (Dr.elite || 0) : (Dr.field || 0))) { it = pick("cons"); if (it) announce(run, give(it, "a wild Digimon"), e.x, e.y); }
+    else if (e.type === "chest.open" && e.id === localId && rnd() < ((Dr.chest || {})[e.chest] || 0)) { it = pick("cons"); if (it) announce(run, give(it, "a spire chest"), e.x, e.y); }
     if (e.type === "kill" && e.boss && e.killer === localId) {
       if (rnd() < (Dr.boss || 0)) { it = pick(rnd() < (Dr.bossCharm || 0.6) ? "charm" : "cons"); if (it) announce(run, give(it, "a boss"), e.x, e.y); }
     } else if (e.type === "lord.down" && e.id === localId) {
@@ -123,8 +133,15 @@
   function endRun(run) {
     var s = stash(), g = (run && run.gear) || null, hatch = (D.HATCH && D.HATCH.time) || 20, spent = null;
     if (g && (run.time || 0) > hatch) {
-      if (g.use && (s.cons[g.use] || 0) > 0) { s.cons[g.use] -= 1; spent = byId(g.use).name; if (!s.cons[g.use]) { delete s.cons[g.use]; if (s.eq.use === g.use) s.eq.use = null; } }
-      else if (g.scroll && run._scrollUsed && s.eq.scroll != null && s.scrolls[s.eq.scroll] && s.scrolls[s.eq.scroll].skill === g.scroll) { s.scrolls.splice(s.eq.scroll, 1); s.eq.scroll = null; spent = "the scroll"; }
+      var used = g.uses || (g.use ? [g.use] : []), names = [], ui;
+      for (ui = 0; ui < used.length; ui++) {
+        if ((s.cons[used[ui]] || 0) > 0) {
+          s.cons[used[ui]] -= 1; names.push(byId(used[ui]).name);
+          if (!s.cons[used[ui]]) { delete s.cons[used[ui]]; s.eq.uses = s.eq.uses.filter(function (x) { return x !== used[ui]; }); }
+        }
+      }
+      if (names.length) spent = names.join(", ");
+      if (g.scroll && run._scrollUsed && s.eq.scroll != null && s.scrolls[s.eq.scroll] && s.scrolls[s.eq.scroll].skill === g.scroll) { s.scrolls.splice(s.eq.scroll, 1); s.eq.scroll = null; spent = "the scroll"; }
       write();
     }
     return { loot: (run && run._loot) || [], spent: spent, kept: !!(g && g.scroll && !run._scrollUsed) };
@@ -138,8 +155,16 @@
       if (i >= 0) cur.splice(i, 1); else { if (cur.length >= slots()) cur.shift(); cur.push(id); }
       e.crest = cur;
     } else if (kind === "charm") e.charm = e.charm === id ? null : id;
-    else if (kind === "cons") { e.use = e.use === id ? null : id; if (e.use) e.scroll = null; }
-    else if (kind === "scroll") { e.scroll = e.scroll === id ? null : id; if (e.scroll != null) e.use = null; }
+    else if (kind === "cons") {
+      var lu = loadout().uses; i = lu.indexOf(id);
+      if (i >= 0) lu.splice(i, 1);
+      else { if (lu.length + (loadout().scroll ? 1 : 0) >= useSlots()) { if (lu.length) lu.shift(); else e.scroll = null; } lu.push(id); }
+      e.uses = lu; e.use = null;
+    }
+    else if (kind === "scroll") {
+      e.scroll = e.scroll === id ? null : id;
+      if (e.scroll != null) { var lu2 = loadout().uses; if (lu2.length >= useSlots()) lu2.shift(); e.uses = lu2; }
+    }
     write();
     if (D.profile && D.profile.touch) D.profile.touch();
   }
@@ -152,16 +177,17 @@
   function render(box) {
     var s = stash(), l = loadout(), L = cfg().list, h, i, it, n = slots(), any;
     h = "<div class='profile-box is-wide items-box'><button type='button' class='profile-x' id='items-x' aria-label='Close'>&times;</button>" +
-      "<h2>Items</h2><p class='profile-lead'>Rare drops you keep. Bosses drop Charms and one-run items, biome lords drop Crest Pieces, a beaten rival leaves a scroll.</p>" +
+      "<h2>Items</h2><p class='profile-lead'>Rare drops you keep. Bosses drop Charms and one-run items, biome lords drop Crest Pieces, a beaten rival leaves a scroll. One-run items also turn up by luck out on the map: from wild Digimon now and then, big ones more often, and spire chests.</p>" +
       "<div class='items-now'><b>This run:</b> " + (summary().length ? esc(summary().join("  ·  ")) : "nothing equipped") + "</div>" +
       "<h3>Digivice: Crest Pieces <small>" + l.crest.length + " / " + n + " slot" + (n > 1 ? "s" : "") + (n < 2 ? "  ·  the Lab's Digivice Port adds a second" : "") + "</small></h3><div class='item-grid'>";
     for (i = 0; i < L.length; i++) { it = L[i]; if (it.kind === "crest") h += card(it, !!s.gear[it.id], l.crest.indexOf(it.id) >= 0, 1, "crest", it.id); }
     h += "</div><h3>Partner: Charm <small>" + (l.charm ? 1 : 0) + " / 1 slot</small></h3><div class='item-grid'>";
     for (i = 0; i < L.length; i++) { it = L[i]; if (it.kind === "charm") h += card(it, !!s.gear[it.id], l.charm === it.id, 1, "charm", it.id); }
-    h += "</div><h3>One-run item <small>one per run, used up by it</small></h3><div class='item-grid'>";
-    for (i = 0; i < L.length; i++) { it = L[i]; if (it.kind === "cons") h += card(it, (s.cons[it.id] || 0) > 0, l.use === it.id, s.cons[it.id] || 0, "cons", it.id); }
+    var un = useSlots(), uu = l.uses.length + (l.scroll ? 1 : 0);
+    h += "</div><h3>One-run items <small>" + uu + " / " + un + " packed  \u00b7  each is used up by the run" + (un < (cfg().useSlotsMax || 4) ? "  \u00b7  the Lab's Kit Bag adds a fourth" : "") + "</small></h3><div class='item-grid'>";
+    for (i = 0; i < L.length; i++) { it = L[i]; if (it.kind === "cons") h += card(it, (s.cons[it.id] || 0) > 0, l.uses.indexOf(it.id) >= 0, s.cons[it.id] || 0, "cons", it.id); }
     for (i = 0; i < s.scrolls.length; i++) {
-      h += card({ name: "Scroll: " + skillName(s.scrolls[i].skill), rarity: "rare", text: "Learned from " + (s.scrolls[i].from || "a rival") + ". A partner whose line has this skill learns it at once; if none does, you keep the scroll." }, true, !l.use && s.eq.scroll === i, 1, "scroll", String(i));
+      h += card({ name: "Scroll: " + skillName(s.scrolls[i].skill), rarity: "rare", text: "Learned from " + (s.scrolls[i].from || "a rival") + ". A partner whose line has this skill learns it at once; if none does, you keep the scroll." }, true, s.eq.scroll === i, 1, "scroll", String(i));
     }
     h += "</div></div>";
     box.innerHTML = h;
@@ -193,6 +219,6 @@
     document.addEventListener("keydown", box._key, true);
   }
 
-  D.items = { byId: byId, stash: stash, slots: slots, loadout: loadout, fxOn: fxOn, farmBonus: farmBonus, summary: summary, count: count, pick: pick, give: give, giveScroll: giveScroll,
+  D.items = { byId: byId, stash: stash, slots: slots, useSlots: useSlots, loadout: loadout, fxOn: fxOn, farmBonus: farmBonus, summary: summary, count: count, pick: pick, give: give, giveScroll: giveScroll,
     onEvent: onEvent, endRun: endRun, equip: equip, open: open, skillName: skillName, _rnd: function (f) { rnd = f; } };
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));

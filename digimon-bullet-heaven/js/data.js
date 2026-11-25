@@ -10,7 +10,7 @@
     happinessMax: 100,
     startFullness: 72,
     startHappiness: 62,
-    fullnessDecayPerSec: 0.55, /* was 1.05: a full belly now lasts about three minutes of battle, not a minute and a half */
+    fullnessDecayPerSec: 0.2,  /* 17z33: was 0.55 (1.05 before that): feeding is at the farm now, so a full belly lasts about eight minutes */
     lowFullnessThreshold: 22,
     lowFullnessHappinessDecay: 1.4,
     starveHappinessDecayPerSec: 3.2,
@@ -27,8 +27,21 @@
     killStreakEvery: 5,
     killStreakHappiness: 5,
     heavyHitRatio: 0.16,
-    heavyHitHappinessLoss: 8,
-    hitHappinessLoss: 1.2,
+    heavyHitHappinessLoss: 4,      /* 17z33: was 8 and 1.2 a hit: every scratch drained it, so only food ever raised it */
+    hitHappinessLoss: 0.35,
+    /* 17z33: hunger and happiness, each its own thing.
+     * Hunger is a need: under hungryAt a food bubble shows over the partner; at starveAt or below it's
+     * starving: slower (starveSpeed), weaker (starveDamage), and unhappy (starveJoyPerSec).
+     * Happiness is how you treat it: fights won together (kill streaks), bosses (bossJoy), level ups
+     * (levelJoy), its favourite food (favJoy), a rest somewhere quiet (restJoyPerSec, up to restJoyCap,
+     * no wild Digimon within restQuiet px); it drops when it starves, faints (faintJoy), is hit hard.
+     * A full partner (fullRefuse) won't eat more. */
+    hungryAt: 35, starveAt: 10, starveSpeed: 0.8, starveDamage: 0.85, starveJoyPerSec: 0.8,
+    restJoyPerSec: 0.9, restJoyCap: 85, restQuiet: 320, restAfter: 2.5,
+    bossJoy: 8, levelJoy: 3, faintJoy: -12, favJoy: 12, fullRefuse: 96,
+    /* 17z33: a meal fills a set share of the belly: its favourite a third, ordinary food a quarter, food it
+     * dislikes a sixth (and makes it a bit grumpy). You carry at most bagMax pieces of food. */
+    fill: { fav: 33, normal: 25, dislike: 17 }, dislikeJoy: -3, bagMax: 10,
     desperationHpRatio: 0.25,
     desperationDamageOut: 1.55,
     desperationSpeed: 1.28,
@@ -52,18 +65,63 @@
 
   /* Pickup food. Enemies drop these in battle; they go to the bag and are fed at the farm. */
   var FOOD = {
-    meat:  { id: "meat",  name: "Meat",  group: "meat",  fullness: 30, happiness: 10, color: "#e85a4a", dropWeight: 1.0 },
-    fish:  { id: "fish",  name: "Fish",  group: "meat",  fullness: 18, happiness: 18, color: "#4ec8e0", dropWeight: 0.7 },
-    berry: { id: "berry", name: "Berry", group: "fruit", fullness: 10, happiness: 24, color: "#e060b0", dropWeight: 0.55 },
-    /* Garden vegetables: grown at the Digi Farm, never dropped. */
-    carrot:   { id: "carrot",   name: "Carrot",   group: "veg", fullness: 14, happiness: 14, hpHeal: 0.06, color: "#f08a28", veg: true },
-    cucumber: { id: "cucumber", name: "Cucumber", group: "veg", fullness: 12, happiness: 16, hpHeal: 0.06, color: "#5cb848", veg: true },
-    tomato:   { id: "tomato",   name: "Tomato",   group: "veg", fullness: 14, happiness: 18, hpHeal: 0.08, color: "#e83a30", veg: true },
-    corn:     { id: "corn",     name: "Corn",     group: "veg", fullness: 20, happiness: 14, hpHeal: 0.08, color: "#f4d040", veg: true },
-    cabbage:  { id: "cabbage",  name: "Cabbage",  group: "veg", fullness: 22, happiness: 12, hpHeal: 0.10, color: "#9ad860", veg: true },
-    potato:   { id: "potato",   name: "Potato",   group: "veg", fullness: 28, happiness: 10, hpHeal: 0.12, color: "#c8a060", veg: true }
+    /* 17z33: food fills first; only sweets (berries) are mostly about happiness. Its favourite (favouriteFood) adds CARE.favJoy */
+    meat:  { id: "meat",  name: "Meat",  group: "meat",  fullness: 32, happiness: 2, color: "#e85a4a", dropWeight: 1.0, desc: "Filling. Feed it at the farm" },
+    fish:  { id: "fish",  name: "Fish",  group: "meat",  fullness: 24, happiness: 5, color: "#4ec8e0", dropWeight: 0.7, desc: "Fills it up a fair bit. Feed it at the farm" },
+    berry: { id: "berry", name: "Berry", group: "fruit", fullness: 8, happiness: 16, color: "#e060b0", dropWeight: 0.55, desc: "A sweet treat: more happiness than filling. Feed it at the farm" },
+    /* Garden vegetables: grown at the Digi Farm, never dropped. 17z33: no healing any more; each one is the
+     * only way to get its own lasting boost for the run (vegBoosts): `per` a meal, counted up to VEG_MAX meals
+     * of that vegetable. The slow crops give more. */
+    carrot:   { id: "carrot",   name: "Carrot",   group: "veg", fullness: 16, happiness: 4, color: "#f08a28", veg: true, stat: "speed",  per: 0.015, desc: "+1.5% partner speed for the run" },
+    cucumber: { id: "cucumber", name: "Cucumber", group: "veg", fullness: 14, happiness: 5, color: "#5cb848", veg: true, stat: "rate",   per: 0.015, desc: "+1.5% attack rate for the run" },
+    tomato:   { id: "tomato",   name: "Tomato",   group: "veg", fullness: 16, happiness: 6, color: "#e83a30", veg: true, stat: "damage", per: 0.02,  desc: "+2% damage for the run" },
+    corn:     { id: "corn",     name: "Corn",     group: "veg", fullness: 22, happiness: 4, color: "#f4d040", veg: true, stat: "magnet", per: 0.04,  desc: "+4% pickup range for the run" },
+    cabbage:  { id: "cabbage",  name: "Cabbage",  group: "veg", fullness: 24, happiness: 3, color: "#9ad860", veg: true, stat: "guard",  per: 0.025, desc: "+2.5% defence (takes less damage) for the run" },
+    potato:   { id: "potato",   name: "Potato",   group: "veg", fullness: 30, happiness: 2, color: "#c8a060", veg: true, stat: "hp",     per: 0.03,  desc: "+3% max health for the run" },
+    /* Rare foods (17z33): only spire chests hold them (TERRAIN.spire.chests). They don't count toward the
+     * bag's food limit, are fed at the farm like any meal, and each does something special
+     * (net/progression.js _rareEat). Taste doesn't matter to them. */
+    sweet_nut:     { id: "sweet_nut",     name: "Sweet Nut",     group: "rare", rare: true, fullness: 10, happiness: 30, color: "#ffcf5a", desc: "A big happiness boost" },
+    protein_steak: { id: "protein_steak", name: "Protein Steak", group: "rare", rare: true, fullness: 25, happiness: 4, color: "#ff6a5a", desc: "Its next training session counts double", trainMul: 2 },
+    golden_meat:   { id: "golden_meat",   name: "Golden Meat",   group: "rare", rare: true, fullness: 100, happiness: 12, color: "#ffd84a", desc: "Fills it right up, and it loves it whatever its taste", fav: true },
+    digi_seed:     { id: "digi_seed",     name: "Digi-Seed",     group: "rare", rare: true, fullness: 8, happiness: 4, color: "#3ad8a8", desc: "A lasting boost to one random training stat", statUp: 14 },
+    evo_fruit:     { id: "evo_fruit",     name: "Evo Fruit",     group: "rare", rare: true, fullness: 12, happiness: 6, color: "#c080ff", desc: "Its next digivolution may take a rare route", evoChance: 0.6 },
+    moldy_meat:    { id: "moldy_meat",    name: "Moldy Meat",    group: "rare", rare: true, fullness: 15, happiness: -10, color: "#9ab060", desc: "3 care mistakes: a shortcut toward dark forms", mistakes: 3 }
   };
 
+  /* the garden's lasting boosts (17z33): from how many of each vegetable it has eaten this run */
+  var VEG_MAX = 10;
+  function vegBoosts(counts) {
+    var out = { speed: 0, rate: 0, damage: 0, magnet: 0, guard: 0, hp: 0, key: "" }, k, d, n;
+    for (k in FOOD) {
+      d = FOOD[k]; if (!d.veg || !d.stat) continue;
+      n = Math.min(VEG_MAX, (counts && counts[k]) || 0);
+      if (n) { out[d.stat] += d.per * n; out.key += k.charAt(0) + n; }
+    }
+    return out;
+  }
+  /* 17z33: the three speeds. The partner's run speed: + trackPer for each point of the track's Agility
+   * training, up to trackMax. The tamer's: Sprint Boots from Jijimon's stall, + per a level, max levels. */
+  var SPEEDS = { trackPer: 0.005, trackMax: 0.6, boots: { per: 0.06, max: 5 } };
+  var RARE_FOODS = Object.keys(FOOD).filter(function (k) { return FOOD[k].rare; });   /* spire chest foods, in FOOD order */
+  /* each Digimon's favourite food (17z33): meat, fish, berries or anything from the garden. It goes with
+   * the form, so tastes can change when it digivolves. */
+  var FAV_KINDS = ["meat", "fish", "berry", "veg"];
+  function favouriteFood(form) {
+    var x = 0x811c9dc5, i, t = String(form || "");
+    for (i = 0; i < t.length; i++) { x ^= t.charCodeAt(i); x = Math.imul(x, 16777619) >>> 0; }
+    return FAV_KINDS[x % FAV_KINDS.length];
+  }
+  /* ...and a food it dislikes (17z33): never the same as its favourite */
+  function dislikedFood(form) {
+    var x = 0x9e3779b9, i, t = "dis:" + String(form || ""), f = favouriteFood(form), k;
+    for (i = 0; i < t.length; i++) { x ^= t.charCodeAt(i); x = Math.imul(x, 16777619) >>> 0; }
+    k = FAV_KINDS[x % FAV_KINDS.length];
+    return k === f ? FAV_KINDS[(x + 1) % FAV_KINDS.length] : k;
+  }
+  function isDisliked(form, kind) { var f = dislikedFood(form), d = FOOD[kind]; if (d && d.rare) return false; return !!d && (f === kind || (f === "veg" && !!d.veg)); }
+  function foodFill(form, kind) { var F = CARE.fill || {}; if (FOOD[kind] && FOOD[kind].rare) return FOOD[kind].fullness; return isFavourite(form, kind) ? (F.fav || 33) : (isDisliked(form, kind) ? (F.dislike || 17) : (F.normal || 25)); }
+  function isFavourite(form, kind) { var f = favouriteFood(form), d = FOOD[kind]; if (d && d.rare) return !!d.fav; return !!d && (f === kind || (f === "veg" && !!d.veg)); }
   /* Crops. growSec is battle time (farm visits and brawls do not count),
    * so quick crops are ready by the next visit and slow ones take several.
    * Seeds drop from enemies by seedWeight; rarer seeds grow slower. */
@@ -112,12 +170,12 @@
 
   /* A diet is balanced when meat/fish and vegetables are both at least
    * `minShare` of the meals that count (after `minMeals`). */
-  var DIET = { minMeals: 4, minShare: 0.3, joyBonus: 0.5, hpHealBonus: 0.08 };
+  var DIET = { minMeals: 4, minShare: 0.3, joyBonus: 0.5 };
   function dietOf(counts) {
     counts = counts || {};
     var meat = 0, veg = 0, fruit = 0, k, g;
     for (k in counts) {
-      if (!Object.prototype.hasOwnProperty.call(counts, k) || !FOOD[k]) continue;
+      if (!Object.prototype.hasOwnProperty.call(counts, k) || !FOOD[k] || FOOD[k].rare) continue;
       g = FOOD[k].group;
       if (g === "meat") meat += counts[k];
       else if (g === "veg") veg += counts[k];
@@ -185,10 +243,12 @@
     }
   };
 
-  /* Shinies: every digivolution (never the hatch) has this chance of turning
+  /* Shinies: every digivolution (and, since 17z33, the hatch) has this chance of turning
    * the partner shiny. Once shiny it stays shiny through every later form.
    * The colours are worked out per Digimon in sprites.js (shinyCanvas). */
-  var SHINY = { chance: 0.001 };
+  /* 17z33: hatching can come out shiny too (same chance). A shiny is stronger in everything (damage,
+   * health, speed, attack rate): evoBoost when it turned shiny digivolving, hatchBoost when it hatched shiny. */
+  var SHINY = { chance: 0.001, evoBoost: 0.025, hatchBoost: 0.05, guardSec: 3.2 };   /* guardSec: the shiny moment, nothing can hurt you */
 
   /* Regional Digimon: each biome is home to certain kinds (biomes.js
    * homeOf). This share of ordinary spawns, Baby swarms and idle packs is
@@ -255,6 +315,19 @@
     spire: {
       hpMul: 0.75, dmgMul: 1, size: 1.15,      /* against a normal boss of the same moment */
       bits: 25, xpOrbs: 6,
+      /* 17z33: breaking one is a gamble (net/spire-sim.js). The hidden roll: a swarm of In-Training ones
+       * (smallCount), a pack of In-Training ones led by Rookies (mixedCount + mixedLeaders), or, after a
+       * rumbleSec warning, the evil mini boss below (bigSpeed: it hunts you down). Beat all of it for a chest. */
+      roll: { small: 0.7, mixed: 0.2, big: 0.1 }, smallCount: [5, 6], mixedCount: [3, 3], mixedLeaders: [1, 2],
+      rumbleSec: 1.6, bigSpeed: 1.15, forgetSec: 420,
+      /* each chest: Bits, a chunk of Hatchery data of one random element, and one rare food picked by weight
+       * (loot). The better the chest, the better the odds of the good ones. Moldy Meat can be in any of them. */
+      chests: {
+        bronze: { bits: [20, 40], data: 40, loot: { sweet_nut: 45, protein_steak: 33, moldy_meat: 14, golden_meat: 8 } },
+        silver: { bits: [60, 100], data: 75, loot: { protein_steak: 28, golden_meat: 24, digi_seed: 24, sweet_nut: 8, moldy_meat: 11, evo_fruit: 5 } },
+        gold: { bits: [160, 260], data: 250, loot: { digi_seed: 28, golden_meat: 24, evo_fruit: 20, moldy_meat: 15, protein_steak: 13 } }
+      },
+      dataTypes: ["fire", "ice", "water", "dark", "holy", "machine", "nature", "slime", "wind", "beast"],
       /* who comes out, by year: the first of these the game knows, picked by the spire's place */
       evil: [["devimon", "bakemon", "devidramon", "dokugumon", "vilemon", "skullknightmon", "madleomon"],
              ["myotismon", "ladydevimon", "phantomon", "kimeramon", "okuwamon", "megadramon", "warumonzaemon"],
@@ -417,6 +490,10 @@
    * Never empty: a nest below lowAt breeds lowMul times as fast; and when fewer than wanderMin wild
    * Digimon are within wanderNear of a tamer, a small wandering herd of the local biome drifts in from
    * off-screen every wanderEvery seconds. */
+  /* Wild Digimon far from everyone are updated one tick in `every`, catching up the time they missed
+   * (mission-sim.js _updateEnemies, 17z33); `far` is about twice what any screen shows */
+  var SIM_LOD = { far: 2600, every: 4 };
+
   var LEVELS = {
     band: { "Baby I": [1, 4], "Baby II (In-Training)": [3, 8], "Child (Rookie)": [7, 15], "Adult (Champion)": [14, 24], "Armor": [16, 24],
       "Perfect (Ultimate)": [22, 32], "Ultimate (Mega)": [30, 42], "Ultimate (Mega+)": [40, 50] },
@@ -444,14 +521,131 @@
    *   BOUNTY       streak PvP wins in a row without losing puts base Bits on your head, +per for each more.
    *   MODES.score  how a run is scored for the boards (modes-sim.js _score). */
   var MODES = {
+    /* 17z33: four modes on the main menu (MODES.main). Survival is the whole open world, with four
+     * sets of rules under it (group "survival"); Story, Night Siege and Versus are their own. */
     list: [
-      { id: "open", name: "Open World", short: "Respawn", blurb: "Your partner falls? It starts over as an egg near the start. Same map, same tamer, keep your base level." },
-      { id: "survival", name: "Survival", short: "One life", blurb: "One life. When your partner falls, the run is over." },
-      { id: "ranked", name: "Ranked", short: "Hardcore", blurb: "One life, no CPU partners, scored for the Ranked board.", ranked: true },
-      { id: "weekly", name: "Weekly Map", short: "This week", blurb: "One life on this week's map: the same world for everyone. Scored for the Weekly board.", ranked: true }
+      { id: "story", group: "story", name: "Story", short: "Learn with Jijimon", blurb: "Jijimon gives you one goal at a time and the rest of the game opens up as you go. Solo or with friends: the party shares the goals." },
+      { id: "open", group: "survival", name: "Open World", short: "Respawn", blurb: "Your partner falls? It starts over as an egg near the start. Same map, same tamer, keep your base level." },
+      { id: "survival", group: "survival", name: "One Life", short: "One life", blurb: "One life. When your partner falls, the run is over." },
+      { id: "ranked", group: "survival", name: "Ranked", short: "Hardcore", blurb: "One life, no CPU partners, scored for the Ranked board.", ranked: true },
+      { id: "weekly", group: "survival", name: "Weekly Map", short: "This week", blurb: "One life on this week's map: the same world for everyone. Scored for the Weekly board.", ranked: true },
+      { id: "siege", group: "siege", name: "Night Siege", short: "One life", blurb: "Level up and stock up by day. At night wave after wave comes for you: hold out till dawn, then do it again. One life." },
+      { id: "versus", group: "versus", name: "Versus", short: "Race", online: true, blurb: "Seven minutes to race to Mega, each on your own side of the map, starting as a Rookie. Then everyone is pulled into an arena: best of three." },
+      /* (17z33, Isaac) a straight duel: your Hatchery Digimon as it is, thrown straight into the arena; nothing is
+       * lost (it isn't spent, nothing it has changes) and nothing is levelled */
+      { id: "duel", group: "versus", name: "Duel", short: "Duel", online: true, blurb: "Straight into the arena with your Hatchery Digimon as it is, bloodline and all: no levelling, nothing to lose. Best of three." }
+    ],
+    main: [
+      { id: "story", name: "Story", tag: "Solo or co-op", blurb: "New to Digi Night? Jijimon walks you through it, one goal at a time." },
+      { id: "survival", name: "Survival", tag: "Solo or co-op", blurb: "Everything on: turf wars, PvP, rivals, world events. Last as many seasons as you can." },
+      { id: "siege", name: "Night Siege", tag: "Solo or co-op", blurb: "Grow by day. Hold out against the waves by night. One life." },
+      { id: "versus", name: "Versus", tag: "Online only", blurb: "Race to Mega, then fight a real player. Or duel straight away with your Hatchery Digimon. Best of three." }
     ],
     score: { perMinute: 10, perLevel: 25, perKill: 1, perLord: 300, perBoss: 60, perPvp: 150, mega: 2000, megaMin: 500, megaLatePerMin: 15 }
   };
+  /* Night Siege (17z33, net/siege-sim.js). Nights follow the day clock (seasons.js, 243 s a day):
+   * waves from `startAt` of the day (dusk) till `endAt` (dawn). Every waveEvery seconds a ring of
+   * attackers comes for each tamer: base + perNight a night (+ perPlayer for each extra tamer),
+   * from stages by night; a boss with them every bossEvery nights. Surviving a night pays everyone
+   * dawnXp of a level and bits. One life. */
+  var SIEGE = { dayLen: 182,          /* a Night Siege day: 25% shorter than the rest (243 s), so day and night are both quicker */
+    startAt: 0.6, endAt: 0.965, warnAt: 0.52, waveEvery: 5, base: 3, perNight: 1.5, max: 14, ring: [560, 720], cap: 70,
+    /* more tamers, more and tougher attackers (17z33, Isaac): for each tamer past the first, `more` x as many in a
+     * wave (and the wave's top and the cap on how many are out grow with it) and `hp` x the health of each
+     * ordinary attacker. Bosses have their own (boss.perPlayer). */
+    perPlayer: { more: 0.4, hp: 0.2 },
+    stages: [["Baby", "In-Training"], ["In-Training", "Rookie"], ["Rookie"], ["Rookie", "Champion"], ["Champion"], ["Champion", "Ultimate"], ["Ultimate"], ["Ultimate", "Mega"]],
+    bossEvery: 3, dawnXp: 0.35, dawnBits: 40,
+    /* Primary Village (17z33): a nest of Digi-eggs to defend, a little below where the run starts. The
+     * attackers come in round the nest and go for the eggs, unless a tamer or partner is within `aggro`
+     * (about a third of a screen): then they turn on them, and only go back to the eggs once everyone is
+     * past `release`. They never try to go round you. A smashed egg stays smashed; a cracked one mends
+     * at dawn. All of them smashed: the run is over. */
+    nest: { eggs: 5, ring: 40, offset: 110, eggR: 13, hp: 300, aggro: 420, release: 520, biteMul: 1,
+      /* each egg is one of these Babies' eggs; one that has seen `hatchAfter` dawns unbroken hatches (one a
+       * dawn, while fewer than `helpers` hatchlings are up) into that Baby, which fights at your side, and a
+       * fresh egg takes its place. Hatchlings come out tougher on later nights. */
+      kinds: ["poyomon", "pichimon", "yuramon", "zerimon", "leafmon", "chibomon", "pabumon", "jyarimon"],
+      hatchAfter: 3, helpers: 3, helperHpPerNight: 0.6,
+      hpPerNight: 0.3,          /* the eggs toughen as the nights do: +30% of hp for every night held */
+      /* by day, at the nest: rebuild a smashed egg for repairCost + repairPerNight x nights held */
+      repairCost: 60, repairPerNight: 20, repairReach: 130,
+      /* from raidFrom night on, about raidChance of the attackers ignore you and go straight for the eggs */
+      raidFrom: 2, raidChance: 0.2 },
+    /* fences round the nest (17z33): spots on a ring; by day, hold E at an empty or broken one to put up a piece
+     * for `wood` wood and `coins` DigiCoins. An attacker outside the ring that wants in (for an egg, or for you
+     * inside) has to break the piece in its way; gaps let them through. Pieces mend at dawn and toughen each
+     * night held; a broken one has to be rebuilt. Wood drops only in Night Siege: woodChance of kills (a raider
+     * more often, a boss always, woodBoss of it), and there's no limit on how much you carry. */
+    fence: { spots: 12, rx: 124, ry: 92, hp: 220, hpPerNight: 0.3, wood: 3, coins: 10, reach: 60, hold: 0.8,
+      woodChance: 0.15, woodRaider: 0.35, woodBoss: 6 },
+    /* special nights (17z33). Night Siege never ends: no last night, no win, the nights keep coming till the
+     * eggs are gone or your partner falls. From night `from`, every `every` nights is a special one, in
+     * `order`, round and round, each lap (`lap` = once through the order) a little nastier:
+     *  swarm:  `count` x as many, from a stage lower, `hp` x health, `spd` x speed (more each lap)
+     *  flyer:  only flying Digimon (fall back to any if a stage has none); they fly over rivers, cliffs and fences
+     *  giant:  one giant boss `hp` x a boss's health (+hpPerLap a lap), `scale` x as big, with `guards` x the usual
+     *          wave; it comes in at `at` of the night (no ordinary boss that night)
+     *  raider: `chance` of them are raiders (straight for the eggs, never you)
+     * After the last stage (stages.length nights) the nights keep climbing: endless.hp / dmg more per night
+     * past it, and endless.more more attackers a wave (up to endless.max). */
+    nights: { from: 2, every: 2, order: ["swarm", "flyer", "giant", "raider"],
+      swarm: { count: 2.2, countPerLap: 0.4, hp: 0.55, spd: 1.3, back: 1 },
+      flyer: { count: 1 },
+      giant: { hp: 1.6, hpPerLap: 0.4, scale: 2, guards: 0.5, at: 0.15 },
+      raider: { chance: 0.85 } },
+    endless: { hp: 0.15, dmg: 0.06, more: 0.5, max: 24 },
+    /* (17z33, Isaac, measured with scripts/siege-boss-bench.js) a Siege boss's health is its own, not the open
+     * world's (which grows with run time into the millions): `hp` on night `from`, x perNight every night after,
+     * about 50 s for a partner built for that night. A giant is nights.giant.hp of that (+hpPerLap a lap). A boss
+     * doesn't leave at dawn: it stays, day and all, till it's beaten. Players get more players' worth: x (1 +
+     * perPlayer) for each tamer past the first. */
+    boss: { hp: 6000, from: 3, perNight: 1.3, perPlayer: 0.6 } };
+  /* Versus (17z33, net/versus-sim.js): a race of `race` seconds, each tamer on their own side of the
+   * map (spread from the middle); caches of XP every cacheEvery seconds and mini bosses at bossAt in
+   * the middle; then the showdown, best of toWin rounds, in an arena in the middle. */
+  /* Bloodlines (17z33, Isaac): the Hatchery's Digimon are one line, parent to child, one at a time. When the one
+   * you took into a run reaches Mega (`mega` traits) or has a great run (`great`: reached Ultimate, lasted
+   * `seconds`, held `nights` in Night Siege, or finished Story), the line earns a trait, and every egg after
+   * carries all of them. Each trait has levels (`max`), and the line holds `cap` levels in all. Per level:
+   * a stat +`stat` (STR, AGI, VIT, INT, DEX or LUK, mostly the one its element favours), Power +`power` damage,
+   * Quick Study +`learn` XP, Head Start +`skill` skill point at the start, Lucky Scales x(1 + `shiny`) shiny chance.
+   * js/hatchery.js keeps the line and its family tree; the sim reads p.blood (mission-sim.js, progression.js). */
+  /* When the Hatchery Digimon falls in its run (Isaac): after reaching Mega it's a valorous death, reborn into the
+   * line, which carries on and earns as usual; as an Ultimate the line loses `lose.Ultimate` trait levels, as a
+   * Champion (or Armor) `lose.Champion`, and nothing is earned; as a Rookie or younger the whole bloodline is
+   * erased and starts again. A run it survives earns as above. */
+  var BLOODLINE = { mega: 2, great: 1, seconds: 1200, nights: 6, max: 5, cap: 16, stat: 2, power: 0.04, learn: 0.06, skill: 1, shiny: 0.5,
+    lose: { Ultimate: 1, Champion: 3, Armor: 3 }, slots: 3,
+    names: { str: "STR", agi: "AGI", vit: "VIT", int: "INT", dex: "DEX", luk: "LUK", power: "Power", learn: "Quick Study", skill: "Head Start", shiny: "Lucky Scales" },
+    weights: { fav: 40, second: 15, power: 15, learn: 10, skill: 10, shiny: 10 } };
+  /* Expeditions (17z33, Isaac): while you play a run without it, the Hatchery Digimon on the stand (hatched, not
+   * taken in) goes exploring, and comes back when the run ends (one of at least `minSec`) with what it found,
+   * for each minute out (up to `capMin`): `data` of its own element and `coins` DigiCoins, x its stage
+   * (stageMul: Baby, In-Training, Rookie, Champion) and x (1 + genBonus a bloodline generation, up to genMax);
+   * an item at itemPer a minute (up to itemMax); a map to a rare egg at eggPer a minute (up to eggMax): the next
+   * new egg is Rare or better. Nothing for a Duel, and nothing if it was the one you took in. */
+  var EXPEDITION = { minSec: 60, capMin: 30, data: 4, coins: 3, stageMul: [0.5, 0.75, 1, 1.4], genBonus: 0.05, genMax: 0.5,
+    itemPer: 0.03, itemMax: 0.5, eggPer: 0.012, eggMax: 0.3,
+    /* with more than one hatched in the Hatchery (17z33: three slots) they go out together: the best one's finds,
+     * +team for each other one, the data shared out over their elements */
+    team: 0.15 };
+  var VERSUS = { race: 420, spread: 1900, cacheEvery: 60, cacheOrbs: 9, cacheLv: 0.14, bossAt: [105, 210, 315], toWin: 2, countdown: 3, between: 3, roundSec: 75, arena: 650, clear: 1300, reviveSec: 6, reviveHp: 0.6,
+    /* (17z33, Isaac) a 7-minute race where Mega is in reach. Everyone starts as a Rookie: Agumon, Gabumon or Veemon,
+     * or any Rookie they've raised (vs-rookie.js). XP and level-ups are as usual; what's different is digivolving:
+     * a DIGIVOLVE meter (meter points a stage) fills, and once it's full and the partner is at least the stage's
+     * level in `evoLv`, it digivolves at once along its line's standard route, up to Mega. Kills fill it a little
+     * (meterKill, meterElite, meterBoss); the middle fills it a lot: a cache drops `cacheMeter` orbs of
+     * cacheMeterVal; a mini boss pays bossMeter[n] split by the damage each partner did to it (criticals and type
+     * advantage count, so the right element can beat a bigger partner to it). Whoever is clearly ahead (leadBy
+     * meter points, counting a stage as `meter`) gets leadMul of what the middle pays. */
+    start: ["agumon", "gabumon", "veemon"],
+    meter: 100, evoLv: { Rookie: 4, Champion: 7, Armor: 7, Ultimate: 10 },
+    meterKill: 1, meterElite: 3, meterBoss: 8,
+    cacheMeter: 6, cacheMeterVal: 5, bossMeter: [60, 60, 80], leadBy: 25, leadMul: 0.75,
+    /* Duel (MODES "duel"): no race; each tamer's partner is their Hatchery Digimon as it is (form, its stage's
+     * job level, its bloodline), or `fallback` at `fallbackLevel` for someone with nothing hatched yet */
+    duel: { fallback: "agumon", fallbackLevel: 8 } };
   var RESPAWN = { hatchSec: 8, near: [250, 520], shield: 10, zone: { cradle: 1300, baby: 2200, rookie: 4500 }, catchUp: 1.75, catchUpGap: 2,
     startLv: 3, startHp: 1, startHerd: 2, freshSec: 30 };   /* in the Baby zone: wild levels capped at startLv, no LEVELS toughening, herds of
                                                              startHerd (+1 from a nest); a partner beaten within freshSec of hatching makes no nemesis */   /* in the Baby zone: wild levels capped at startLv, no LEVELS toughening (playtest, Nov 20) */
@@ -515,14 +709,14 @@
    *              are paid; it comes back healed, no weaker, and keeps growing
    */
   /* Tamer Rank: the one thing a run always leaves behind. Rank XP is paid when a
-   * run ends, to the profile; ranks never reset. Every rank pays DigiBits and
+   * run ends, to the profile; ranks never reset. Every rank pays DigiCoins and
    * the milestone ranks open a title in the Cabinet. */
   var RANK = {
     max: 50,
     need: { base: 120, step: 45 },          // XP from rank r to r+1 = base + step * (r - 1)
-    pay: { perMinute: 10, perKill: 0.25, boss: 30, rivalWin: 40,
+    pay: { perMinute: 10, perKill: 0.25, boss: 30, rivalWin: 40, turfWar: 200, turfUnderdog: 150,
       stage: { "Baby": 0, "In-Training": 15, "Rookie": 50, "Champion": 120, "Armor": 120, "Hybrid": 120, "Ultimate": 260, "Mega": 500, "Mega+": 650 } },
-    bits: { base: 15, perRank: 5 },         // DigiBits paid on reaching rank r
+    bits: { base: 15, perRank: 5 },         // DigiCoins paid on reaching rank r
     titles: [
       { rank: 3, id: "title-rank-3", name: "Field Runner" },
       { rank: 5, id: "title-rank-5", name: "Digidestined" },
@@ -535,11 +729,11 @@
     ]
   };
 
-  /* The Lab: DigiBits buy small permanent boosts. Small on purpose: a maxed Lab
+  /* The Lab: DigiCoins buy small permanent boosts. Small on purpose: a maxed Lab
    * helps, it does not carry a bad build. `per` is the gain per level. */
   var LAB = {
-    cost: [25, 50, 90, 140, 200],          // DigiBits for level 1..5 of any upgrade
-    runBitsPer: 8,                          // a finished run pays 1 DigiBit per this much rank XP
+    cost: [25, 50, 90, 140, 200],          // DigiCoins for level 1..5 of any upgrade
+    runBitsPer: 8,                          // a finished run pays 1 DigiCoin per this much rank XP
     list: [
       { id: "vital",  name: "Vital Data",  stat: "hp",     per: 0.02,  unit: "%", text: "Partner max health" },
       { id: "power",  name: "Battle Data", stat: "dmg",    per: 0.015, unit: "%", text: "Damage from every move" },
@@ -554,7 +748,11 @@
       { id: "thumb",  name: "Green Thumb", stat: "crop",   per: 0.04,  unit: "%", text: "Crops grow faster" },
       { id: "belly",  name: "Full Belly",  stat: "belly",  per: 0.03,  unit: "%", text: "Fullness lasts longer" },
       /* one level only, its own price: a second Crest slot (see ITEMS) */
-      { id: "port",   name: "Digivice Port", stat: "slot", per: 1,     unit: "slot", text: "A second Crest slot in your Digivice", max: 1, costs: [300] }
+      { id: "port",   name: "Digivice Port", stat: "slot", per: 1,     unit: "slot", text: "A second Crest slot in your Digivice", max: 1, costs: [300] },
+      /* 17z33: a fourth one-run item */
+      { id: "kit",    name: "Kit Bag",       stat: "useslot", per: 1,  unit: "slot", text: "Take a fourth one-run item into a run", max: 1, costs: [260] },
+      /* 17z33 (Isaac): a big saving goal, +1 only: one more equipped move at every stage (skill-tree.js EQUIP) */
+      { id: "moveslot", name: "Move Slot",   stat: "moveslot", per: 1, unit: "move", text: "One more equipped move at every stage (3 as a Baby, 4 as a Rookie, 5 from Champion)", max: 1, costs: [1500] }
     ]
   };
 
@@ -566,8 +764,12 @@
    * A beaten rival also leaves a scroll of one of its skills (kept as { skill } in the stash).
    * `fx` is what it does: mission-sim.js _gear reads the numbers, game.js the screen-side ones. */
   var ITEMS = {
-    drop: { boss: 1 / 3, bossCharm: 0.6, lord: 0.5, rivalCons: 1 / 3, rarity: { common: 0.75, rare: 0.21, prismatic: 0.04 } },
-    dupeBits: { common: 15, rare: 40, prismatic: 120 },      // gear you already own turns into DigiBits
+    /* 17z33: one-run items also turn up by luck out on the map: field (any wild Digimon you beat), elite
+     * (a big or elite one), and in spire chests by tier */
+    drop: { boss: 1 / 3, bossCharm: 0.6, lord: 0.5, rivalCons: 1 / 3, rarity: { common: 0.75, rare: 0.21, prismatic: 0.04 },
+      field: 0.004, elite: 0.04, chest: { bronze: 0.08, silver: 0.18, gold: 0.4 } },
+    useSlots: 3, useSlotsMax: 4,                               // one-run items a run can take; the Lab's Kit Bag adds one
+    dupeBits: { common: 15, rare: 40, prismatic: 120 },      // gear you already own turns into DigiCoins
     maxStack: 9, maxScrolls: 12,
     list: [
       { id: "c_weather", kind: "crest", rarity: "common", name: "Weather Eye", text: "A minute's warning before storms, meteor showers and eclipses.", fx: { weather: 1 } },
@@ -595,7 +797,19 @@
       { id: "u_protein", kind: "cons", rarity: "common", name: "Protein", text: "Your partner hatches at job level 3, with two skill points to spend.", fx: { level: 3 } },
       { id: "u_lucky", kind: "cons", rarity: "rare", name: "Lucky Charm", text: "The first digivolution this run is 20 times likelier to turn shiny.", fx: { luckyShiny: 20 } },
       { id: "u_bait", kind: "cons", rarity: "rare", name: "Rival Bait", text: "The rival hunts you from the moment it arrives. Beating it pays double and always drops something.", fx: { bait: 1 } },
-      { id: "u_wind", kind: "cons", rarity: "prismatic", name: "Second Wind", text: "Once this run, a blow that would finish your partner leaves it on half health instead.", fx: { wind: 1 } }
+      { id: "u_wind", kind: "cons", rarity: "prismatic", name: "Second Wind", text: "Once this run, a blow that would finish your partner leaves it on half health instead.", fx: { wind: 1 } },
+      /* 17z33: small head starts */
+      { id: "u_str", kind: "cons", rarity: "common", name: "Power Seed", text: "Start the run with +3 STR.", fx: { attr: { str: 3 } } },
+      { id: "u_agi", kind: "cons", rarity: "common", name: "Swift Seed", text: "Start the run with +3 AGI.", fx: { attr: { agi: 3 } } },
+      { id: "u_vit", kind: "cons", rarity: "common", name: "Hardy Seed", text: "Start the run with +3 VIT.", fx: { attr: { vit: 3 } } },
+      { id: "u_int", kind: "cons", rarity: "common", name: "Wise Seed", text: "Start the run with +3 INT.", fx: { attr: { int: 3 } } },
+      { id: "u_dex", kind: "cons", rarity: "common", name: "Keen Seed", text: "Start the run with +3 DEX.", fx: { attr: { dex: 3 } } },
+      { id: "u_luk", kind: "cons", rarity: "common", name: "Clover Seed", text: "Start the run with +3 LUK.", fx: { attr: { luk: 3 } } },
+      { id: "u_bits", kind: "cons", rarity: "common", name: "Bit Pouch", text: "Start the run with 50 Bits.", fx: { bits: 50 } },
+      { id: "u_lunch", kind: "cons", rarity: "common", name: "Lunchbox", text: "Start the run with a full belly and 3 meat in the bag.", fx: { belly: 3 } },
+      { id: "u_tonic", kind: "cons", rarity: "common", name: "Sprout Tonic", text: "Crops grow 30% faster this run.", fx: { crop: 1.3 } },
+      { id: "u_egg", kind: "cons", rarity: "rare", name: "Lucky Egg", text: "+10% job XP this run.", fx: { xp: 1.1 } },
+      { id: "u_shiny", kind: "cons", rarity: "rare", name: "Shiny Charm", text: "Twice the chance of a shiny all run.", fx: { shiny: 2 } }
     ]
   };
 
@@ -627,6 +841,26 @@
    *   fightBack        seconds a wild Digimon keeps fighting the one that hit it
    *   pay              what beating one gives: XP orbs (each xpMul of its kind's XP), bits, and Hatchery data
    *   forgetAt         left this far behind every tamer, it is gone */
+  /* Rare world events (event-sim.js, 17z33). roll: chance of none / one / two in a run (the rest
+   * of the second number up to 1 is two). They land at random between window[0] and window[1]
+   * seconds into the run, at least `gap` apart, each announced `warn` seconds ahead. Health grows
+   * by hpPer for every tamer past the first. Pay when it falls, to everybody in the run whatever
+   * their side: reward.xp of a level's XP and bits (more later on), `away` of that for anyone who
+   * never came near (within `near`). */
+  var WORLD_EVENTS = {
+    roll: [0.55, 0.35], window: [480, 3000], gap: 600, warn: 25, near: 1400, dist: [1300, 2100], hpPer: 0.6,
+    kinds: ["outbreak", "surge", "rampage"],
+    dur: { outbreak: 300, surge: 300, rampage: 360 },
+    reward: { xp: 0.6, away: 0.5, tamer: 0.4, bits: 90, bitsPerMin: 0.03 },
+    outbreak: { hpMul: 4, dmgMul: 1.2, carriers: 2, ultAt: 20, leaves: 8, leaveR: 1500 },
+    surge: { hpMul: 1.8, spdMul: 0.75, megaAt: 30, every: 4, perStep: 3, maxRing: 4 },
+    rampage: { hpMul: 1.3, spdMul: 1.1 },
+    /* 17z33 (Isaac: make multiplayer more appealing): with 2+ tamers in the run, events stop being rare.
+     * The first comes `first` seconds in (counted from when the second tamer is there), then one every `every`
+     * seconds after the last one ended. Solo keeps the rare roll. `crew`: +pay for every other tamer who came. */
+    together: { players: 2, first: [300, 600], every: [900, 1500], crew: 0.2, crewMax: 0.6 }
+  };
+
   var VIRUS = {
     firstAt: 75, every: [55, 85], wild: 2, cap: 6, sight: 430,
     stageAt: [[0, ["Child (Rookie)"]], [5, ["Child (Rookie)", "Adult (Champion)"]], [12, ["Adult (Champion)"]], [18, ["Adult (Champion)", "Perfect (Ultimate)"]]],
@@ -690,8 +924,9 @@
     followPartner: false,                      /* the field's stage follows the clock only; it used to wait for the partner to digivolve */
     belowShare: 0.4,                           /* how much of the field is the stage below (was 0.2): little ones to cut through */
     group: { min: 3, max: 4, spread: 44 },
-    magnetRadius: 125, magnetSpeed: 430, levelMagnet: 650, xpOrbScale: 1.35,
-    driftReach: 2.5, driftSpeed: 38,        /* drops within 2.5x the magnet reach drift toward the nearest tamer at this pace (17z33) */
+    /* 17z33: a small magnet to start (you nearly walk over a drop to take it); pickup-range boosts grow it.
+     * Drops don't drift: they wait until they're inside it. */
+    magnetRadius: 50, magnetSpeed: 430, levelMagnet: 650, xpOrbScale: 1.35,
   };
 
   var LEASH = {
@@ -1424,10 +1659,11 @@
   var MEGA_SPAWN = {
     /* Field Megas (the big roaming ones). Really rare for the first three
      * years: from Winter of Year 1 one may show up once a season. From Year 4
-     * (72 min) they come often, two at a time. Always brutal. */
-    firstAt: 1080,
-    rareUntil: 4320,
-    rareEvery: 360,
+     * (about 97 min) they come often, two at a time. Always brutal.
+     * 17z33: in 486 s seasons (were 1080 / 4320 / 360 for 360 s seasons). */
+    firstAt: 1458,
+    rareUntil: 5832,
+    rareEvery: 486,
     rareChance: 0.3,
     interval: 40,
     cooldown: 55,
@@ -1535,6 +1771,10 @@
     TAMER: TAMER,
     FOOD: FOOD,
     rollFoodKind: rollFoodKind,
+    RARE_FOODS: RARE_FOODS,
+    SPEEDS: SPEEDS,
+    vegBoosts: vegBoosts,
+    VEG_MAX: VEG_MAX,
     CROPS: CROPS,
     CROP_ORDER: CROP_ORDER,
     SEED_DROP: SEED_DROP,
@@ -1555,7 +1795,17 @@
     LIVING: LIVING,
     NESTS: NESTS,
     LEVELS: LEVELS,
+    SIM_LOD: SIM_LOD,
     MODES: MODES,
+    favouriteFood: favouriteFood,
+    isFavourite: isFavourite,
+    dislikedFood: dislikedFood,
+    isDisliked: isDisliked,
+    foodFill: foodFill,
+    SIEGE: SIEGE,
+    VERSUS: VERSUS,
+    BLOODLINE: BLOODLINE,
+    EXPEDITION: EXPEDITION,
     RESPAWN: RESPAWN,
     BOUNTY: BOUNTY,
     NEMESIS: NEMESIS,
@@ -1565,6 +1815,7 @@
     WAR: WAR,
     RIVAL: RIVAL,
     VIRUS: VIRUS,
+    WORLD_EVENTS: WORLD_EVENTS,
     RANK: RANK,
     LAB: LAB,
     MEMORY: MEMORY,
@@ -1650,6 +1901,8 @@
       intervalMinutes: [3, 6, 10],
       intervalPlus: 4,
       stayCapSeconds: 120,
+      noTimeLimit: true,           /* 17z33: stay as long as you like (the world goes on; the belly empties); leave by the gate */
+      exitGate: { y: 784, reach: 66 },
       warnAt: [15, 5],
       petJoy: 8,
       petRadius: 58,
@@ -1664,17 +1917,29 @@
       exitHungerPrompt: "icon",
       /* Enlarged fenced yard. Stations sit in the infield; the agility
        * track is a black ring just inside the fence (see farm.js trackGeom). */
+      /* 17z33: training runs on food and on getting out there.
+       *  - each session costs its station's fullnessCost of the belly (a quarter; play: a tenth); it won't
+       *    start under trainMinFull
+       *  - fresh sessions (fresh.max, you start with fresh.start) pay in full; one comes back for every
+       *    fresh.killsPer wild Digimon beaten out in the world. Without one, a session pays fresh.tired
+       *    (less each time) until you go and fight
+       *  - every farm gate your side holds (a nest you've taken over: farm-gates.js) adds gateBonus to
+       *    what training gives, up to gateBonusMax more (double) */
+      trainMinFull: 33, gateBonus: 0.1, gateBonusMax: 1.0,
+      fresh: { max: 3, start: 3, killsPer: 10, tired: [0.7, 0.45, 0.25] },
       stations: {
-        bag:   { id: "bag",   x: 260, y: 430, stat: "offense",       label: "Punching bag", gain: 12, diminish: 0.65, timeCost: 6, fullnessCost: 8, radius: 48 },
-        board: { id: "board", x: 520, y: 250, stat: "intelligence",  label: "Chalkboard",    gain: 12, diminish: 0.65, timeCost: 6, fullnessCost: 6, radius: 48 },
-        track: { id: "track", x: 1248, y: 420, cx: 660, cy: 420, rx: 588, ry: 328, width: 44, inset: 30, lapsTarget: 1.25, stat: "agility", label: "Running track", gain: 12, diminish: 0.65, timeCost: 8, fullnessCost: 8, radius: 36 },
-        bond:  { id: "bond",  x: 1020, y: 480, stat: "bond",          label: "Play station",  gain: 10, diminish: 0.7,  timeCost: 8, fullnessCost: 0, radius: 54 }
+        /* 17z33: a planned yard: the cottage at the top, a stone plaza in the middle, the training yard to
+         * the west (chalkboard and punching bag), the play lawn to the east, the garden to the south */
+        bag:   { id: "bag",   x: 470, y: 390, stat: "offense",       label: "Punching bag", gain: 12, diminish: 0.65, timeCost: 6, fullnessCost: 25, radius: 48 },
+        board: { id: "board", x: 235, y: 390, stat: "intelligence",  label: "Chalkboard",    gain: 12, diminish: 0.65, timeCost: 6, fullnessCost: 25, radius: 48 },
+        track: { id: "track", x: 1248, y: 420, cx: 660, cy: 420, rx: 588, ry: 328, width: 44, inset: 30, lapsTarget: 1.25, stat: "agility", label: "Running track", gain: 12, diminish: 0.65, timeCost: 8, fullnessCost: 25, radius: 36 },
+        bond:  { id: "bond",  x: 975, y: 380, stat: "bond",          label: "Play station",  gain: 10, diminish: 0.7,  timeCost: 8, fullnessCost: 10, radius: 54 }
       },
       /* Vegetable garden: plots in the south infield (see farm-art.js). */
-      garden: { x: 494, y: 540, cols: 3, rows: 2, plotW: 96, plotH: 58, gapX: 22, gapY: 20, radius: 46 },
+      garden: { x: 494, y: 530, cols: 3, rows: 2, plotW: 96, plotH: 58, gapX: 22, gapY: 20, radius: 46 },
       yardW: 1320,
       yardH: 820,
-      shed: { x: 800, y: 200, w: 140, h: 90 },
+      shed: { x: 590, y: 196, w: 140, h: 90 },
       heal: {
         hp: 0.2,
         tamerHp: 0.2,
@@ -1696,7 +1961,7 @@
     },
     /* Persistent post-brawl currency (not the in-run Bits purse). */
     DIGIBITS: {
-      name: "DigiBits",
+      name: "DigiCoins",
       winReward: 8,
       betPool: 6,
       minBetPayout: 1

@@ -1,8 +1,10 @@
 /* Digi Night — the menus after the opening page (Nov 17).
  *
- *   the hub       your profile, four big tiles (Play, Eggs, Discoveries,
- *                 Online), the last word on your rival, and the smaller
- *                 doors (DigiBank, Cabinet, How to Play). It sits on the
+ *   the hub       your profile, the four modes as big tiles (Story,
+ *                 Survival, Night Siege, Versus; 17z33), a smaller row
+ *                 under them (Hatchery, Eggs, Discoveries, Online), the
+ *                 last word on your rival, and the smallest doors
+ *                 (DigiBank, Cabinet, How to Play...). It sits on the
  *                 title screen, over the same living sky.
  *   run setup     one screen where there used to be two: your projection,
  *                 your Digi Egg and who is coming, as three cards you flip
@@ -26,24 +28,41 @@
   function ctxOf(id) { var c = $(id), x; if (!c) return null; x = c.getContext("2d"); x.imageSmoothingEnabled = false; x.clearRect(0, 0, c.width, c.height); return x; }
   function px(el, text) { if (el && el.getAttribute("data-px") !== text) { el.setAttribute("data-px", text); el.removeAttribute("aria-label"); stamp(el.parentNode); } }
 
-  var built = false, t = 0, frame = 0, onlineOpen = false, eggView = null, slide = { tamer: 0, egg: 0 };
+  var built = false, t = 0, frame = 0, eggView = null, slide = { tamer: 0, egg: 0 };
 
   /* ------------------------------ the hub ------------------------------ */
+  /* ---------- the four modes (17z33) ---------- */
+  var MAIN_ART = { story: "#7cf0c0", survival: "#ffd23a", siege: "#9a8cff", versus: "#ff6a5a" };
+  function mains() { return (D.MODES && D.MODES.main) || []; }
+  function groupOf(id) { var l = (D.MODES && D.MODES.list) || [], i; for (i = 0; i < l.length; i++) if (l[i].id === id) return l[i].group || id; return "survival"; }
+  function modeTiles() {
+    return mains().map(function (m) {
+      return '<button type="button" class="btn hub-tile is-mode is-' + m.id + '" id="hub-m-' + m.id + '" data-main="' + m.id + '" style="--mc:' + MAIN_ART[m.id] + '">' +
+        '<span class="hub-tag">' + esc(m.tag) + '</span><canvas class="hub-art" id="hub-art-' + m.id + '" width="260" height="200"></canvas>' +
+        '<span class="hub-ttl" data-px="' + esc(m.name.toUpperCase()) + '"></span><span class="hub-cap">' + esc(m.blurb) + '</span></button>';
+    }).join("");
+  }
+  /* a mode picked from the menu: Survival keeps whichever of its rules you last played; Versus is hosted */
+  function pickMain(id) {
+    var m = M(); if (!m) return;
+    if (D.uiSfx) D.uiSfx("ui");
+    if (id === "survival") m.setMode(groupOf(m.mode()) === "survival" ? m.mode() : "open");
+    else m.setMode(id);
+    if (id === "versus") { press("btn-online-host"); return; }
+    press("btn-start");
+  }
   function buildHub() {
     var panel = $("title-panel"), hub, foot;
     if (!panel || $("hub")) return;
     hub = document.createElement("div");
     hub.id = "hub";
     hub.innerHTML =
-      '<div class="hub-tiles">' +
-        '<button type="button" class="btn hub-tile is-play" id="hub-play"><canvas class="hub-art" id="hub-art-play" width="330" height="205"></canvas><span class="hub-ttl" data-px="PLAY"></span><span class="hub-cap">Pick a projection and an egg, and go.</span></button>' +
-        '<button type="button" class="btn hub-tile is-hatch" id="hub-hatch"><span class="hub-badge" id="hub-hatch-new" hidden>FEED</span><canvas class="hub-art" id="hub-art-hatch" width="220" height="205"></canvas><span class="hub-ttl" data-px="HATCHERY"></span><span class="hub-cap" id="hub-hatch-cap"></span></button>' +
-        '<button type="button" class="btn hub-tile is-eggs" id="hub-eggs"><span class="hub-badge" id="hub-eggs-new" hidden>NEW</span><canvas class="hub-art" id="hub-art-eggs" width="220" height="205"></canvas><span class="hub-ttl" data-px="EGGS"></span><span class="hub-cap" id="hub-eggs-cap"></span></button>' +
-        '<button type="button" class="btn hub-tile is-disc" id="hub-disc"><canvas class="hub-art" id="hub-art-disc" width="220" height="205"></canvas><span class="hub-ttl" data-px="DISCOVERIES"></span><span class="hub-cap" id="hub-disc-cap"></span></button>' +
-        '<div class="hub-tile is-onl" id="hub-onl"><canvas class="hub-art" id="hub-art-onl" width="220" height="205"></canvas>' +
-          '<button type="button" class="btn hub-face" id="hub-onl-open"><span class="hub-ttl" data-px="ONLINE"></span><span class="hub-cap">Host a game or join a friend</span></button>' +
-          '<div class="hub-pair" id="hub-onl-pair" hidden><button type="button" class="btn hub-mini is-sea" id="hub-host" data-px="HOST A GAME"></button><button type="button" class="btn hub-mini is-sea" id="hub-join" data-px="JOIN A GAME"></button></div>' +
-        '</div>' +
+      /* 17z33: the four modes up top (data.js MODES.main); everything else in a smaller row under them */
+      '<div class="hub-modes" id="hub-modes">' + modeTiles() + '</div>' +
+      '<div class="hub-tiles is-small">' +
+        '<button type="button" class="btn hub-tile is-hatch" id="hub-hatch"><span class="hub-badge" id="hub-hatch-new" hidden>FEED</span><canvas class="hub-art" id="hub-art-hatch" width="220" height="205"></canvas><span class="hub-txt"><span class="hub-ttl" data-px="HATCHERY"></span><span class="hub-cap" id="hub-hatch-cap"></span></span></button>' +
+        '<button type="button" class="btn hub-tile is-eggs" id="hub-eggs"><span class="hub-badge" id="hub-eggs-new" hidden>NEW</span><canvas class="hub-art" id="hub-art-eggs" width="220" height="205"></canvas><span class="hub-txt"><span class="hub-ttl" data-px="EGGS"></span><span class="hub-cap" id="hub-eggs-cap"></span></span></button>' +
+        '<button type="button" class="btn hub-tile is-disc" id="hub-disc"><canvas class="hub-art" id="hub-art-disc" width="220" height="205"></canvas><span class="hub-txt"><span class="hub-ttl" data-px="DISCOVERIES"></span><span class="hub-cap" id="hub-disc-cap"></span></span></button>' +
       '</div>' +
       '<button type="button" class="hub-rival" id="hub-rival" hidden></button>';
     panel.insertBefore(hub, panel.querySelector(".title-menu"));
@@ -57,19 +76,18 @@
         '<button type="button" class="btn hub-mini is-league" id="hub-league" data-px="LEAGUE"></button>' +
         '<button type="button" class="btn hub-mini" id="hub-help" data-px="HOW TO PLAY"></button>';
     panel.appendChild(foot);
-    /* top right: DigiBits and the music switch */
+    /* top right: DigiCoins and the music switch */
     foot = document.createElement("div");
     foot.id = "hub-top";
-    foot.innerHTML = '<span class="hub-chip" id="hub-bits">DigiBits <b>0</b></span><button type="button" class="btn hub-chip" id="hub-music" title="Music">♫</button>';
+    /* 17z33: playing with friends is a choice on the setup screen now; joining someone's game lives up here */
+    foot.innerHTML = '<button type="button" class="btn hub-chip is-join" id="hub-join" title="Got an invite? Join a friend\'s game">Join a friend</button><span class="hub-chip" id="hub-bits">DigiCoins <b>0</b></span><button type="button" class="btn hub-chip" id="hub-music" title="Music">♫</button>';
     panel.appendChild(foot);
     document.body.classList.add("has-hub");
 
-    $("hub-play").addEventListener("click", function () { press("btn-start"); });
+    Array.prototype.forEach.call(hub.querySelectorAll("[data-main]"), function (b) { b.addEventListener("click", function () { pickMain(b.getAttribute("data-main")); }); });
     $("hub-eggs").addEventListener("click", function () { var m = M(); if (m) { m.eggsSeen(); m.go("egg"); } });
     $("hub-hatch").addEventListener("click", function () { var m = M(); if (m) m.go("hatchery"); });
     $("hub-disc").addEventListener("click", function () { press("btn-log"); });
-    $("hub-onl-open").addEventListener("click", function () { onlineOpen = !onlineOpen; paintOnline(); if (D.uiSfx) D.uiSfx("ui"); });
-    $("hub-host").addEventListener("click", function () { press("btn-online-host"); });
     $("hub-join").addEventListener("click", function () { press("btn-online-join"); });
     $("hub-bank").addEventListener("click", function () { press("btn-bank"); });
     $("hub-cabinet").addEventListener("click", function () { press("btn-cabinet"); });
@@ -120,13 +138,6 @@
     document.addEventListener("keydown", key);
   }
 
-  function paintOnline() {
-    var pair = $("hub-onl-pair"), face = $("hub-onl-open");
-    if (!pair || !face) return;
-    pair.hidden = !onlineOpen; face.hidden = onlineOpen;
-    $("hub-onl").classList.toggle("is-open", onlineOpen);
-    if (onlineOpen) stamp(pair);
-  }
   function paintMusic() { var b = $("hub-music"), on = !D.audio || D.audio.musicOn(); if (b) { b.classList.toggle("is-off", !on); b.title = on ? "Music is on" : "Music is off"; } }
 
   function refreshHub() {
@@ -160,24 +171,76 @@
         : (rv.wins > 0 ? "you beat <b>" + esc(rv.name) + "'s " + esc(spName(rv.form)) + "</b>" + (rv.wins > 1 ? " " + rv.wins + " times" : "") + "." : "<b>" + esc(rv.name) + "'s " + esc(spName(rv.form)) + "</b> reached job level " + rv.level + ".")) +
         "</span><span class='hub-score'>You " + (info.rivalWins || 0) + " · Rivals " + (info.rivalLosses || 0) + "</span><span class='hub-trophy'>" + trophySvg + " " + (m.trophies ? m.trophies().length : 0) + "</span>";
     }
-    onlineOpen = false; paintOnline(); paintMusic();
+    paintMusic();
   }
 
+  /* the four mode tiles' scenes (17z33) */
+  function grass(c, y, w, sp, col) {
+    var i;
+    c.fillStyle = col[0]; c.fillRect(0, y, w, 8); c.fillStyle = col[1]; c.fillRect(0, y + 8, w, 40);
+    c.fillStyle = col[2]; for (i = 0; i < 22; i++) c.fillRect(((i * 12.4 - t * sp) % w + w) % w, y - 4 + (i % 3), 4, 4);
+  }
+  function drawAt(c, x, y, sc, fn) { c.save(); c.translate(x, y); c.scale(sc, sc); try { fn(); } catch (e) {} c.restore(); }
+  function paintModeArt(S, m, tam, egg) {
+    var c, i, a, k, foe = ["goblimon", "gazimon", "tsukaimon", "dokunemon", "betamon"];
+    if (S.preloadSpecies && !paintModeArt.loaded) { paintModeArt.loaded = 1; ["jijimon", "agumon", "gabumon", "greymon", "garurumon", "goblimon", "gazimon", "tsukaimon", "dokunemon"].forEach(function (f) { try { S.preloadSpecies(f, true); } catch (e) {} }); }
+    /* Story: Jijimon showing the way, an egg waiting */
+    c = ctxOf("hub-art-story");
+    if (c) {
+      c.fillStyle = "rgba(124,240,192,0.12)"; c.beginPath(); c.arc(130, 112, 80 + Math.sin(t * 2) * 4, 0, 7); c.fill();
+      grass(c, 168, 260, 0, ["#3f9a44", "#2f7a38", "#6cc35a"]);
+      drawAt(c, 86, 170, 1.7, function () { S.drawPartner(c, "jijimon", 0, 0, 1, 1, t, false, false, false); });
+      drawAt(c, 178, 170, 2.1, function () { S.drawTamer(c, 0, 0, -1, t, false, false, false, "side", tam); });
+      drawAt(c, 132, 172, 1.5, function () { S.drawEgg(c, egg, 0, 0, t, false, false); });
+      /* a speech bubble with a goal tick */
+      k = 100 + Math.round(Math.sin(t * 2.5) * 2);
+      c.fillStyle = "#f6ead0"; c.fillRect(96, k - 50, 40, 30); c.fillRect(104, k - 20, 8, 6);
+      c.fillStyle = "#2fae7a"; c.fillRect(104, k - 36, 6, 6); c.fillRect(110, k - 30, 6, 6); c.fillRect(116, k - 36, 6, 6); c.fillRect(122, k - 42, 6, 6);
+    }
+    /* Survival: tamer and partner out in the world, the sun going round */
+    c = ctxOf("hub-art-survival");
+    if (c) {
+      a = t * 0.35;
+      c.fillStyle = "rgba(255,210,58,0.16)"; c.beginPath(); c.arc(130 + Math.cos(a) * 80, 90 + Math.sin(a) * 34, 26, 0, 7); c.fill();
+      c.fillStyle = "#ffd23a"; c.fillRect(122 + Math.cos(a) * 80, 82 + Math.sin(a) * 34, 16, 16);
+      c.fillStyle = "#2a6a3a"; for (i = 0; i < 5; i++) { c.fillRect(14 + i * 56, 120 - (i % 2) * 14, 18, 50); c.fillRect(8 + i * 56, 130 - (i % 2) * 14, 30, 10); }
+      grass(c, 168, 260, 22, ["#3f9a44", "#2f7a38", "#6cc35a"]);
+      drawAt(c, 92, 170, 2.2, function () { S.drawTamer(c, 0, 0, 1, t, false, true, false, "side", tam); });
+      drawAt(c, 168, 170, 1.6, function () { S.drawPartner(c, "agumon", 0, 0, 1, 1, t, false, false, true); });
+    }
+    /* Night Siege: under the moon, wild Digimon closing in from both sides */
+    c = ctxOf("hub-art-siege");
+    if (c) {
+      c.fillStyle = "#0b1030"; c.fillRect(0, 0, 260, 200);
+      c.fillStyle = "#f4f1d0"; c.beginPath(); c.arc(206, 44, 18, 0, 7); c.fill(); c.fillStyle = "#0b1030"; c.beginPath(); c.arc(198, 38, 16, 0, 7); c.fill();
+      c.fillStyle = "#cfd6ff"; for (i = 0; i < 14; i++) if (Math.sin(t * 2 + i * 1.9) > -0.3) c.fillRect((i * 53) % 250, (i * 37) % 90 + 6, 2, 2);
+      grass(c, 168, 260, 0, ["#1e3d4a", "#13263a", "#2c5a5a"]);
+      for (i = 0; i < 4; i++) {
+        k = ((t * 14 + i * 30) % 60);
+        drawAt(c, i < 2 ? 6 + k + i * 26 : 254 - k - (i - 2) * 26, 172, 1.0, function () { S.drawEnemy(c, foe[i % foe.length], 0, 0, t + i, false, i < 2 ? 1 : -1, 1); });
+      }
+      c.fillStyle = "rgba(154,140,255,0.18)"; c.beginPath(); c.arc(130, 140, 54, 0, 7); c.fill();
+      drawAt(c, 112, 170, 2.0, function () { S.drawTamer(c, 0, 0, 1, t, false, false, false, "side", tam); });
+      drawAt(c, 150, 170, 1.4, function () { S.drawPartner(c, "gabumon", 0, 0, -1, 1, t, false, false, false); });
+    }
+    /* Versus: two partners squaring up */
+    c = ctxOf("hub-art-versus");
+    if (c) {
+      c.fillStyle = "rgba(255,106,90,0.14)"; c.fillRect(0, 0, 130, 200); c.fillStyle = "rgba(90,170,255,0.14)"; c.fillRect(130, 0, 130, 200);
+      grass(c, 168, 260, 0, ["#7a4a3a", "#4a2e28", "#a0664a"]);
+      drawAt(c, 64, 174, 0.85, function () { S.drawPartner(c, "greymon", 0, 0, 1, 1, t, false, false, false); });
+      drawAt(c, 198, 174, 0.85, function () { S.drawPartner(c, "garurumon", 0, 0, -1, 1, t + 0.5, false, false, false); });
+      k = 1 + Math.max(0, Math.sin(t * 4)) * 0.12;
+      if (D.px && D.px.drawText) { c.save(); c.translate(130, 40); c.scale(k, k); c.fillStyle = "rgba(10,15,26,0.75)"; c.fillRect(-30, -20, 60, 40); D.px.drawText(c, "VS", -22, -14, 5, "#ffd23a"); c.restore(); }
+      c.fillStyle = "#fff6c4"; if (Math.sin(t * 9) > 0.6) { c.fillRect(124, 110, 12, 4); c.fillRect(128, 104, 4, 16); }
+    }
+  }
   /* the little scenes on the tiles, alive */
   function paintHubArt() {
     var S = D.sprites, m = M(), c, i, tam, egg, bob, list, forms, x;
     if (!S || !m || !S.drawTamer) return;
     tam = m.tamer(); egg = m.eggFrame();
-    c = ctxOf("hub-art-play");
-    if (c) {
-      c.fillStyle = "rgba(255,210,58,0.10)"; c.beginPath(); c.arc(165, 112, 92 + Math.sin(t * 2) * 4, 0, 7); c.fill(); c.beginPath(); c.arc(165, 112, 60, 0, 7); c.fill();
-      c.fillStyle = "#3f9a44"; c.fillRect(40, 168, 250, 8); c.fillStyle = "#2f7a38"; c.fillRect(40, 176, 250, 6);
-      c.fillStyle = "#6cc35a"; for (i = 0; i < 21; i++) c.fillRect(40 + ((i * 12.4 - t * 26) % 250 + 250) % 250, 164 + (i % 3), 4, 4);
-      c.save(); c.translate(122, 170); c.scale(2.3, 2.3); try { S.drawTamer(c, 0, 0, 1, t, false, true, false, "side", tam); } catch (e1) {} c.restore();
-      c.save(); c.translate(214, 170); c.scale(1.9, 1.9); try { S.drawEgg(c, egg, 0, 0, t, false, false); } catch (e2) {} c.restore();
-      c.fillStyle = "#fff6c4";
-      [[60, 50], [272, 70], [250, 30], [92, 100], [300, 120]].forEach(function (p, k) { if (Math.sin(t * 3 + k * 1.7) > -0.2) { c.fillRect(p[0], p[1] - 4, 2, 10); c.fillRect(p[0] - 4, p[1], 10, 2); } });
-    }
+    paintModeArt(S, m, tam, egg);
     c = ctxOf("hub-art-eggs");
     if (c) {
       list = m.eggs().filter(function (e) { return !e.locked && !e.random; });
@@ -212,13 +275,6 @@
       c.fillStyle = "#16263c"; c.fillRect(156, 44, 48, 48); c.strokeStyle = "#39c5ff"; c.lineWidth = 3; c.strokeRect(156, 44, 48, 48);
       if (D.px && D.px.drawText) D.px.drawText(c, "?", 172, 54 + Math.round(Math.sin(t * 3) * 2), 4, "#39c5ff");
     }
-    c = ctxOf("hub-art-onl");
-    if (c) {
-      list = S.getTamerList ? S.getTamerList() : [];
-      c.save(); c.translate(62, 170); c.scale(2, 2); try { S.drawTamer(c, 0, 0, 1, t, false, false, false, "side", tam); } catch (e5) {} c.restore();
-      c.save(); c.translate(158, 170); c.scale(2, 2); try { S.drawTamer(c, 0, 0, -1, t + 0.4, false, false, false, "side", list.length ? list[(list.map(function (z) { return z.id; }).indexOf(tam) + 2) % list.length].id : tam); } catch (e6) {} c.restore();
-      c.fillStyle = "#7cf0c0"; for (i = 0; i < 5; i++) if (((Math.floor(t * 5) + i) % 5) !== 4) c.fillRect(90 + i * 10, 96 - Math.abs(2 - i) * 4, 5, 5);
-    }
   }
 
   /* ------------------------------ run setup ------------------------------ */
@@ -237,29 +293,40 @@
             '<span class="setup-name" id="setup-tamer-name" data-px="CYAN"></span><div class="setup-dots" id="setup-tamer-dots"></div><p class="setup-cap">How you appear in the Digital World.</p></div>' +
           '<div class="setup-card" id="setup-egg"><span class="setup-lab" data-px="YOUR DIGI EGG"></span><canvas class="setup-art" id="setup-art-egg" width="300" height="190"></canvas>' +
             '<button type="button" class="btn setup-arrow is-l" id="setup-egg-prev" aria-label="Previous egg">‹</button><button type="button" class="btn setup-arrow is-r" id="setup-egg-next" aria-label="Next egg">›</button>' +
-            '<span class="setup-name" id="setup-egg-name" data-px="AGUMON LINE"></span><div class="setup-dots" id="setup-egg-dots"></div><p class="setup-cap" id="setup-egg-cap"></p></div>' +
+            '<span class="setup-name" id="setup-egg-name" data-px="AGUMON LINE"></span><div class="setup-dots" id="setup-egg-dots"></div>' +
+            '<button type="button" class="setup-alleggs" id="btn-setup-alleggs">▦ See all eggs</button><p class="setup-cap" id="setup-egg-cap"></p></div>' +
           '<div class="setup-card" id="setup-party"><span class="setup-lab" data-px="WHO IS COMING"></span><canvas class="setup-art" id="setup-art-party" width="300" height="190"></canvas>' +
             '<span class="setup-name" id="setup-party-name" data-px="SOLO"></span><div class="setup-opt" id="setup-party-opt"></div><p class="setup-cap" id="setup-party-cap"></p></div>' +
         '</div>' +
         '<div class="setup-modes" id="setup-modes"></div>' +
         '<div class="setup-strip"><canvas class="setup-scene" id="setup-scene" width="560" height="150"></canvas><p class="setup-sum" id="setup-sum"></p>' +
-          '<button type="button" class="btn setup-go" id="btn-setup-start" data-px="START"></button></div>' +
+          '<div class="setup-gos"><button type="button" class="btn setup-go" id="btn-setup-start" data-px="JUST PLAY"></button>' +
+          '<button type="button" class="btn hub-mini is-sea setup-invite" id="btn-setup-invite" data-px="INVITE FRIENDS"></button></div></div>' +
       '</div>';
     host.parentNode.insertBefore(s, host);
     $("btn-setup-back").addEventListener("click", function () { var m = M(); if (m) m.go("title"); });
     $("btn-setup-start").addEventListener("click", function () { var m = M(), e = curEgg(); if (!m || !e || e.locked || modeBlocks(m, e)) { if (D.uiSfx) D.uiSfx("ui"); return; } m.setEgg(e.id); m.start(); });
+    /* invite friends: a room for this mode, with your projection and egg (17z33) */
+    $("btn-setup-invite").addEventListener("click", function () { var m = M(), e = curEgg(); if (!m) return; if (e && !e.locked) m.setEgg(e.id); m.go("title"); press("btn-online-host"); });
     $("setup-tamer-prev").addEventListener("click", function () { stepTamer(-1); });
     $("setup-tamer-next").addEventListener("click", function () { stepTamer(1); });
     $("setup-egg-prev").addEventListener("click", function () { stepEgg(-1); });
     $("setup-egg-next").addEventListener("click", function () { stepEgg(1); });
-    swipe($("setup-art-tamer"), stepTamer); swipe($("setup-art-egg"), stepEgg);
+    swipe($("setup-art-tamer"), stepTamer); swipe($("setup-art-egg"), stepEgg, openEggGrid);
+    $("btn-setup-alleggs").addEventListener("click", openEggGrid);
+    $("setup-egg-name").addEventListener("click", openEggGrid);
     stamp(s);
   }
-  function swipe(el, fn) {
+  function swipe(el, fn, tap) {
     var sx = null;
     if (!el) return;
     el.addEventListener("pointerdown", function (e) { sx = e.clientX; });
-    el.addEventListener("pointerup", function (e) { if (sx != null && Math.abs(e.clientX - sx) > 30) fn(e.clientX < sx ? 1 : -1); sx = null; });
+    el.addEventListener("pointerup", function (e) { if (sx != null && Math.abs(e.clientX - sx) > 30) fn(e.clientX < sx ? 1 : -1); else if (sx != null && tap) tap(); sx = null; });
+  }
+  /* every egg at once, in a grid (egg-grid.js) */
+  function openEggGrid() {
+    if (!D.eggGrid) return;
+    D.eggGrid.open({ onPick: function (id) { eggView = id; slide.egg = 0; paintSetup(); } });
   }
   function tamers() { return (D.sprites && D.sprites.getTamerList) ? D.sprites.getTamerList() : []; }
   function tamerAt() { var l = tamers(), m = M(), i; for (i = 0; i < l.length; i++) if (l[i].id === m.tamer()) return i; return 0; }
@@ -292,12 +359,17 @@
     var box = $("setup-modes"), l = m.modes ? m.modes() : [], cur = m.mode ? m.mode() : "open", h = "", i, d = null, wk;
     if (!box) return;
     if (!l.length) { box.hidden = true; return; }
+    /* 17z33: the mode was picked on the hub; here you only choose among Survival's rules */
+    var grp = groupOf(cur), mn = null;
+    for (i = 0; i < mains().length; i++) if (mains()[i].id === grp) mn = mains()[i];
+    l = l.filter(function (x) { return (x.group || x.id) === grp; });
+    if (l.length < 2) { d = l[0] || null; h = "<button type='button' class='btn setup-mode is-on is-main' style='--mc:" + (MAIN_ART[grp] || "#ffd23a") + "'><b>" + esc(mn ? mn.name : (d ? d.name : cur)) + "</b><span>" + esc(mn ? mn.tag : "") + "</span></button>"; l = []; }
     for (i = 0; i < l.length; i++) {
       if (l[i].id === cur) d = l[i];
       h += "<button type='button' class='btn setup-mode" + (l[i].id === cur ? " is-on" : "") + (l[i].ranked ? " is-ranked" : "") + "' data-mode='" + l[i].id + "'><b>" + esc(l[i].name) + "</b><span>" + esc(l[i].short) + "</span></button>";
     }
     wk = cur === "weekly" && D.weekOf ? " This week: " + D.weekOf().replace("-W", ", week ") + "." : "";
-    box.innerHTML = "<span class='setup-lab' data-px='MODE'></span><div class='setup-mode-row'>" + h + "</div><p class='setup-mode-cap'>" + esc(((d && d.blurb) || "") + wk) +
+    box.innerHTML = "<span class='setup-lab' data-px='" + (grp === "survival" ? "SURVIVAL" : "MODE") + "'></span><div class='setup-mode-row'>" + h + "</div><p class='setup-mode-cap'>" + esc(((d && d.blurb) || "") + wk) +
       (d && d.ranked && !(D.boards && D.boards.signedIn()) ? " Log in on the online server for it to count on the boards." : "") + "</p>";
     Array.prototype.forEach.call(box.querySelectorAll("[data-mode]"), function (b) { b.addEventListener("click", function () { m.setMode(b.getAttribute("data-mode")); if (D.uiSfx) D.uiSfx("ui"); paintSetup(); }); });
     stamp(box);
@@ -325,28 +397,65 @@
     opt = $("setup-party-opt"); h = "";
     if (!on && !oneLife) {
       for (i = 0; i <= max; i++) h += "<button type='button' class='btn setup-pick" + (i === n ? " is-on" : "") + "' data-cpu='" + i + "' aria-label='" + (i ? i + " CPU partners" : "Solo") + "'>" + (i ? "+" + i : "Solo") + "</button>";
-      h += "<button type='button' class='btn setup-pick is-sea' data-online='1'>Online</button>";
     }
     opt.innerHTML = h;
     Array.prototype.forEach.call(opt.querySelectorAll("[data-cpu]"), function (b) { b.addEventListener("click", function () { m.setCpu(+b.getAttribute("data-cpu")); if (D.uiSfx) D.uiSfx("ui"); paintSetup(); }); });
-    Array.prototype.forEach.call(opt.querySelectorAll("[data-online]"), function (b) { b.addEventListener("click", function () { m.go("title"); press("btn-online-host"); }); });
     $("setup-party-cap").textContent = on ? "Friends pick theirs too. You all meet in the lobby next." : oneLife ? "Ranked and the Weekly Map are you and your partner alone: no CPU partners." : (n ? "CPU partners fight beside you and join the brawls." : "Just you, your partner, and a rival somewhere out there.");
-    who = m.name() || "You";
-    $("setup-sum").innerHTML = e && e.locked ? "This egg is still locked. Raise one to Rookie in the Hatchery to open its line."
-      : modeBlocks(m, e) ? "A Hatchery partner can't enter a Ranked or Weekly run. Pick another egg, or another mode."
-      : e && e.hatchery ? "<b>" + esc(who) + "</b> as " + esc((l[ta] && l[ta].name) || "tamer") + ", with your Hatchery <b>" + esc(e.name) + "</b>. No egg: it starts fighting at once. This is its one run."
-      : "<b>" + esc(who) + "</b> as " + esc((l[ta] && l[ta].name) || "tamer") + ", with " + (e && e.random ? "a <b>surprise</b> egg" : "the <b>" + esc((e && e.name) || "egg") + "</b>" + (/egg$/i.test((e && e.name) || "") ? "" : " egg")) + ". It hatches " + ((D.HATCH && D.HATCH.time) || 8) + " seconds in.";
-    var gr = m.gear ? m.gear() : [], gb = $("setup-gear");
+    /* 17z33: no summary line any more; only a warning when something stops the start */
+    var warn = e && e.locked ? "This egg is still locked. Raise one to Rookie in the Hatchery to open its line."
+      : modeBlocks(m, e) ? "A Hatchery partner can't enter a Ranked or Weekly run. Pick another egg, or another mode." : "";
+    $("setup-sum").textContent = warn; $("setup-sum").hidden = !warn;
+    paintGear(m);
+    go = $("btn-setup-start");
+    go.classList.toggle("is-off", !!(e && e.locked) || modeBlocks(m, e));
+    px(go, on ? "TO THE LOBBY" : "JUST PLAY");
+    if ($("btn-setup-invite")) $("btn-setup-invite").hidden = !!on;
+  }
+  /* what you're bringing in (17z33): a socket for every loadout slot, each with its item's emblem.
+   * Crest Pieces (1, or 2 with the Lab's Digivice Port), a Charm, and one one-run item or scroll. */
+  function paintGear(m) {
+    var I = D.items, gb = $("setup-gear"), mid, l, n, socks = [], h = "", i, it, cvs;
     if (!gb) {
       gb = document.createElement("button"); gb.type = "button"; gb.id = "setup-gear"; gb.className = "btn setup-gear";
       gb.addEventListener("click", function () { if (D.uiSfx) D.uiSfx("ui"); if (D.items) D.items.open(); });
-      var mid = document.createElement("div"); mid.id = "setup-mid"; mid.className = "setup-mid";
-      $("setup-sum").parentNode.insertBefore(mid, $("setup-sum")); mid.appendChild($("setup-sum")); mid.appendChild(gb);
+      mid = document.createElement("div"); mid.id = "setup-mid"; mid.className = "setup-mid";
+      $("setup-sum").parentNode.insertBefore(mid, $("setup-sum")); mid.appendChild(gb); mid.appendChild($("setup-sum"));
     }
-    gb.innerHTML = "<b>ITEMS</b><span>" + (gr.length ? esc(gr.join("  \u00b7  ")) : "nothing equipped") + "</span>";
-    go = $("btn-setup-start");
-    go.classList.toggle("is-off", !!(e && e.locked) || modeBlocks(m, e));
-    px(go, on ? "TO THE LOBBY" : "START");
+    if (!I) { gb.hidden = true; return; }
+    l = I.loadout(); n = I.slots();
+    for (i = 0; i < 2; i++) {
+      if (i >= n) socks.push({ kind: "Crest", lock: "Lab: Digivice Port" });
+      else { it = l.crest[i] ? I.byId(l.crest[i]) : null; socks.push({ kind: "Crest", it: it }); }
+    }
+    socks.push({ kind: "Charm", it: l.charm ? I.byId(l.charm) : null });
+    /* 17z33: three one-run places (a fourth with the Lab's Kit Bag); a scroll takes one */
+    var un = I.useSlots ? I.useSlots() : 1, umax = (D.ITEMS && D.ITEMS.useSlotsMax) || 4, uk = 0;
+    if (l.scroll) { socks.push({ kind: "One run", scroll: true, name: "Scroll: " + I.skillName(l.scroll) }); uk++; }
+    for (i = 0; i < (l.uses || []).length; i++, uk++) socks.push({ kind: "One run", it: I.byId(l.uses[i]) });
+    for (; uk < un; uk++) socks.push({ kind: "One run", it: null });
+    for (; uk < umax; uk++) socks.push({ kind: "One run", lock: "Lab: Kit Bag" });
+    for (i = 0; i < socks.length; i++) {
+      it = socks[i];
+      h += "<span class='gear-sock" + (it.it || it.scroll ? " is-full is-" + ((it.it && it.it.rarity) || "rare") : (it.lock ? " is-lock" : " is-empty")) + "' title='" + esc(it.it ? it.it.name + ": " + (it.it.text || "") : it.scroll ? it.name : it.lock ? (it.kind === "Crest" ? "A second Crest slot: buy the Digivice Port in the Lab" : "A fourth one-run item: buy the Kit Bag in the Lab") : "Empty " + it.kind + " slot") + "'>" +
+        "<canvas width='64' height='64' data-i='" + i + "'></canvas><b>" + esc(it.it ? it.it.name : it.scroll ? it.name : it.lock ? "Locked" : "Empty") + "</b><small>" + esc(it.lock || it.kind) + "</small></span>";
+    }
+    gb.innerHTML = "<span class='gear-head'><b>BRINGING IN</b><small>Tap to change</small></span><span class='gear-row'>" + h + "</span>";
+    cvs = gb.querySelectorAll("canvas");
+    for (i = 0; i < cvs.length; i++) {
+      it = socks[i];
+      if (it.it && D.iconArt) D.iconArt.item(cvs[i], it.it.id, { rarity: it.it.rarity });
+      else if (it.scroll && D.iconArt) D.iconArt.scroll(cvs[i]);
+      else emptySock(cvs[i], !!it.lock);
+    }
+  }
+  function emptySock(cv, lock) {
+    var c = cv.getContext("2d"), k;
+    c.clearRect(0, 0, 64, 64);
+    c.fillStyle = "rgba(10,16,28,0.9)"; c.fillRect(6, 6, 52, 52);
+    c.strokeStyle = lock ? "#3a4258" : "#2f5a6e"; c.lineWidth = 2; c.setLineDash([5, 4]); c.strokeRect(8, 8, 48, 48); c.setLineDash([]);
+    c.fillStyle = lock ? "#4a5270" : "#2f6e84";
+    if (lock) { c.fillRect(24, 32, 16, 13); c.strokeStyle = "#4a5270"; c.lineWidth = 3; c.beginPath(); c.arc(32, 32, 6, Math.PI, 0); c.stroke(); }
+    else { for (k = 0; k < 2; k++) c.fillRect(k ? 30 : 24, k ? 24 : 30, k ? 4 : 16, k ? 16 : 4); }
   }
   function openSetup() {
     var m = M();

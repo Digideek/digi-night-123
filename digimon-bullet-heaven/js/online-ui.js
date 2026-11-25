@@ -169,6 +169,8 @@
     picked();
   }
   function stepEgg(d) {
+    if (duelNow()) { sfx(); return; }                                       /* a duel brings what's in your Hatchery */
+    if (vsNow()) { D.vsRookie.step(d); picked(); return; }
     var m = M(), l = eggs(), i, at = 0, k, e;
     if (!m || !l.length) return;
     for (i = 0; i < l.length; i++) if (l[i].id === m.egg()) at = i;
@@ -219,10 +221,27 @@
     var ex = 288, ey = 196;
     c.fillStyle = "#1a2440"; c.beginPath(); c.ellipse(ex, ey + 3, 30, 8, 0, 0, 7); c.fill();
     c.fillStyle = "#2c3f5c"; c.beginPath(); c.ellipse(ex, ey, 30, 8, 0, 0, 7); c.fill();
-    if (e && D.sprites.drawEgg) { c.save(); c.translate(ex, ey); c.scale(1.7, 1.7); try { D.sprites.drawEgg(c, e.frame, 0, 0, t, false, false); } catch (er2) {} c.restore(); }
+    if (duelNow()) { var md = D.hatchery && D.hatchery.duelSpec ? D.hatchery.duelSpec() : null; drawRookie(c, md ? md.form : ((D.VERSUS && D.VERSUS.duel && D.VERSUS.duel.fallback) || "agumon"), ex, ey, md && /Champion|Armor/.test((D.SPECIES[md.form] || {}).stage) ? 1.5 : 2, t); }
+    else if (vsNow()) drawRookie(c, D.vsRookie.get(), ex, ey, 2, t);          /* Versus: the Rookie you bring, not an egg */
+    else if (e && D.sprites.drawEgg) { c.save(); c.translate(ex, ey); c.scale(1.7, 1.7); try { D.sprites.drawEgg(c, e.frame, 0, 0, t, false, false); } catch (er2) {} c.restore(); }
     /* friends' slots breathe too */
     var cvs = document.querySelectorAll("#lobby-players canvas[data-i]"), list = N.players(), k, pl;
     for (k = 0; k < cvs.length; k++) { pl = list[+cvs[k].getAttribute("data-i")]; if (pl) paintCard(cvs[k], pl, t); }
+  }
+  /* Versus (17z33): everyone starts as a Rookie (vs-rookie.js), picked here in place of the egg */
+  function vsNow() { return !!(D.vsRookie && N.hostMode && N.hostMode() === "versus"); }
+  /* Duel (17z33): you bring your Hatchery Digimon as it is; nothing to pick here */
+  function duelNow() { return !!(N.hostMode && N.hostMode() === "duel"); }
+  function fightMode(hm) { return hm === "versus" || hm === "duel"; }       /* needs someone to fight */
+  function duelOf(prof) { var d = prof && prof.hd; return d && D.SPECIES && D.SPECIES[d.form] ? d : null; }
+  function duelLabel(d) { var VS = D.VERSUS && D.VERSUS.duel; return d ? (D.SPECIES[d.form].name + " Lv " + d.level + (d.blood && d.blood.gen ? " · Gen " + d.blood.gen : "")) : ((VS && D.SPECIES[VS.fallback] ? D.SPECIES[VS.fallback].name : "Agumon") + " Lv " + ((VS && VS.fallbackLevel) || 8) + " (no Hatchery Digimon)"); }
+  function drawRookie(c, id, x, y, sc, t) {
+    var sh = null, fi = Math.floor((t || 0) * 4) % 2;
+    try { sh = D.sprites && D.sprites.getSheet ? D.sprites.getSheet(id, "idle", fi, false) : null; } catch (e) { sh = null; }
+    if (!sh || !sh.width) return;
+    c.save(); c.imageSmoothingEnabled = false;
+    c.drawImage(sh, Math.round(x - sh.width * sc / 2), Math.round(y - sh.height * sc + 4), Math.round(sh.width * sc), Math.round(sh.height * sc));
+    c.restore();
   }
   var stageRaf = 0;
   function startStage() { if (!stageRaf && $("lobby-stage")) stageRaf = requestAnimationFrame(stageFrame); }
@@ -234,6 +253,8 @@
     if (!D.sprites) return;
     try {
       if (pl.tamerId && D.sprites.drawTamer) D.sprites.drawTamer(c, 22, 50, 1, t || 0, false, false, false, "down", pl.tamerId);
+      if (duelNow()) { var pd = duelOf(pl.prof); drawRookie(c, pd ? pd.form : ((D.VERSUS && D.VERSUS.duel && D.VERSUS.duel.fallback) || "agumon"), 46, 52, 0.8, t); return; }
+      if (vsNow() && D.vsRookie) { drawRookie(c, (pl.prof && pl.prof.vr && D.vsRookie.usable(pl.prof.vr)) ? pl.prof.vr : "agumon", 46, 52, 0.9, t); return; }
       if (e) frame = e.frame;
       else for (i = 0; i < list.length; i++) if (list[i].id === pl.line) frame = list[i].frame;
       if (frame && D.sprites.drawEgg) D.sprites.drawEgg(c, frame, 42, 50, (t || 0) + 1, false, false);
@@ -270,8 +291,26 @@
     /* your pick */
     if (m) {
       if ($("lobby-tamer-name")) $("lobby-tamer-name").textContent = tamerName(m.tamer());
-      if ($("lobby-egg-name")) $("lobby-egg-name").textContent = eggName(m.egg());
-      if ($("lobby-egg-blurb")) { var eb = eggOf(m.egg()); $("lobby-egg-blurb").textContent = (eb && eb.blurb) || ""; }
+      var vsl = $("lobby-egg-name") && $("lobby-egg-name").previousElementSibling;
+      /* a duel has nothing to pick: no arrows, no "tap for all" */
+      ["lobby-egg-prev", "lobby-egg-next"].forEach(function (id) { if ($(id)) $(id).style.visibility = duelNow() ? "hidden" : ""; });
+      if (vsl && vsl.parentNode) vsl.parentNode.classList.toggle("is-tap", !duelNow());
+      if (duelNow()) {
+        var mdd = D.hatchery && D.hatchery.duelSpec ? D.hatchery.duelSpec() : null, BLn = D.BLOODLINE, tt = [];
+        if (mdd && mdd.blood && BLn) for (var tk in mdd.blood.traits) tt.push(D.hatchery.traitText(tk, mdd.blood.traits[tk]));
+        if (vsl) vsl.textContent = "YOUR HATCHERY DIGIMON";
+        if ($("lobby-egg-name")) $("lobby-egg-name").textContent = duelLabel(mdd);
+        if ($("lobby-egg-blurb")) $("lobby-egg-blurb").textContent = mdd ? "A duel brings the Digimon on your Hatchery stand just as it is" + (tt.length ? ", with its bloodline: " + tt.join(", ") : "") + ". Nothing is spent and nothing changes." : "Nothing hatched in your Hatchery yet, so you'd duel as Agumon. Hatch an egg in the Hatchery to bring your own.";
+      } else if (vsNow()) {
+        var vr = D.vsRookie.get(), nl = D.vsRookie.list().length;
+        if (vsl) vsl.textContent = "YOUR ROOKIE";
+        if ($("lobby-egg-name")) $("lobby-egg-name").textContent = D.vsRookie.name(vr);
+        if ($("lobby-egg-blurb")) $("lobby-egg-blurb").textContent = "Versus starts you as a Rookie. Agumon, Gabumon and Veemon are always here" + (nl > 3 ? "; the other " + (nl - 3) + " are Rookies you raised in the Hatchery." : ". Raise a Rookie in the Hatchery to bring it too.");
+      } else {
+        if (vsl) vsl.textContent = "DIGI EGG";
+        if ($("lobby-egg-name")) $("lobby-egg-name").textContent = eggName(m.egg());
+        if ($("lobby-egg-blurb")) { var eb = eggOf(m.egg()); $("lobby-egg-blurb").textContent = (eb && eb.blurb) || ""; }
+      }
     }
     /* everyone in the room */
     var here = 0, readyN = 0, others = 0, othersReady = 0;
@@ -289,7 +328,7 @@
       html += '<div class="lobby2-slot' + (pl.id === meId ? " is-me" : "") + '" data-pid="' + i + '" title="See profile" style="border-left-color:' + esc(pl.color) + '">' +
         '<canvas width="64" height="56" data-i="' + i + '"></canvas>' +
         '<div><div class="nm">' + (pl.host ? "★ " : "") + esc(pl.name) + (pl.id === meId ? " (you)" : "") + '</div>' +
-        '<span class="pk">' + esc(pl.tamerId ? tamerName(pl.tamerId) : "") + (pl.peek || pl.line ? "  ·  " + esc(eggName(pl.peek || pl.line)) : "") + '</span>' +
+        '<span class="pk">' + (duelNow() ? esc(duelLabel(duelOf(pl.prof))) : vsNow() ? esc(D.vsRookie.name(pl.prof && pl.prof.vr && D.vsRookie.usable(pl.prof.vr) ? pl.prof.vr : "agumon")) : (pl.peek || pl.line ? esc(eggName(pl.peek || pl.line)) : "")) + '</span>' +   /* 17z33: just the name above, no projection colour */
         '<span class="tg' + cls + '">' + tag + '</span></div></div>';
     }
     if ($("lobby-count")) $("lobby-count").textContent = here + " / 6  ·  " + readyN + " ready";
@@ -310,9 +349,15 @@
     /* the mode (the host picks it) */
     var mb = $("lobby-mode"), modes = (m && m.modes) ? m.modes() : [], hm = N.hostMode ? N.hostMode() : "open", mh = "<span class='lb2lab'>MODE</span>";
     if (mb) {
-      if (isHost) for (i = 0; i < modes.length; i++) mh += "<button type='button' data-mode='" + modes[i].id + "' class='" + (modes[i].id === hm ? "is-on" : "") + "' title='" + esc(modes[i].blurb) + "'>" + esc(modes[i].name) + "</button>";
-      else { var md = null; for (i = 0; i < modes.length; i++) if (modes[i].id === hm) md = modes[i]; mh += "<span class='fixed'>" + esc(md ? md.name : "Open World") + "</span><span class='lb2lab'>&nbsp;THE HOST PICKS</span>"; }
+      /* 17z33: the four modes; under Survival, its rules */
+      var mains = (D.MODES && D.MODES.main) || [], grpOf = function (id) { for (var q = 0; q < modes.length; q++) if (modes[q].id === id) return modes[q].group || id; return "survival"; }, hg = grpOf(hm), md = null;
+      for (i = 0; i < modes.length; i++) if (modes[i].id === hm) md = modes[i];
+      if (isHost) {
+        for (i = 0; i < mains.length; i++) mh += "<button type='button' data-main='" + mains[i].id + "' class='" + (mains[i].id === hg ? "is-on" : "") + "' title='" + esc(mains[i].blurb) + "'>" + esc(mains[i].name) + "</button>";
+        if (hg === "survival" || hg === "versus") { mh += "<span class='lb2lab'>&nbsp;" + (hg === "versus" ? "KIND" : "RULES") + "</span>"; for (i = 0; i < modes.length; i++) if (modes[i].group === hg) mh += "<button type='button' data-mode='" + modes[i].id + "' class='is-sub" + (modes[i].id === hm ? " is-on" : "") + "' title='" + esc(modes[i].blurb) + "'>" + esc(modes[i].short) + "</button>"; }
+      } else mh += "<span class='fixed'>" + esc(md ? (md.group === "survival" ? "Survival: " + md.short : md.name) : "Survival") + "</span><span class='lb2lab'>&nbsp;THE HOST PICKS</span>";
       mb.innerHTML = mh;
+      Array.prototype.forEach.call(mb.querySelectorAll("[data-main]"), function (bt) { bt.addEventListener("click", function () { var g = bt.getAttribute("data-main"); if (m && m.setMode) m.setMode(g === "survival" ? (hg === "survival" ? hm : "open") : (g === "versus" && hg === "versus" ? hm : g)); sfx(); if (N.refresh) N.refresh(); renderLobby(); }); });
       Array.prototype.forEach.call(mb.querySelectorAll("[data-mode]"), function (bt) { bt.addEventListener("click", function () { if (m && m.setMode) m.setMode(bt.getAttribute("data-mode")); sfx(); if (N.refresh) N.refresh(); renderLobby(); }); });
     }
     /* ready / start */
@@ -320,7 +365,8 @@
     if (start) {
       start.hidden = !isHost;
       var all = others === othersReady;
-      start.classList.toggle("is-go", all);
+      start.classList.toggle("is-go", all && !(fightMode(hm) && !others));
+      start.classList.toggle("is-off", fightMode(hm) && !others);
       start.textContent = running ? "JOIN" : "START";
     }
     if (rb) {
@@ -331,9 +377,10 @@
     if (st) {
       st.classList.remove("is-bad");
       if (!N.connected()) { st.textContent = "Not connected to the game server."; st.classList.add("is-bad"); }
-      else if (isHost) st.textContent = !others ? "Pick your projection and egg, invite friends, then start. Friends can also drop into a game in progress."
+      else if (isHost && fightMode(hm) && !others) { st.textContent = (hm === "duel" ? "A duel" : "Versus") + " needs someone to fight! Send a friend the invite link: you can start once they're in."; }
+      else if (isHost) st.textContent = !others ? (duelNow() ? "Pick your projection (you bring your Hatchery Digimon)" : "Pick your projection and " + (vsNow() ? "Rookie" : "egg")) + ", invite friends, then start. Friends can also drop into a game in progress."
         : othersReady === others ? "Everyone is ready. Start when you like." : (others - othersReady) + " still choosing. Start now and they drop in when they are ready.";
-      else st.textContent = running ? "The game is running: press Ready to drop in." : ready ? "Ready. Waiting for the host to start…" : "Pick your projection and egg, then press Ready.";
+      else st.textContent = running ? "The game is running: press Ready to drop in." : ready ? "Ready. Waiting for the host to start…" : (duelNow() ? "Pick your projection (you bring your Hatchery Digimon)" : "Pick your projection and " + (vsNow() ? "Rookie" : "egg")) + ", then press Ready.";
     }
     restamp();
     startStage();
@@ -351,6 +398,8 @@
   function hostStart() {
     var me = null, list = N.players(), i, m = M();
     for (i = 0; i < list.length; i++) if (list[i].id === N.netId()) me = list[i];
+    /* Versus needs a second player (17z33) */
+    if (N.hostMode && fightMode(N.hostMode()) && list.length < 2) { sfx(); var st = $("lobby-status"); if (st) { st.textContent = (N.hostMode() === "duel" ? "A duel" : "Versus") + " needs someone to fight! Send a friend the invite link first."; st.classList.add("is-bad"); } return; }
     sfx("pick");
     if (!me || me.state !== "ready") { if (m) m.start(); }
     N.startGame();
@@ -452,6 +501,8 @@
     if ((b = $("lobby-tamer-next"))) b.addEventListener("click", function () { stepTamer(1); });
     if ((b = $("lobby-egg-prev"))) b.addEventListener("click", function () { stepEgg(-1); });
     if ((b = $("lobby-egg-next"))) b.addEventListener("click", function () { stepEgg(1); });
+    /* tap the egg's name for every egg at once (egg-grid.js) */
+    if ((b = $("lobby-egg-name"))) { b.parentNode.classList.add("is-tap"); b.parentNode.setAttribute("title", "See all eggs"); b.parentNode.addEventListener("click", function () { if (duelNow()) return; if (vsNow()) { stepEgg(1); return; } if (D.eggGrid) D.eggGrid.open({ noHatchery: true, onPick: function () { picked(); } }); }); }
     if ((b = $("lobby-stage"))) b.addEventListener("click", function () { stepTamer(1); });
     if ((b = $("btn-lobby-leave"))) b.addEventListener("click", function () { sfx(); N.leave("lobby"); D.setState("title"); });
     if ((b = $("lobby-link"))) b.addEventListener("focus", function () { try { this.select(); } catch (e) {} });
@@ -480,4 +531,6 @@
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
   else init();
+  /* chat-ui.js: after a code changes your projection */
+  D.onlineUi = { picked: picked, render: renderLobby };
 })(window);

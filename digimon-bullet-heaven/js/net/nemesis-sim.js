@@ -185,7 +185,7 @@
           }
         }
         /* the land */
-        if (e.nem >= N.conquerFrom && fac && w && w.cellOwner && w.setOwner && w.TILE && w.TILE()) {
+        if (e.nem >= N.conquerFrom && fac && !this.noWar && w && w.cellOwner && w.setOwner && w.TILE && w.TILE()) {
           span = w.TERR * w.TILE(); cx = Math.floor(e.x / span); cy = Math.floor(e.y / span); own = w.cellOwner(cx, cy);
           if (own && own !== fac) {
             if (e.nemCell !== cx + "," + cy) { e.nemCell = cx + "," + cy; e.nemCellT = 0; }

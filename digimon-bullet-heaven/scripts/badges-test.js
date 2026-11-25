@@ -40,9 +40,10 @@ ok(has("rms5"), "five wild Megas in one run: Titan Feller");
 /* growth */
 run.time = 300; ev({ type: "evolve", id: ME, to: "c" });
 ok(has("evo") && has("champion") && has("fastc"), "Champion five minutes in: Early Bloomer");
-run.time = 800; ev({ type: "evolve", id: ME, to: "u" });
-ok(has("ultimate") && !has("fastu"), "Ultimate at 13 minutes: too late for Prodigy");
-run.time = 1000; ev({ type: "evolve", id: ME, to: "m" });
+const SL = (D.SEASONS_CFG && D.SEASONS_CFG.lengthSec) || 486;     /* a season's length (17z33: 486 s) */
+run.time = SL * 2 + 20; ev({ type: "evolve", id: ME, to: "u" });
+ok(has("ultimate") && !has("fastu"), "Ultimate just after fall starts: too late for Prodigy");
+run.time = SL * 2 + 200; ev({ type: "evolve", id: ME, to: "m" });
 ok(has("mega") && has("fastm") && P.get().stats.mgr === 1, "Mega before winter: Warp Digivolve");
 ev({ type: "level", id: ME, level: 25 }); ev({ type: "tamer.level", id: ME, level: 10 });
 ok(has("jl10") && has("jl25") && !has("jl50") && has("bl10"), "job level 25 and base level 10");
@@ -61,9 +62,10 @@ ok(has("sp1") && has("ca1") && has("fd1") && has("bal") && has("hv1") && has("tn
 ev({ type: "coop.revive", id: "friend", by: ME }); ev({ type: "brawl.winner", winnerId: ME });
 ok(has("rev1") && has("brw1"), "reviving a friend and winning a brawl");
 /* during and after a run */
-P.tick(Object.assign(run, { time: 1100, kills: 520 }), "playing");
-ok(has("t5") && has("sum") && has("fall") && has("win") && !has("year") && has("rk250") && has("rk500") && !has("rk1k"), "eighteen minutes and 520 KOs in a run");
-P.tick({ time: 7200, kills: 1, form: "m" }, "playing");
+const SEASON = (D.SEASONS_CFG && D.SEASONS_CFG.lengthSec) || 486;
+P.tick(Object.assign(run, { time: SEASON * 3 + 20, kills: 520 }), "playing");
+ok(has("t5") && has("sum") && has("fall") && has("win") && !has("year") && has("rk250") && has("rk500") && !has("rk1k"), "into the first winter and 520 KOs in a run");
+P.tick({ time: SEASON * 4 * 5 + 10, kills: 1, form: "m" }, "playing");
 ok(has("year") && has("yr2") && has("yr5"), "five years in one run");
 const fresh = { time: 210, kills: 0, form: "b" }; P.tick(fresh, "playing"); ok(has("paci"), "three and a half minutes without a KO: the secret Pacifist");
 P.runEnded({ time: 50, kills: 0, form: "b", bits: 600 }); ok(has("quick") && has("hoard") && !has("megadie"), "a run lost in under a minute holding 600 Bits");

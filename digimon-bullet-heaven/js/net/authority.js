@@ -298,6 +298,7 @@
       snap.lifecycle = ms.lifecycle;
       snap.localPause = this.localPause;
       snap.runOver = ms.runOver;
+      snap.nest = ms.nest;                                           /* Night Siege's Primary Village (17z33) */
       snap.rejected = ms.rejected;
       snap.events = ev.concat(this.sim.consumeEvents());
     }

@@ -13,7 +13,8 @@
 (function (global) {
   "use strict";
   var D = (global.DBH = global.DBH || {});
-  var LIST = [], BY = {}, CATS = ["Growth", "Combat", "Rival", "Survival", "World", "Farm", "Collection", "Together", "Mastery"];
+  function seasonLen() { return (D.SEASONS_CFG && D.SEASONS_CFG.lengthSec) || 486; }
+  var LIST = [], BY = {}, CATS = ["Growth", "Combat", "Turf War", "Rival", "Survival", "World", "Farm", "Collection", "Together", "Mastery"];
   function add(cat, id, name, text, tier, extra) {
     var b = { id: id, cat: cat, name: name, text: text, tier: tier || 1 }, k;
     if (extra) for (k in extra) b[k] = extra[k];
@@ -34,9 +35,9 @@
   ladder("Growth", "evos", function (n) { return n + " digivolutions in total"; }, [[25, "ev25", "Shape Shifter", 1], [100, "ev100", "Metamorph", 2], [500, "ev500", "Ever-Changing", 3]]);
   ladder("Growth", "ulr", function (n) { return "Raise " + n + " Ultimates"; }, [[10, "ul10", "Perfect Ten", 2]]);
   ladder("Growth", "mgr", function (n) { return "Raise " + n + " Megas"; }, [[5, "mg5", "Mega Maker", 3], [25, "mg25", "Mega Factory", 4]]);
-  add("Growth", "fastc", "Early Bloomer", "Reach Champion before the first summer (6 minutes)", 2);
-  add("Growth", "fastu", "Prodigy", "Reach Ultimate before the first fall (12 minutes)", 3);
-  add("Growth", "fastm", "Warp Digivolve", "Reach Mega before the first winter (18 minutes)", 4);
+  add("Growth", "fastc", "Early Bloomer", "Reach Champion before the first summer (about 8 minutes)", 2);
+  add("Growth", "fastu", "Prodigy", "Reach Ultimate before the first fall (about 16 minutes)", 3);
+  add("Growth", "fastm", "Warp Digivolve", "Reach Mega before the first winter (about 24 minutes)", 4);
   add("Growth", "hold", "Not Yet", "Tell a partner to wait when it is ready to digivolve", 1);
   ladder("Growth", "holds", function (n) { return "Hold a partner back " + n + " times"; }, [[10, "hd10", "Patience", 2], [50, "hd50", "Iron Will", 3]]);
   add("Growth", "lucky", "Against the Odds", "Have luck bend a digivolution into something it should not have been", 3, S);
@@ -69,6 +70,18 @@
   ladder("Combat", "lords", function (n) { return "Defeat " + n + " biome lords"; }, [[5, "ld5", "Conqueror", 3], [25, "ld25", "Sovereign", 4]]);
   add("Combat", "giant", "Giant Killer", "Defeat a wild Mega while your partner is a Rookie or smaller", 4);
   add("Combat", "bossb", "Baby Steps", "Defeat a boss with a Baby or In-Training partner", 3, S);
+
+  /* ---------------- Turf War (17z33, turf.js) ---------------- */
+  add("Turf War", "side", "Pledged", "Pick a side in the biome war", 1);
+  add("Turf War", "warwin", "Kingmaker", "Win a turf war: your side holds half the land round the start", 3);
+  ladder("Turf War", "warwins", function (n) { return "Win " + n + " turf wars"; }, [[5, "warlord", "Warlord", 4]]);
+  add("Turf War", "underdog", "Against All Odds", "Win a turf war for a side that started with under a tenth of the land", 4, S);
+  /* world events (17z33, event-sim.js / world-events.js) */
+  add("Together", "wev", "Answered the Call", "Help beat a world event: an outbreak, a Dark Area surge or a rampaging Mega", 2);
+  add("Together", "wevOutbreak", "Patient Zero", "Beat a virus outbreak's Patient Zero", 3);
+  add("Together", "wevSurge", "Rift Sealer", "Beat a Surge Lord and hand the land back", 3);
+  add("Together", "wevRampage", "Mega Breaker", "Bring down a rampaging Mega", 3);
+  ladder("Together", "wevWins", function (n) { return "Help beat " + n + " world events"; }, [[3, "wevVet", "Old Hand", 4]]);
 
   /* ---------------- Rival ---------------- */
   add("Rival", "rv1", "Rivalry", "Beat your rival", 1);
@@ -185,9 +198,10 @@
       st = stage(e.to);
       if (st === "Ultimate") api.bump("ulr");
       if (isMega(st)) api.bump("mgr");
-      if ((st === "Champion" || st === "Armor" || st === "Hybrid") && t < 360) api.award("fastc");
-      if (st === "Ultimate" && t < 720) api.award("fastu");
-      if (isMega(st) && t < 1080) api.award("fastm");
+      if ((st === "Champion" || st === "Armor" || st === "Hybrid") && t < seasonLen()) api.award("fastc");
+      /* the first fall and winter start 2 and 3 seasons in (17z33: seasons are 486 s) */
+      if (st === "Ultimate" && t < seasonLen() * 2) api.award("fastu");
+      if (isMega(st) && t < seasonLen() * 3) api.award("fastm");
       ladders(api);
     } else if (e.type === "evo.hold") { api.bump("holds"); ladders(api); }
     else if (e.type === "evo.lucky") api.award("lucky");
@@ -208,7 +222,7 @@
   }
   /* while a run is going */
   function tick(api, run) {
-    var t = run.time || 0, yl = ((D.SEASONS_CFG && D.SEASONS_CFG.lengthSec) || 360) * 4, k = run.kills || 0;
+    var t = run.time || 0, yl = ((D.SEASONS_CFG && D.SEASONS_CFG.lengthSec) || 486) * 4, k = run.kills || 0;
     if (t >= 300) api.award("t5");
     if (t >= yl / 4) api.award("sum");
     if (t >= yl / 2) api.award("fall");

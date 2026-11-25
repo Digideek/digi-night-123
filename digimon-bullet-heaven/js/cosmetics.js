@@ -1,4 +1,4 @@
-/* Persistent DigiBits + cosmetic unlocks (farm skins, Digivice frames, titles).
+/* Persistent DigiCoins + cosmetic unlocks (farm skins, Digivice frames, titles).
  * All I/O goes through D.storage so a later cloud adapter can drop in.
  * Legendary set is not sold; it drops from defeating a hidden high-tier brawl foe.
  */
@@ -43,7 +43,7 @@
   function payoutCfg() {
     var c = D.DIGIBITS || (D.BRAWL_CFG && D.BRAWL_CFG.digiBits) || {};
     return {
-      name: c.name || "DigiBits",
+      name: c.name || "DigiCoins",
       winReward: c.winReward != null ? c.winReward : 8,
       betPool: c.betPool != null ? c.betPool : 6,
       minBetPayout: c.minBetPayout != null ? c.minBetPayout : 1

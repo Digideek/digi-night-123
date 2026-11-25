@@ -98,6 +98,8 @@
       if (!P || !att || !foe || !this._pvpFoes(att, foe) || foe.monInvuln > 0 || !(foe.hp > 0)) return false;
       d = (dmg || 0) * P.share;
       if (att.mx !== foe.mx) att.mfacing = foe.mx < att.mx ? -1 : 1;
+      /* its own damage number, like any hit (17z33): pvp names whose partner took it */
+      this.emit({ type: "hit", pvp: foe.id, damage: d, x: foe.mx, y: foe.my, r: e.radius || 12, f: Math.round(100 * d / Math.max(1, foe.maxHp)) / 100, by: att.id });
       if (foe.hp - d <= foe.maxHp * P.koAt) { this._pvpKo(att, foe); return true; }
       this.hurtMon(foe, d, { type: att.form, hit: 0, pvp: att.id });
       if (!(foe.hp > 0)) { foe.hp = 1; this._pvpKo(att, foe); }

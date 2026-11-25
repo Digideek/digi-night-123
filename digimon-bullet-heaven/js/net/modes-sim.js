@@ -53,7 +53,15 @@
 
     /* a sim nobody set a mode on (tests, tools) plays by the old one-life rules; game.js always sets one */
     MissionSim.prototype._mode = function () { return this.runMode || "survival"; };
-    MissionSim.prototype._oneLife = function () { var m = this._mode(); return m === "survival" || m === "ranked" || m === "weekly"; };
+    MissionSim.prototype._oneLife = function () { var m = this._mode(); return m === "survival" || m === "ranked" || m === "weekly" || m === "siege"; };
+    /* each mode's own rules, once a tick (story-sim.js, siege-sim.js, versus-sim.js) */
+    MissionSim.prototype._updateModeRules = function (dt) {
+      var m = this._mode(), SN = this.data.seasons;
+      if (SN && SN.useMode) SN.useMode(m);                 /* Night Siege's shorter days (seasons.js) */
+      if (m === "story" && this._updateStory) this._updateStory(dt);
+      else if (m === "siege" && this._updateSiege) this._updateSiege(dt);
+      else if ((m === "versus" || m === "duel") && this._updateVersus) this._updateVersus(dt);
+    };
 
     /* the line's Digi Egg for a partner: the one it hatched from, or the line it belongs to */
     MissionSim.prototype._eggFor = function (p) {
@@ -129,7 +137,10 @@
         mode: this._mode(), week: this.week || null, seed: this.seed, time: Math.round(this.time || 0),
         level: Math.max(p.level || 1, p.peakLevel || 1), kills: p.kills || 0, lords: p.lordsBeaten || 0, bosses: p.bossesBeaten || 0,
         pvp: p.pvpWins || 0, megaAt: p.megaAt ? Math.round(p.megaAt) : null, respawns: p.respawns || 0,
-        score: this._score(p), faction: best, landBy: landBy, form: p.form
+        score: this._score(p), faction: best, landBy: landBy, form: p.form,
+        nights: this._siegeNights ? this._siegeNights() : 0,                                 /* Night Siege (17z33) */
+        story: this.story ? (this.story.done ? "done" : this.story.i) : null,
+        vs: this.vs && this.vs.phase === "done" ? { winner: this.vs.winner, wins: this.vs.wins } : null
       };
     };
     /* notes for the boards: first time at Mega, lords beaten */

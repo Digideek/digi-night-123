@@ -128,7 +128,10 @@
   Renderer.prototype._init = function () {
     var canvas = this.canvas;
     var gl = null;
-    var attrs = { alpha: false, antialias: false, depth: false, stencil: false, premultipliedAlpha: true, preserveDrawingBuffer: true };
+    /* powerPreference: on a laptop with two graphics chips, ask for the gaming one rather than the
+     * built-in one (17z33). preserveDrawingBuffer off: nothing reads the screen back, and keeping it
+     * made some cards copy the whole frame every frame. */
+    var attrs = { alpha: false, antialias: false, depth: false, stencil: false, premultipliedAlpha: true, preserveDrawingBuffer: false, powerPreference: "high-performance" };
     try { gl = canvas.getContext("webgl", attrs) || canvas.getContext("experimental-webgl", attrs); } catch (e) { gl = null; }
     if (!gl) {
       this.ok = false;
@@ -262,8 +265,16 @@
     var failed = false;
     try {
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, src);
-      /* out of video memory doesn't throw, it just leaves an error behind */
-      if ((src.width || 0) * (src.height || 0) > 4096 && gl.getError() === gl.OUT_OF_MEMORY) failed = true;
+      /* out of video memory doesn't throw, it just leaves an error behind. Asking makes the CPU wait
+       * for the graphics card to finish everything queued, so ask at most once a second unless a lot
+       * is already loaded (17z33: it asked after every big upload, a stall per ground chunk) */
+      if ((src.width || 0) * (src.height || 0) > 4096) {
+        var tNow = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
+        if ((this.stats.live || 0) > 600 || tNow - (this._errAt || 0) > 1000) {
+          this._errAt = tNow;
+          if (gl.getError() === gl.OUT_OF_MEMORY) failed = true;
+        }
+      }
     } catch (e) {
       failed = true;
     }

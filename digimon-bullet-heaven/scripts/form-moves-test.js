@@ -11,6 +11,8 @@ const auth = require(path.join(root, "js/net/authority.js"));
 let failed = 0;
 function ok(c, m) { if (!c) { failed++; console.log("  FAIL " + m); } else console.log("  ok " + m); }
 const W = D.WEAPONS;
+/* these check how each move behaves, not how hard it hits: no equipped-move focus bonus (skill-tree.js EQUIP) */
+if (D.SKILLS && D.SKILLS.EQUIP) D.SKILLS.EQUIP.focus = 1;
 function world(form, id, lvl) {
   const sim = new mission.MissionSim({ seed: 5, hz: auth.TICK_HZ, data: D }); new auth.Authority({ sim: sim, seed: 5 });
   sim.phase = "playing"; sim.time = 60; sim.skillTree = true;

@@ -29,6 +29,7 @@ STYLE = {
     'null':  dict(hair='bob',      wear='coat',    extra='visor'),
     'rune':  dict(hair='mohawk',   wear='cape',    extra='collar'),
     'echo':  dict(hair='long',     wear='jacket',  extra='phones'),
+    'smoke': dict(hair='cap',      wear='jacket',  extra=None),          # 17z33 (drawn by holo4.py)
 }
 
 def _ik(hx, hy, fx, fy, l1, l2, fwd=1):

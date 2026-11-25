@@ -4,6 +4,8 @@
  */
 (function (global) {
   "use strict";
+  /* how far each equipped move is from ready, 0 (ready) to 1 (just used), for the move bar (17z33) */
+  function wcOf(p) { var w = p.weapons || [], o = [], i; for (i = 0; i < w.length; i++) o.push(w[i].cdMax > 0 ? Math.round(100 * Math.max(0, Math.min(1, (w[i].cd || 0) / w[i].cdMax))) / 100 : 0); return o; }
   var isNode = typeof module === "object" && module.exports;
   var root = isNode ? global : window;
   var D = (root.DBH = root.DBH || {});
@@ -350,6 +352,9 @@
       lab: this._labClean(rec.lab),
       /* a DigiBank memory of this egg line: skill points waiting for the hatch */
       gear: this._gearClean(rec.gear),
+      blood: this._bloodClean(rec.blood),                                 /* a Hatchery partner's bloodline (hatchery.js) */
+      vsRookie: typeof rec.vsRookie === "string" ? rec.vsRookie.slice(0, 40) : null,   /* Versus: the Rookie you start as */
+      duel: this._duelClean ? this._duelClean(rec.duel) : null,                       /* Duel: your Hatchery Digimon as it is */
       memory: Math.max(0, Math.min((this.data && this.data.MEMORY && this.data.MEMORY.max) || 3, Math.floor(+rec.memory || 0))),
       skillPoints: Math.max(0, Math.min((this.data && this.data.MEMORY && this.data.MEMORY.max) || 3, Math.floor(+rec.memory || 0))),
       xp: rec.xp || 0,
@@ -543,27 +548,31 @@
    * Boost) were recorded but never applied here; build them from statLevels. */
   /* ---------- items (data.js ITEMS): what a tamer plugged in, put on and packed for this run ---------- */
   MissionSim.prototype._gearClean = function (raw) {
-    var I = this.data && this.data.ITEMS, out = { crest: [], charm: null, use: null, scroll: null }, by = {}, i, id;
+    var I = this.data && this.data.ITEMS, out = { crest: [], charm: null, use: null, uses: [], scroll: null }, by = {}, i, id, max = (I && I.useSlotsMax) || 4;
     if (!I || !raw || typeof raw !== "object") return out;
     for (i = 0; i < I.list.length; i++) by[I.list[i].id] = I.list[i];
     for (i = 0; i < (raw.crest || []).length && out.crest.length < 2; i++) { id = raw.crest[i]; if (by[id] && by[id].kind === "crest" && out.crest.indexOf(id) < 0) out.crest.push(id); }
     if (by[raw.charm] && by[raw.charm].kind === "charm") out.charm = raw.charm;
-    if (by[raw.use] && by[raw.use].kind === "cons") out.use = raw.use;
-    if (!out.use && typeof raw.scroll === "string" && raw.scroll.length < 40) out.scroll = raw.scroll;
+    /* 17z33: up to four one-run items (three, the Lab's Kit Bag a fourth); a scroll takes one of the places */
+    var list = (raw.uses && raw.uses.length ? raw.uses : (raw.use ? [raw.use] : []));
+    for (i = 0; i < list.length && out.uses.length < max; i++) { id = list[i]; if (by[id] && by[id].kind === "cons" && out.uses.indexOf(id) < 0) out.uses.push(id); }
+    out.use = out.uses[0] || null;
+    if (out.uses.length < max && typeof raw.scroll === "string" && raw.scroll.length < 40) out.scroll = raw.scroll;
     return out;
   };
   /* everything its gear changes, as one set of numbers */
   MissionSim.prototype._gear = function (p) {
     if (p && p._gearMods) return p._gearMods;
-    var I = this.data && this.data.ITEMS, m = { elem: {}, burst: 1, magnet: 1, hp: 1, leech: 0, farm: 0, earlyXp: 1, earlyUntil: 0, shiny: 1, burstTime: 0 }, g = p && p.gear, ids, i, j, fx;
+    var I = this.data && this.data.ITEMS, m = { elem: {}, burst: 1, magnet: 1, hp: 1, leech: 0, farm: 0, earlyXp: 1, earlyUntil: 0, shiny: 1, burstTime: 0, xp: 1, crop: 1 }, g = p && p.gear, ids, i, j, fx;
     if (I && g) {
-      ids = (g.crest || []).concat(g.charm ? [g.charm] : []);
+      ids = (g.crest || []).concat(g.charm ? [g.charm] : [], g.uses || (g.use ? [g.use] : []));
       for (i = 0; i < ids.length; i++) for (j = 0; j < I.list.length; j++) if (I.list[j].id === ids[i]) {
         fx = I.list[j].fx || {};
         if (fx.elem) m.elem[fx.elem] = 1.1;
         if (fx.burst) m.burst *= fx.burst; if (fx.magnet) m.magnet *= fx.magnet; if (fx.hp) m.hp *= fx.hp;
         if (fx.leech) m.leech += fx.leech; if (fx.farm) m.farm += fx.farm; if (fx.shiny) m.shiny *= fx.shiny; if (fx.burstTime) m.burstTime += fx.burstTime;
         if (fx.earlyXp) { m.earlyXp = fx.earlyXp; m.earlyUntil = fx.earlyUntil || 180; }
+        if (fx.xp) m.xp *= fx.xp; if (fx.crop) m.crop *= fx.crop;          /* 17z33: one-run items */
       }
     }
     if (p) p._gearMods = m;
@@ -571,13 +580,22 @@
   };
   /* the one-run item, set up as the tamer joins */
   MissionSim.prototype._gearStart = function (p) {
-    var I = this.data && this.data.ITEMS, g = p.gear, i, fx = null;
+    var I = this.data && this.data.ITEMS, g = p.gear, i, j, k, fx = null, uses;
     if (!I || !g) return;
-    for (i = 0; i < I.list.length; i++) if (I.list[i].id === g.use) fx = I.list[i].fx;
-    if (fx && fx.level && (p.level || 1) < fx.level) { p.skillPoints = (p.skillPoints || 0) + (fx.level - (p.level || 1)); p.level = fx.level; p.xp = 0; p.xpNext = this._xpNeeded(p.level); }
-    if (fx && fx.luckyShiny) p.luckyShiny = fx.luckyShiny;
-    if (fx && fx.wind) p.secondWind = true;
-    if (fx && fx.bait) this.rivalBait = true;
+    uses = g.uses || (g.use ? [g.use] : []);
+    for (j = 0; j < uses.length; j++) {
+      fx = null;
+      for (i = 0; i < I.list.length; i++) if (I.list[i].id === uses[j]) fx = I.list[i].fx;
+      if (!fx) continue;
+      if (fx.level && (p.level || 1) < fx.level) { p.skillPoints = (p.skillPoints || 0) + (fx.level - (p.level || 1)); p.level = fx.level; p.xp = 0; p.xpNext = this._xpNeeded(p.level); }
+      if (fx.luckyShiny) p.luckyShiny = fx.luckyShiny;
+      if (fx.wind) p.secondWind = true;
+      if (fx.bait) this.rivalBait = true;
+      /* 17z33: a head start: stat points, Bits, a full belly and a packed lunch */
+      if (fx.attr) { p.itemAttr = p.itemAttr || {}; for (k in fx.attr) p.itemAttr[k] = (p.itemAttr[k] || 0) + fx.attr[k]; p._statsKey = null; }
+      if (fx.bits) p.bits = (p.bits || 0) + fx.bits;
+      if (fx.belly) { p.fullness = (this.data.CARE && this.data.CARE.fullnessMax) || 100; p.bag = p.bag || {}; p.bag.meat = (p.bag.meat || 0) + fx.belly; }
+    }
     if (g.scroll) p.scroll = g.scroll;
   };
   /* a rival's scroll: the first time the partner is in a form whose tree has that skill, it learns
@@ -610,10 +628,10 @@
   /* multipliers (and farm seconds) from a player's Lab levels */
   MissionSim.prototype._lab = function (p) {
     if (p && p._labMods) return p._labMods;
-    var L = this.data && this.data.LAB, m = { hp: 1, dmg: 1, magnet: 1, xp: 1, bits: 1, farm: 0, burst: 1, speed: 1, bxp: 1, data: 1, crop: 1, belly: 1 }, i, u, n;
+    var L = this.data && this.data.LAB, m = { hp: 1, dmg: 1, magnet: 1, xp: 1, bits: 1, farm: 0, burst: 1, speed: 1, bxp: 1, data: 1, crop: 1, belly: 1, moveslot: 0 }, i, u, n;
     if (L && p && p.lab) for (i = 0; i < L.list.length; i++) {
-      u = L.list[i]; n = p.lab[u.id] || 0; if (!n) continue;
-      if (u.stat === "farm") m.farm += u.per * n; else if (m[u.stat] != null) m[u.stat] *= 1 + u.per * n;
+      u = L.list[i]; n = Math.min(p.lab[u.id] || 0, u.max || 99); if (!n) continue;
+      if (u.stat === "farm" || u.stat === "moveslot") m[u.stat] += u.per * n; else if (m[u.stat] != null) m[u.stat] *= 1 + u.per * n;
     }
     if (p) p._labMods = m;
     return m;
@@ -630,7 +648,12 @@
     var SK = this._sk(), pm = SK ? SK.passiveMul(p.skills || {}) : null;
     if (pm) key += "s" + pm.damage + "/" + pm.cooldown + "/" + pm.speed + "/" + pm.magnet;
     var PV = this._passives(p);
-    key += "v" + PV.key;
+    var VB = this.data.vegBoosts ? this.data.vegBoosts(p.foodCounts) : null;     /* 17z33: the garden's lasting boosts */
+    var BP = this.data.BLOODLINE ? 1 + this.data.BLOODLINE.power * this._blood(p, "power") : 1;   /* 17z33: a bloodline's Power */
+    var SPD = this.data.SPEEDS || {}, trackSpd = Math.min(SPD.trackMax || 0.6, ((p.trainStats && p.trainStats.agility) || 0) * (SPD.trackPer || 0.005));
+    var boots = Math.min((SPD.boots && SPD.boots.max) || 5, (p.shopBought && p.shopBought.sprintBoots) || 0);
+    key += "k" + Math.round(trackSpd * 1000) + "b" + boots;
+    key += "v" + PV.key + "B" + BP + (VB ? "g" + VB.key : "") + (p.starving ? "h" : "") + (p.shiny ? "S" + (p.shinyBoost || 0) : "");
     if (p._statsKey === key && p.stats) return p.stats;
     s = { speedMul: 1, magnetMul: 1, maxHpMul: 1, damageMul: 1, cooldownMul: 1, monSpeedMul: 1 };
     for (id in lv) if (defs[id] && defs[id].apply) for (i = 0; i < lv[id]; i++) defs[id].apply(s, i + 1);
@@ -644,9 +667,17 @@
     /* ally passives: the one walking beside you, and any kept from DNA digivolving with one */
     s.damageMul *= PV.damage; s.cooldownMul *= PV.cooldown; s.monSpeedMul *= PV.monSpeed; s.magnetMul *= PV.magnet;
     var LB = this._lab(p), GR = this._gear(p);
-    s.damageMul *= LB.dmg; s.magnetMul *= LB.magnet * GR.magnet;
+    s.damageMul *= LB.dmg * BP; s.magnetMul *= LB.magnet * GR.magnet;
     s.monSpeedMul *= LB.speed;
-    s.allyMaxHp = PV.maxHp * LB.hp * GR.hp; s.allyGuard = PV.guard; s.allyCrit = PV.crit; s.allyDodge = PV.dodge; s.allyRegen = PV.regen; s.allyBurst = PV.burst;
+    if (p.shiny && p.shinyBoost) { var sb = 1 + p.shinyBoost; s.damageMul *= sb; s.monSpeedMul *= sb; s.cooldownMul /= sb; }   /* 17z33: a shiny is a little stronger in everything */
+    if (p.starving) { var CR = this._care(); s.monSpeedMul *= CR.starveSpeed || 0.8; s.damageMul *= CR.starveDamage || 0.85; }   /* 17z33: starving */
+    /* 17z33: three speeds. Attack speed is AGI (ro-stats.js); the partner's run speed grows with the running
+     * track's Agility training; the tamer's own speed is Sprint Boots. The partner always keeps ahead of the
+     * tamer (_movePartner). */
+    s.monSpeedMul *= 1 + trackSpd; s.trackSpeed = trackSpd;
+    if (boots) { s.speedMul *= 1 + boots * ((SPD.boots && SPD.boots.per) || 0.06); s.boots = boots; }
+    if (VB) { s.monSpeedMul *= 1 + VB.speed; s.cooldownMul /= 1 + VB.rate; s.damageMul *= 1 + VB.damage; s.magnetMul *= 1 + VB.magnet; }
+    s.allyMaxHp = PV.maxHp * LB.hp * GR.hp * (VB ? 1 + VB.hp : 1); s.allyGuard = PV.guard * (VB ? 1 / (1 + VB.guard) : 1); s.allyCrit = PV.crit; s.allyDodge = PV.dodge; s.allyRegen = PV.regen; s.allyBurst = PV.burst;
     /* status points (js/ro-stats.js): STR -> physical, INT -> special, AGI/DEX -> attack speed */
     s.physMul = dv ? dv.physMul : 1;
     s.specMul = dv ? dv.specMul : 1;
@@ -959,13 +990,13 @@
   };
 
   /* clicked the other tamer's partner (PvP): an ordinary attack order on its stand-in (pvp-sim.js) */
-  MissionSim.prototype._setPvpFocus = function (pid, foeId) {
+  MissionSim.prototype._setPvpFocus = function (pid, foeId, quiet) {
     var p = this.player(pid), f = this.player(String(foeId)), px;
     if (!p || !f || f === p || !this._pvpFoes || !this._pvpFoes(p, f)) return false;
     this._pvpProxies = this._pvpProxies || {};
     px = this._pvpProxies[f.id] || (this._pvpProxies[f.id] = { _id: -1000 - this.players.indexOf(f), pvpOf: f.id, st: 0, hitCd: 0 });
     p.pvpFocus = f.id; p.focusId = px._id; p.goTo = null;
-    this.emit({ type: "focus", id: p.id, pvp: f.id, x: f.mx, y: f.my });
+    if (!quiet) this.emit({ type: "focus", id: p.id, pvp: f.id, x: f.mx, y: f.my });   /* quiet: chosen for it (versus-sim.js), not clicked */
     return true;
   };
   MissionSim.prototype._setFocus = function (pid, enemyId) {
@@ -1012,6 +1043,14 @@
     };
   };
 
+  /* is this move a Mega's main move (its primary line), for MEGA_PUNCH? cached per form */
+  MissionSim.prototype._megaPunch = function (form, id) {
+    var d = this.data, c, list, i;
+    if (!d.MEGA_PUNCH || !d.moveChain || !d.moveStageIdx || d.moveStageIdx(form) < 5) return false;
+    c = (this._punchOf = this._punchOf || {})[form];
+    if (!c) { c = {}; list = d.moveChain(form).primary || []; for (i = 0; i < list.length; i++) c[list[i].id] = 1; this._punchOf[form] = c; }
+    return !!c[id];
+  };
   MissionSim.prototype._fireFrom = function (owner, dt, ox, oy, target, weapon) {
     if (!weapon) return;
     var def = this._weaponDef(weapon.id);
@@ -1024,12 +1063,13 @@
     dmgMul *= weapon.bonus || 1;   /* skill levels between a move's power steps */
     /* signatures and techniques grow with the partner's stage (moves.js GROW) */
     if (def.grows && owner && owner.form && this.data.MOVE_GROW && this.data.moveStageIdx) dmgMul *= this.data.MOVE_GROW[Math.max(0, Math.min(5, this.data.moveStageIdx(owner.form)))] || 1;
+    if (owner && owner.form && this._megaPunch(owner.form, def.id)) dmgMul *= this.data.MEGA_PUNCH;   /* a Mega's main move hits harder */
     var BU = owner && owner.burstLeft > 0 ? this._burstCfg(owner) : null;
     if (BU) dmgMul *= BU.damageMul;
     if (def.type === "orbit") { this._orbitHit(ox, oy, def, lv, owner, dmgMul); return; }
     weapon.cd = (weapon.cd || 0) - dt;
     if (weapon.cd > 0) return;
-    weapon.cd = (lv.cooldown || 0.7) * Math.max(0.35, ((oStats && oStats.cooldownMul) || 1) * ((oStats && (def.type === "arc" ? oStats.physCdMul : oStats.specCdMul)) || 1)) * ((this.data.MOVE_PACE && this.data.MOVE_PACE.cooldownMul) || 1) * (BU ? BU.cooldownMul : 1);
+    weapon.cd = weapon.cdMax = (lv.cooldown || 0.7) * Math.max(0.35, ((oStats && oStats.cooldownMul) || 1) * ((oStats && (def.type === "arc" ? oStats.physCdMul : oStats.specCdMul)) || 1)) * ((this.data.MOVE_PACE && this.data.MOVE_PACE.cooldownMul) || 1) * (BU ? BU.cooldownMul : 1);
     var ang = 0;
     if (target) ang = Math.atan2(target.y - oy, target.x - ox);
     var count = lv.count || 1;
@@ -1511,8 +1551,36 @@
   };
   MissionSim.prototype._jobBonus = function (p) {
     var RO = this._ro(), fam = this.data.moveFamilyOf ? this.data.moveFamilyOf(p.form) : null;
-    return RO.jobBonus(this._isEgg(p.form) ? 0 : (p.evoCount || 0), fam, (p.kind === "cpu" || p.hasTamer === false) ? 0 : (p.tamerLevel || 1));
+    var pa = this._attrParts(p);
+    return RO.plus(RO.plus(RO.plus(RO.plus(pa.level, pa.evo), pa.farm), pa.item), pa.blood);
   };
+  /* the green bonus, by where it comes from (17z33): base-level growth, digivolving, farm training */
+  MissionSim.prototype._attrParts = function (p) {
+    var RO = this._ro(), fam = this.data.moveFamilyOf ? this.data.moveFamilyOf(p.form) : null, tamer = !(p.kind === "cpu" || p.hasTamer === false);
+    return {
+      level: tamer ? RO.levelBonus(p.tamerLevel || 1, fam) : RO.jobBonus(0, fam, 0),
+      evo: RO.jobBonus(this._isEgg(p.form) ? 0 : (p.evoCount || 0), fam, 0),
+      farm: tamer && RO.farmBonus ? RO.farmBonus(p.trainStats, p.bondTrain) : RO.jobBonus(0, fam, 0),
+      item: RO.plus(RO.jobBonus(0, fam, 0), p.itemAttr || null),         /* 17z33: seeds from one-run items */
+      blood: RO.plus(RO.jobBonus(0, fam, 0), this._bloodAttr(p))           /* 17z33: its bloodline's stat traits (hatchery.js) */
+    };
+  };
+  /* a Hatchery partner's bloodline (data.js BLOODLINE): how many levels of trait k it carries */
+  MissionSim.prototype._bloodClean = function (b) {
+    var B = this.data.BLOODLINE, out, k;
+    if (!B || !b || typeof b !== "object" || !b.traits) return null;
+    out = { gen: Math.max(1, Math.min(9999, b.gen | 0)), traits: {} };
+    for (k in B.names) if (b.traits[k] > 0) out.traits[k] = Math.min(B.max, b.traits[k] | 0);
+    return out;
+  };
+  MissionSim.prototype._blood = function (p, k) { return (p && p.blood && p.blood.traits && p.blood.traits[k]) || 0; };
+  MissionSim.prototype._bloodAttr = function (p) {
+    var B = this.data.BLOODLINE, out = null, k, S = ["str", "agi", "vit", "int", "dex", "luk"];
+    if (!B || !p || !p.blood) return null;
+    for (k = 0; k < S.length; k++) if (this._blood(p, S[k])) { out = out || {}; out[S[k]] = this._blood(p, S[k]) * B.stat; }
+    return out;
+  };
+  MissionSim.prototype._bloodXp = function (p) { var B = this.data.BLOODLINE; return B ? 1 + B.learn * this._blood(p, "learn") : 1; };
   MissionSim.prototype._attrsEff = function (p) {
     var RO = this._ro();
     return RO.plus(this._attrs(p), this._jobBonus(p));
@@ -1837,7 +1905,9 @@
         if (e.dead || dist2(x, y, e.x, e.y) <= ST.radius * ST.radius) continue;
         if (w.inPuddle(e.x, e.y) === null || dist2(pud.x, pud.y, e.x, e.y) > pud.r * pud.r) continue;
         this._setStatus(e, "shock", ST.shock, {});
-        e.hp -= Math.max(ST.minDamage, e.maxHp * ST.enemy * 0.5); e.flash = 0.15;
+        var pz = Math.max(ST.minDamage, e.maxHp * ST.enemy * 0.5);
+        e.hp -= pz; e.flash = 0.15;
+        this.emit({ type: "hit", enemyId: e._id, damage: pz, x: e.x, y: e.y, r: e.radius || 10, f: Math.round(100 * pz / Math.max(1, e.maxHp)) / 100, bolt: 1, by: null });   /* its number too */
         if (e.hp <= 0) this._killEnemy(e, null);
       }
       this.emit({ type: "fx", k: "pudzap", x: Math.round(pud.x), y: Math.round(pud.y), r: Math.round(pud.r) });
@@ -1906,11 +1976,14 @@
     var stEl = (atk && atk.form && this.data.ELEMENTS && this.data.STATUS) ? this.data.ELEMENTS.moveElement(wid, atk.form) : null, stKnock = 1;
     if (e.st && e.st.curse && this.data.STATUS) dmg *= this.data.STATUS.dark.taken;
     if (stEl) { stKnock = this._applyElement(e, stEl, dmg, owner); this._maybePatch(e.x, e.y, stEl, dmg, owner, wid); }
+    if (e.vsBoss && atk && atk.id != null && this._vsBossHit) this._vsBossHit(e, this.player(atk.id), Math.min(dmg, Math.max(0, e.hp)));   /* Versus: who hurt the mini boss */
     e.hp -= dmg;
     e.flash = 0.1;
     this._knockback(e, kbX, kbY, (knock || 0) * stKnock, this._knockStageMul(owner));
     /* c: a critical. m: 1 it was weak to this, -1 it resisted. f: share of its full health. k: this blow killed it. */
     var hitEv = { type: "hit", enemyId: e._id, damage: dmg, x: e.x, y: e.y, r: e.radius || 10, f: Math.round(100 * dmg / Math.max(1, e.maxHp)) / 100, c: rolled > 1 ? 1 : 0, m: elM > 1.05 ? 1 : (elM < 0.95 ? -1 : 0), by: owner && owner.id != null ? owner.id : null };
+    if (wid) hitEv.w = wid;                                           /* the move, so a big move's hit can feel big (17z33) */
+    if (hitEv.m > 0 && atk && atk.id != null && atk === this.player(atk.id)) atk.weakHits = (atk.weakHits || 0) + 1;   /* Story's weakness goal */
     this.emit(hitEv);
     if (e.hp <= 0) { hitEv.k = 1; this._killEnemy(e, owner); }
     return true;
@@ -1919,6 +1992,7 @@
   MissionSim.prototype._killEnemy = function (e, owner) {
     if (this._warLossOf) this._warLossOf(e);                          /* its biome feels the loss at the front */
     if (this._nestLoss) this._nestLoss(e);                            /* and its nest is one fewer */
+    if (e.wev && this._wevDown) this._wevDown(e, owner);               /* a world event's boss is down (event-sim.js) */
     /* the rival's kills are its own: its XP, nothing dropped for you */
     if (owner && owner.id === "rival" && this._rivalKill) return this._rivalKill(e);
     /* a wild Digimon's kill (an infected one's, or one fighting it off) is nobody's: nothing dropped */
@@ -1928,6 +2002,7 @@
     e.hp = 0;
     this.kills += 1;
     var p = (owner && this.player(owner.id)) || this.player(this.localId) || this.players[0];
+    if (this._vsKill && this.vs) this._vsKill(e, owner && this.player(owner.id));   /* Versus: the DIGIVOLVE meter */
     this._lootFor = p;                                                            /* whose level the XP is measured against (_xpGap) */
     if (p && this._trustKill && !(owner && owner.wild)) this._trustKill(p, e);     /* faction-sim.js: who is glad of it, who isn't */
     if (p && this._allyShare && !(owner && owner.wild)) this._allyShare(p, e);     /* pvp-sim.js: the Digimon at your side learn from it */
@@ -1938,6 +2013,13 @@
       p.killsBy = p.killsBy || {};
       p.killsBy[e.type] = (p.killsBy[e.type] || 0) + 1;
       p.killStreak = (p.killStreak || 0) + 1;
+      /* 17z33: beating wild Digimon out in the world freshens it up for training */
+      var FR0 = this.data.FARM_CFG && this.data.FARM_CFG.fresh;
+      if (FR0) {
+        if (p.trainFresh == null) p.trainFresh = FR0.start != null ? FR0.start : 3;
+        p.trainKills = (p.trainKills || 0) + 1;
+        if (p.trainKills >= (FR0.killsPer || 10)) { p.trainKills = 0; if (p.trainFresh < (FR0.max || 3)) { p.trainFresh += 1; this.emit({ type: "train.fresh", id: p.id, fresh: p.trainFresh }); } }
+      }
       p.streakTimer = this._care().killStreakWindow || 4;
       var c = this._care();
       if (p.killStreak > 0 && p.killStreak % (c.killStreakEvery || 5) === 0) {
@@ -1945,7 +2027,7 @@
       }
       /* Encounter totals that evolution branches read. */
       var kdef = this._enemies()[e.type] || {};
-      if (e.boss) p.bossesBeaten = (p.bossesBeaten || 0) + 1;
+      if (e.boss) { p.bossesBeaten = (p.bossesBeaten || 0) + 1; p.happiness = clamp((p.happiness || 0) + (c.bossJoy || 8), 0, c.happinessMax || 100); }   /* a big win together */
       p.killsSpecies = p.killsSpecies || {};
       p.killsSpecies[e.type] = (p.killsSpecies[e.type] || 0) + 1;
       if (kdef.attribute) {
@@ -1965,6 +2047,7 @@
       this._spawnOrb("bits", e.x, e.y + 10, LD.bits || 60);
       this.emit({ type: "lord.down", id: p ? p.id : null, enemyType: e.type, biome: e.lairBiome, x: e.x, y: e.y });
     }
+    if (e.spireGroup && this._spireKill) this._spireKill(e);           /* all a spire let out beaten: a chest (spire-sim.js) */
     if (e.spire) {
       /* the thing from the spire pays a little extra */
       var SPc = (this.data.TERRAIN && this.data.TERRAIN.spire) || {}, sdef = this._enemies()[e.type] || { xp: 20 }, si, sa;
@@ -1989,6 +2072,7 @@
     var bits = 3;
     if (this.data && this.data.bitsForEnemy) bits = this.data.bitsForEnemy(def);
     this._spawnOrb("bits", e.x + (rng() - 0.5) * 20, e.y + (rng() - 0.5) * 16, bits);
+    if (this._siegeWoodDrop && this.siege && this.siege.nest) this._siegeWoodDrop(e);   /* Night Siege only: wood for fences */
     var heal = this._heal();
     var chance = e.boss || def.boss ? (heal.bossChance != null ? heal.bossChance : 1)
       : (def.elite ? (heal.eliteChance != null ? heal.eliteChance : 0.6)
@@ -2012,9 +2096,10 @@
 
   MissionSim.prototype._spawnOrb = function (kind, x, y, value) {
     if (this.orbs.length > 180) {
-      var i, best = 0, bestD = -1, d, host = this.player(this.localId) || this.players[0];
-      for (i = 0; i < this.orbs.length; i++) {
-        if (this.orbs[i].kind !== "xp") continue;
+      var i, best = 0, bestD = -1, d, pass, host = this.player(this.localId) || this.players[0];
+      /* the furthest XP orb goes first; if there are none, the furthest anything but wood (Night Siege's fences) */
+      for (pass = 0; pass < 2 && bestD < 0; pass++) for (i = 0; i < this.orbs.length; i++) {
+        if (pass === 0 ? this.orbs[i].kind !== "xp" : this.orbs[i].kind === "wood") continue;
         d = host ? dist2(this.orbs[i].x, this.orbs[i].y, host.x, host.y) : 0;
         if (d > bestD) { bestD = d; best = i; }
       }
@@ -2197,6 +2282,8 @@
     if (this._updateWar) this._updateWar(dt, wave, host);
     this._updateLords(dt, host);
     }
+    /* rare world events (event-sim.js): their clock runs even while a partner is back in its egg */
+    if (this._updateWev) this._updateWev(dt);
     this._updateMerchant();
     var heal = this._heal();
     this.worldFoodAcc += dt;
@@ -2481,7 +2568,7 @@
     for (i = 0; i < this.enemies.length; i++) if (this.enemies[i].lord && !this.enemies[i].dead) alive[this.enemies[i].lairKey] = 1;
     for (k in this.lairs) if (this.lairs[k] === "out" && !alive[k]) delete this.lairs[k];
     list = w.lairsNear(host.x, host.y, L.spawnAt);
-    S = this.data.SEASONS_CFG || {}; year = Math.floor(this.time / (((S.lengthSec || 360) * 4) || 1440));
+    S = this.data.SEASONS_CFG || {}; year = Math.floor(this.time / (((S.lengthSec || 486) * 4) || 1944));
     defs = this._enemies();
     for (i = 0; i < list.length; i++) {
       l = list[i]; st = this.lairs[l.key];
@@ -2638,7 +2725,7 @@
         var host = this.player(this.localId) || this.players[0];
         var hx = host ? host.x + 80 : 80, hy = host ? host.y - 20 : 0;
         var pos = this._snap(hx, hy, 14, 240);
-        this.merchant = { x: pos.x, y: pos.y, form: S.merchantId || "jijimon", open: true };
+        this.merchant = { x: pos.x, y: pos.y, form: S.merchantId || "jijimon", open: true, visit: this.time };   /* visit: his stock (shop.js shopStock) */
         this.emit({ type: "merchant", x: pos.x, y: pos.y, form: this.merchant.form });
       } else {
         this.merchant.open = true;
@@ -2656,9 +2743,36 @@
     /* after dark they notice you from further off and bite more often (seasons.js DAY) */
     if (this._updateNemeses) this._updateNemeses(dt);
     var SN = this.data.seasons, nightAggro = SN && SN.aggroScale ? SN.aggroScale(this) : 1, nightRate = SN && SN.atkRateScale ? SN.atkRateScale(this) : 1;
+    /* Far from everyone (17z33): a plain wild Digimon further than LOD.far from every tamer,
+     * partner, ally, CPU teammate, rival and nemesis is updated one tick in LOD.every, with all the
+     * time it missed, so it ends up where it would have been. Nobody can see it (LOD.far is about
+     * twice what any screen shows) and nothing near anyone changes; soldiers of a war, nemeses,
+     * rivals, the infected and Digimon fighting each other are always updated every tick. */
+    var LOD = this.data.SIM_LOD, baseDt = dt, watchers = null, lodTick = 0, lodFar2 = 0, w2, wi;
+    if (LOD && LOD.every > 1) {
+      lodTick = this._lodTick = (this._lodTick || 0) + 1;
+      lodFar2 = LOD.far * LOD.far;
+      watchers = [];
+      for (p = 0; p < this.players.length; p++) { watchers.push(this.players[p].x, this.players[p].y, this.players[p].mx, this.players[p].my); }
+      if (this.ally) watchers.push(this.ally.x, this.ally.y);
+      for (ci = 0; ci < this.cpus.length; ci++) if (this.cpus[ci]) watchers.push(this.cpus[ci].x, this.cpus[ci].y);
+      for (i = 0; i < this.enemies.length; i++) { e = this.enemies[i]; if (!e.dead && (e.rival || e.nemesis)) watchers.push(e.x, e.y); }
+    }
     for (i = this.enemies.length - 1; i >= 0; i--) {
       e = this.enemies[i];
+      dt = baseDt;
       if (e.dead) { this.enemies.splice(i, 1); continue; }
+      if (watchers && !e.rival && !e.nemesis && e.nemLead == null && !e.virus && !e.war && !e.rally && !(e.foeT > 0) && !e.lord && !e.wev) {
+        w2 = 1e18;
+        for (wi = 0; wi < watchers.length && w2 > lodFar2; wi += 2) w2 = Math.min(w2, dist2(e.x, e.y, watchers[wi], watchers[wi + 1]));
+        if (w2 > lodFar2) {
+          e._lodDt = (e._lodDt || 0) + baseDt;
+          if ((lodTick + (e._id || 0)) % LOD.every !== 0) { e._lodIdle = true; continue; }
+          dt = Math.min(e._lodDt, baseDt * LOD.every * 2);
+          e._lodDt = 0;
+        } else if (e._lodDt) { dt = baseDt + Math.min(e._lodDt, baseDt * LOD.every); e._lodDt = 0; }
+      } else if (e._lodDt) { dt = baseDt + Math.min(e._lodDt, baseDt * LOD.every); e._lodDt = 0; }
+      e._lodIdle = false;
       def = this._enemies()[e.type] || { speed: 40, damage: 7, contactCd: 0.7 };
       e.flash = Math.max(0, e.flash - dt);
       if (frozen) continue;                      /* a level-up breather: nobody moves, nobody bites */
@@ -2671,7 +2785,7 @@
       if (e.slowTime > 0) e.slowTime -= dt;
       else e.slow = 1;
       var wSpd = weatherApi() ? weatherApi().enemySpeedScale(this, this.data) : 1;
-      spd = (def.speed || 40) * (e.z0 >= 2 ? 1 : (wave.spdMul || 1)) * (e.slow || 1) * wSpd * (e.stSlow == null ? 1 : e.stSlow) * (e.rivalSpd || 1) * (e.vSpd || 1);
+      spd = (def.speed || 40) * (e.z0 >= 2 ? 1 : (wave.spdMul || 1)) * (e.slow || 1) * wSpd * (e.stSlow == null ? 1 : e.stSlow) * (e.rivalSpd || 1) * (e.vSpd || 1) * (e.spdMul || 1);
       closest = 1e15; ax = e.x; ay = e.y;
       var tamerSafe = !!this._tamer().invulnerable, tKey = null, fbD = 1e15, fbX = e.x, fbY = e.y, fbKey = null;
       var eFac = this._factionOf ? this._factionOf(e) : null;
@@ -2747,7 +2861,7 @@
        * tamer's side into the Baby zone (a whole pack chased a freshly hatched partner in, again and again);
        * it stops at the edge, and one that wandered in walks back out */
       var Zs = this.data.RESPAWN && this.data.RESPAWN.zone;
-      if (Zs && this._startZone && e.z0 != null && e.z0 < 2 && !e.rally && !e.rival && !e.nemesis && !e.virus) {
+      if (Zs && this._startZone && e.z0 != null && e.z0 < 2 && !e.rally && !e.rival && !e.nemesis && !e.virus && !e.siege) {   /* Night Siege attackers come in anyway */
         if (this._startZone(e.x, e.y) >= 2) { var dz0 = Math.sqrt(e.x * e.x + e.y * e.y) || 1, rz0 = Zs.baby + 120; ax = e.x / dz0 * rz0; ay = e.y / dz0 * rz0; tKey = null; milling = false; idle = false; }
         else if (tKey != null && this._startZone(ax, ay) >= 2) { tKey = null; idle = true; }
       }
@@ -2758,6 +2872,7 @@
       else if (e.virus && this._virusTarget) { bite = this._virusTarget(e, closest, dt); if (e.dead) continue; }
       else if (e.foeT > 0 && this._wildFoe) bite = this._wildFoe(e, dt);
       else if (e.war && this._warAct) { bite = this._warAct(e, closest, dt); if (e.dead) continue; }
+      else if (e.siege && this._siegeAct) bite = this._siegeAct(e, closest, dt, ax, ay);   /* Night Siege: the eggs, unless you're near */
       if (bite) { milling = false; idle = !!bite.idle; ax = bite.x; ay = bite.y; tKey = null; }
       /* Enemies obey the terrain like the tamer does: they walk around
        * cliffs (flow field when the straight line is blocked). */
@@ -2765,8 +2880,9 @@
       /* A freshly hit enemy is shoved back and briefly stops advancing. */
       if (e.kbStun > 0) e.kbStun -= dt;
       else if (!idle) {
-        var mv = this._slide(e.x, e.y, n.x * spd * dt, n.y * spd * dt, this._navRad(e), this._crossOf(e.type));
+        var mv = this._slide(e.x, e.y, n.x * spd * dt, n.y * spd * dt, this._navRad(e), this._crossOf(e.type)), ex0 = e.x, ey0 = e.y;
         e.x = mv.x; e.y = mv.y;
+        if (e.siege && this._siegeBlock) this._siegeBlock(e, ex0, ey0);      /* a standing fence stops it (siege-sim.js) */
       }
       if (e.kvx || e.kvy) {
         var kpos = this._slide(e.x, e.y, e.kvx * dt, e.kvy * dt, Math.max(4, (e.radius || 10) * 0.6), this._crossOf(e.type));
@@ -2791,9 +2907,12 @@
       }
       var wAtk = weatherApi() ? weatherApi().enemyAtkScale(this, this.data) : 1;
       dmg = (def.damage || 7) * (e.z0 >= 2 ? 1 : (wave.dmgMul || 1)) * (e.dmgMul || 1) * wAtk * (e.st && e.st.daze && this.data.STATUS ? this.data.STATUS.holy.dealt : 1);
-      if (bite) { if (!bite.wander) this._wildBite(e, bite, dmg * (e.war && this.data.WAR ? this.data.WAR.fightMul : 1), dt); }
+      if (bite && bite.fence != null) { if (bite.fence >= 0) this._siegeFenceBite(e, bite.fence, dmg, def); }
+      else if (bite && bite.egg != null) { if (bite.egg >= 0) this._siegeBite(e, bite.egg, dmg, def); }
+      else if (bite) { if (!bite.wander) this._wildBite(e, bite, dmg * (e.war && this.data.WAR ? this.data.WAR.fightMul : 1), dt); }
       else this._contactHits(e, def, dmg, dt);
     }
+    dt = baseDt;
     this._resolveBodies();
   };
 
@@ -2805,7 +2924,7 @@
       this._separateEnemies();
       for (i = 0; i < this.enemies.length; i++) {
         e = this.enemies[i];
-        if (e.dead) continue;
+        if (e.dead || e._lodIdle) continue;                          /* far from everyone: nobody to push off */
         for (p = 0; p < this.players.length; p++) {
           sp = this.players[p];
           if (sp.away) continue;
@@ -2841,6 +2960,7 @@
     v = nav.solid[key];
     if (v !== undefined) return v;
     v = w.isRaised((tx + 0.5) * T, (ty + 0.5) * T, T * 0.34, cross) ? 1 : 0;
+    if (cross && nav.cross) nav.cross[cross] = 1;
     if (nav.count++ > 40000) { nav.solid = {}; nav.count = 0; }
     nav.solid[key] = v;
     return v;
@@ -2849,13 +2969,33 @@
   MissionSim.prototype._navReady = function () {
     var w = this.data && this.data.world, T = this._tileSize();
     if (!w || !w.isRaised || !T) return false;
-    var seed = w.getSeed ? w.getSeed() : 0, ice = w.iceVersion ? w.iceVersion() : 0;
-    /* the map only changes when water freezes or thaws (world.js ICE): then what is solid is worked out afresh */
+    var seed = w.getSeed ? w.getSeed() : 0, ice = w.iceVersion ? w.iceVersion() : 0, nav = this._nav, ch, i;
+    /* the map changes when water freezes or thaws or a border moves (world.js mapChanges): only the
+     * tiles it touched are worked out afresh, and only paths that cross them; the whole map only for
+     * a new map or the season's ice stepping (17z33; it used to be the whole map every time) */
+    if (nav && nav.seed === seed && this._navT === T && nav.ice !== ice && w.mapChanges) {
+      ch = w.mapChanges(nav.ice);
+      if (ch) { for (i = 0; i < ch.length; i++) this._navForget(ch[i]); nav.ice = ice; }
+    }
     if (!this._nav || this._nav.seed !== seed || this._navT !== T || this._nav.ice !== ice) {
-      this._nav = { seed: seed, ice: ice, solid: {}, count: 0, fields: {} };
+      this._nav = { seed: seed, ice: ice, solid: {}, count: 0, fields: {}, cross: {} };
       this._navT = T;
     }
     return true;
+  };
+  /* forget what is solid in a tile box (and a tile round it), and any path that crosses it */
+  MissionSim.prototype._navForget = function (box) {
+    var nav = this._nav, tx, ty, k, c, key, f, x0 = box[0] - 1, y0 = box[1] - 1, x1 = box[2] + 1, y1 = box[3] + 1, sufs = [""];
+    for (c in nav.cross) sufs.push("|" + c);
+    for (ty = y0; ty < y1; ty++) for (tx = x0; tx < x1; tx++) {
+      key = tx + "," + ty;
+      for (k = 0; k < sufs.length; k++) if (nav.solid[key + sufs[k]] !== undefined) delete nav.solid[key + sufs[k]];
+    }
+    for (k in nav.fields) {
+      f = nav.fields[k];
+      if (f.R == null || f.tx + f.R < x0 || f.tx - f.R > x1 || f.ty + f.R < y0 || f.ty - f.R > y1) continue;
+      f.at = -1e9;                                               /* worked out again the next time it is asked */
+    }
   };
 
   /* Breadth-first distance field around a target, R tiles each way. */
@@ -2941,14 +3081,33 @@
 
   /* Enemies take up space: they shove each other apart instead of
    * stacking on one spot. Bigger ones give way less. */
+  /* Bodies only push the ones beside them. Bucketed on a coarse grid (17z33): it used to test every
+   * Digimon on the map against every other, three times a tick, so a war's worth of soldiers next to
+   * the host (or any crowd) cost the square of the crowd. Same pairs, same order, far fewer tests. */
   MissionSim.prototype._separateEnemies = function () {
     var list = this.enemies, n = list.length, i, j, a, b, dx, dy, min, d2, d, push, wa, wb, nx, ny, pa, pb, ang;
+    var CELL = 96, grid = this._sepGrid || (this._sepGrid = {}), key, gx, gy, ox, oy, bucket, bi, big = 0, cells = this._sepCells || (this._sepCells = []);
+    if ((this._sepN = (this._sepN || 0) + 1) > 600) { this._sepGrid = grid = {}; this._sepN = 0; }      /* drop buckets of places long left behind */
+    for (i = 0; i < n; i++) { a = list[i]; if (!a.dead && (a.radius || 10) > big) big = a.radius || 10; }
+    if (big * 2 > CELL) CELL = Math.ceil(big * 2);
+    for (key in grid) grid[key].length = 0;
     for (i = 0; i < n; i++) {
       a = list[i];
       if (a.dead) continue;
-      for (j = i + 1; j < n; j++) {
+      key = (Math.floor(a.x / CELL) + 32768) * 65536 + (Math.floor(a.y / CELL) + 32768);
+      (grid[key] || (grid[key] = [])).push(i);
+    }
+    for (i = 0; i < n; i++) {
+      a = list[i];
+      if (a.dead) continue;
+      gx = Math.floor(a.x / CELL); gy = Math.floor(a.y / CELL);
+      cells.length = 0;
+      for (oy = -1; oy <= 1; oy++) for (ox = -1; ox <= 1; ox++) { bucket = grid[(gx + ox + 32768) * 65536 + (gy + oy + 32768)]; if (bucket) for (bi = 0; bi < bucket.length; bi++) if (bucket[bi] > i) cells.push(bucket[bi]); }
+      cells.sort(function (p, q) { return p - q; });
+      for (bi = 0; bi < cells.length; bi++) {
+        j = cells[bi];
         b = list[j];
-        if (b.dead) continue;
+        if (b.dead || (a._lodIdle && b._lodIdle)) continue;            /* both resting far from everyone: sorted out on their own tick */
         dx = b.x - a.x; dy = b.y - a.y;
         min = (a.radius || 10) + (b.radius || 10);
         if (dx > min || dx < -min || dy > min || dy < -min) continue;
@@ -3077,6 +3236,7 @@
       p.hp = 0;
       p.faints = (p.faints || 0) + 1;
       if (R && R.noteFaintSignal) R.noteFaintSignal(p);
+      p.happiness = clamp((p.happiness || 0) + (c.faintJoy != null ? c.faintJoy : -12), 0, c.happinessMax || 100);   /* fainting is no fun */
       if (!this._tamer().invulnerable) {
         p.faint = 4;
         this.emit({ type: "faint", id: p.id });
@@ -3114,36 +3274,31 @@
   };
 
   MissionSim.prototype._updateOrbs = function (dt) {
-    var i, o, p, d, rad, eaten, pl, dm, mag, best, bd, n, tx, ty, sp;
+    var i, o, p, d, rad, eaten, pl, mag, best, bd, n, tx, ty, sp;
     var pickR = this._player().pickupRadius || 18;
     var PG = this.data.PACING || {}, base = PG.magnetSpeed || 220;
     for (i = this.orbs.length - 1; i >= 0; i--) {
       o = this.orbs[i];
       eaten = false;
       rad = pickR;
-      /* Pickups home in on a tamer (17z33). Either the tamer or the partner coming near pulls a drop
-       * in, but it then flies to that player's tamer, the nearest one, and keeps to it. It used to
-       * chase whichever of tamer and partner was nearer this tick, so drops swung after a partner
-       * darting round a fight, and with friends it was tugged toward every player in turn. */
+      /* Pickups (17z33, reworked): a drop stays exactly where it fell until it is inside a tamer's
+       * magnet circle (PACING.magnetRadius x the pickup-range boosts: corn, the Magnet Bell, the Lab's
+       * Scan Range, level-up picks...). Then it flies straight to that tamer and keeps to it. Nothing
+       * drifts, and the partner doesn't pull drops in (a job level-up still does: levelMagnet). */
       best = null; bd = 1e18;
+      var isFood = !!(this.data && this.data.FOOD && this.data.FOOD[o.kind]);
       for (p = 0; p < this.players.length; p++) {
         pl = this.players[p];
         if (pl.atFarm || pl.away) continue;
-        d = Math.sqrt(dist2(o.x, o.y, pl.x, pl.y));
-        dm = Math.sqrt(dist2(o.x, o.y, pl.mx, pl.my));
-        if (d < rad + 8 || dm < rad + 8) { this._eatOrb(pl, o); eaten = true; break; }
-        mag = (PG.magnetRadius || 90) * ((pl.stats && pl.stats.magnetMul) || 1);
-        if (d < mag || dm < mag) o.magnet = true;
+        if (isFood && this._bagFull(pl)) continue;                          /* 17z33: a full bag leaves food on the ground */
+        tx = pl.hasTamer === false ? pl.mx : pl.x; ty = pl.hasTamer === false ? pl.my : pl.y;
+        d = Math.sqrt(dist2(o.x, o.y, tx, ty));
+        if (d < rad + 8) { this._eatOrb(pl, o); eaten = true; break; }
+        mag = (PG.magnetRadius || 50) * ((pl.stats && pl.stats.magnetMul) || 1);
+        if (d < mag) o.magnet = true;
         if (o.to === pl.id) { best = pl; bd = -1; }
-        else if (bd >= 0 && d < bd) { best = pl; bd = d; }
-        if (!o.magnet && d < mag * (PG.driftReach || 2.5) && (!o.near || d < o.nearD)) { o.near = pl; o.nearD = d; }
+        else if (bd >= 0 && d < bd && (o.magnet || o.to == null)) { best = pl; bd = d; }
       }
-      /* not pulled in yet but close by: drifts slowly toward the tamer */
-      if (!eaten && !o.magnet && o.near) {
-        n = norm(o.near.x - o.x, o.near.y - o.y);
-        o.x += n.x * (PG.driftSpeed || 38) * dt; o.y += n.y * (PG.driftSpeed || 38) * dt;
-      }
-      o.near = null; o.nearD = 0;
       if (!eaten && o.magnet && best) {
         o.to = best.id;
         tx = best.hasTamer === false ? best.mx : best.x;
@@ -3173,6 +3328,17 @@
     }
   };
 
+  /* 17z33: how much food a tamer carries (seeds don't count), and the cap */
+  MissionSim.prototype._foodCount = function (p) { var F = this.data && this.data.FOOD, n = 0, k; for (k in (p.bag || {})) if (F && F[k] && !F[k].rare) n += p.bag[k] || 0; return n; };
+  MissionSim.prototype._bagFull = function (p) { var c = this._care(); return !!c.bagMax && this._foodCount(p) >= c.bagMax; };
+  /* farm gates this tamer's side holds: nests in land its side owns (farm-gates.js shows the same) */
+  MissionSim.prototype._gateCount = function (p) {
+    var W = this.data && this.data.world, k, st, n = 0, span;
+    if (!p || !p.side || !W || !W.cellOwner || !W.TERR || !W.TILE) return 0;
+    span = W.TERR * (typeof W.TILE === "function" ? W.TILE() : W.TILE);
+    for (k in this.nests || {}) { st = this.nests[k]; if (W.cellOwner(Math.floor(st.x / span), Math.floor(st.y / span)) === p.side) n++; }
+    return n;
+  };
   MissionSim.prototype._eatOrb = function (p, o) {
     var h = this._heal();
     if (o.kind === "xp") {
@@ -3181,21 +3347,27 @@
         var xi, xp2;
         for (xi = 0; xi < this.players.length; xi++) {
           xp2 = this.players[xi];
-          xp2.xp = (xp2.xp || 0) + (o.value || 0) * this._lab(xp2).xp * (this.time < this._gear(xp2).earlyUntil ? this._gear(xp2).earlyXp : 1) * this._catchUp(xp2);
+          xp2.xp = (xp2.xp || 0) + (o.value || 0) * this._lab(xp2).xp * this._bloodXp(xp2) * this._gear(xp2).xp * (this.time < this._gear(xp2).earlyUntil ? this._gear(xp2).earlyXp : 1) * this._catchUp(xp2);
           this._tryLevel(xp2);
           this._tamerXp(xp2, (o.value || 0) * this._lab(xp2).bxp);
         }
       } else {
-        p.xp = (p.xp || 0) + (o.value || 0) * this._lab(p).xp * (this.time < this._gear(p).earlyUntil ? this._gear(p).earlyXp : 1) * this._catchUp(p);
+        p.xp = (p.xp || 0) + (o.value || 0) * this._lab(p).xp * this._bloodXp(p) * this._gear(p).xp * (this.time < this._gear(p).earlyUntil ? this._gear(p).earlyXp : 1) * this._catchUp(p);
         this._tamerXp(p, (o.value || 0) * this._lab(p).bxp);
         this._tryLevel(p);
       }
     } else if (o.kind === "bits") {
       p._bitFrac = (p._bitFrac || 0) + (o.value || 0) * this._lab(p).bits;
       p.bits = (p.bits || 0) + Math.floor(p._bitFrac); p._bitFrac -= Math.floor(p._bitFrac);
+    } else if (o.kind === "evo") {
+      if (this._vsMeterAdd) this._vsMeterAdd(p, o.value || 1, true, o.x, o.y);   /* Versus: a cache's DIGIVOLVE orb */
+    } else if (o.kind === "wood") {
+      if (this._siegeGetWood) this._siegeGetWood(p, o.value || 1);       /* Night Siege's fences; no limit */
     } else if (o.kind === "heal") {
       p.hp = Math.min(p.maxHp, p.hp + p.maxHp * (h.hp != null ? h.hp : 0.2));
       if (p.hasTamer) p.tamerHp = Math.min(p.tamerMaxHp, p.tamerHp + p.tamerMaxHp * (h.tamerHp != null ? h.tamerHp : 0.2));
+    } else if (String(o.kind).indexOf("chest_") === 0) {
+      if (this._openChest) this._openChest(p, o.kind);                 /* a spire's chest (spire-sim.js) */
     } else if (this.data && ((this.data.FOOD && this.data.FOOD[o.kind]) || (this.data.isSeed && this.data.isSeed(o.kind)))) {
       /* Food is stored, never eaten in battle. No bag limit. */
       p.bag = p.bag || {};
@@ -3248,13 +3420,26 @@
     if (!SK || !p) return;
     p.skills = p.skills || {};
     var act = SK.active(this.data, p.skills), old = p.weapons || [], out = [], i, j, w;
+    /* only the equipped ones fire (17z33, Isaac: 2 / 3 / 4 by stage, +1 from the Lab) */
+    if (SK.fixEquip) {
+      var n = this.equipSlots(p), eq = SK.fixEquip(this.data, p.skills, p.equip ? { list: p.equip, known: p.equipKnown || [], n: p.equipN || 0 } : null, n), on = {};
+      p.equip = eq.list; p.equipKnown = eq.known; p.equipN = n;
+      for (i = 0; i < eq.left.length; i++) if (p.kind !== "cpu" && p.hasTamer !== false) this.emit({ type: "skill.full", id: p.id, move: eq.left[i], n: n });
+      for (i = 0; i < eq.list.length; i++) on[eq.list[i]] = i + 1;
+      act = act.filter(function (a) { return on[a.id]; }).sort(function (a, b) { return on[a.id] - on[b.id]; });
+    }
     for (i = 0; i < act.length; i++) {
-      w = { id: act[i].id, level: act[i].level, cd: 0.15, bonus: act[i].bonus, skill: act[i].skill };
+      w = { id: act[i].id, level: act[i].level, cd: 0.15, bonus: act[i].bonus * ((SK.EQUIP && SK.fixEquip && SK.EQUIP.focus) || 1), skill: act[i].skill };
       for (j = 0; j < old.length; j++) if (old[j].id === w.id) w.cd = old[j].cd || 0;
       out.push(w);
     }
     p.weapons = out;
     p._statsKey = null;
+  };
+  /* how many moves this partner can have equipped: by stage, +1 with the Lab's Move Slot */
+  MissionSim.prototype.equipSlots = function (p) {
+    var SK = this._sk(), st = this.data.moveStageIdx ? this.data.moveStageIdx(p.form) : 2;
+    return SK && SK.slotCount ? SK.slotCount(st, (this._lab(p).moveslot || 0)) : 99;
   };
   /* a partner that has moves but no skills yet (fresh from the egg, caught,
    * or handed a form directly) starts its tree from what it already fires */
@@ -3281,7 +3466,7 @@
     if (!SK || !p || this._isEgg(p.form)) return; /* an egg keeps its points until it hatches */
     p.skills = p.skills || {};
     while (SK && (p.skillPoints || 0) > 0 && guard++ < 60) {
-      id = SK.autoPick(this.data, p.form, p.skills || {});
+      id = SK.autoPick(this.data, p.form, p.skills || {}, this.equipSlots(p));
       if (!id) break;
       var fresh = !(p.skills[id] > 0);
       p.skills[id] = (p.skills[id] || 0) + 1;
@@ -3328,15 +3513,37 @@
       p.xpNext = this._xpNeeded(p.level);
       p.pendingLevels = (p.pendingLevels || 0) + 1;
       if (p.id === this.localId || !this.localId) this.pendingLevels = p.pendingLevels;
+      p.happiness = clamp((p.happiness || 0) + (this._care().levelJoy || 3), 0, this._care().happinessMax || 100);
       this.emit({ type: "level", id: p.id, level: p.level, pending: p.pendingLevels });
     }
   };
 
   MissionSim.prototype._updateCare = function (p, dt) {
-    var c = this._care();
-    if (this.phase === "playing" && !this._isEgg(p.form)) {
+    var c = this._care(), egg = this._isEgg(p.form), hmax = c.happinessMax || 100, i, e, q, near;
+    if (this.phase === "playing" && !egg) {
       p.fullness = Math.max(0, (p.fullness || 0) - (c.fullnessDecayPerSec || 1.05) / this._lab(p).belly * dt);
     }
+    /* 17z33: hunger is a need (slower and weaker when starving), happiness is how you treat it */
+    var starving = !egg && (p.fullness || 0) <= (c.starveAt != null ? c.starveAt : 10);
+    if (starving !== !!p.starving) { p.starving = starving; p._statsKey = null; this.emit({ type: "starving", id: p.id, on: starving }); }
+    p.hungry = !egg && (p.fullness || 0) < (c.hungryAt || 35);
+    if (starving && this.phase === "playing") p.happiness = Math.max(0, (p.happiness || 0) - (c.starveJoyPerSec || 0.8) * dt);
+    /* a rest somewhere quiet: standing still, fed, nothing wild close by */
+    p._restChk = (p._restChk || 0) - dt;
+    if (p._restChk <= 0) {
+      p._restChk = 0.5;
+      near = false; q = (c.restQuiet || 320) * (c.restQuiet || 320);
+      for (i = 0; i < this.enemies.length && !near; i++) { e = this.enemies[i]; if (!e.dead && !e.pvpOf && dist2(e.x, e.y, p.mx, p.my) < q) near = true; }
+      p._quiet = !near;
+    }
+    if (!egg && p._quiet && !p.monMoving && !p.moving && p.faint <= 0 && !p.downed && !p.atFarm && (p.fullness || 0) > (c.hungryAt || 35) && this.phase === "playing") {
+      p.restT = (p.restT || 0) + dt;
+      if (p.restT > (c.restAfter || 2.5) && (p.happiness || 0) < (c.restJoyCap || 85)) p.happiness = Math.min(c.restJoyCap || 85, (p.happiness || 0) + (c.restJoyPerSec || 0.9) * dt);
+    } else p.restT = 0;
+    p.resting = (p.restT || 0) > (c.restAfter || 2.5);
+    p._gateChk = (p._gateChk || 0) - dt;
+    if (p._gateChk <= 0) { p._gateChk = 2; p.farmGates = this._gateCount(p); }
+    p.happiness = clamp(p.happiness || 0, 0, hmax);
     if (p.streakTimer > 0) {
       p.streakTimer -= dt;
       if (p.streakTimer <= 0) p.killStreak = 0;
@@ -3410,6 +3617,8 @@
       }
     }
     this._updateSpawns(dt);
+    if (this._updateModeRules) this._updateModeRules(dt);               /* Story, Night Siege, Versus (17z33) */
+    if (this._updateSpires) this._updateSpires(dt);                     /* black spires: the big one after its rumble (spire-sim.js) */
     if (this._updateVirus) this._updateVirus(dt);
     if (this._pvpProxyIn) this._pvpProxyIn();                          /* ...and for shots and ultimates landing */
     this._updateUlts(dt);
@@ -3460,9 +3669,9 @@
         hp: p.hp, maxHp: p.maxHp, monInvuln: p.monInvuln, faint: p.faint,
         fullness: p.fullness, happiness: p.happiness,
         bits: p.bits, xp: p.xp, xpNext: p.xpNext, level: p.level, kills: p.kills,
-        aim: p.aim, ack: p.seqAck, desperation: p.desperation, atkBoost: p.atkBoost, focusId: p.focusId || null, trust: p.trust || null, allied: p.allied || null, atFarm: !!p.atFarm, pvpFlag: !!p.pvpFlag, pvpOffAt: p.pvpOffAt || 0,
+        aim: p.aim, ack: p.seqAck, desperation: p.desperation, atkBoost: p.atkBoost, hungry: !!p.hungry, starving: !!p.starving, resting: !!p.resting, focusId: p.focusId || null, trust: p.trust || null, allied: p.allied || null, atFarm: !!p.atFarm, pvpFlag: !!p.pvpFlag, pvpOffAt: p.pvpOffAt || 0,
         md: { pk: p.peakLevel || 0, rs: p.respawns || 0, bo: p.bounty || 0, st: p.pvpStreak || 0, mg: p.megaAt || 0, pw: p.pvpWins || 0, lo: p.lordsBeaten || 0 },
-        weapons: p.weapons, bag: p.bag, items: p.items, shopBought: p.shopBought, garden: p.garden || [],
+        weapons: p.weapons, wc: wcOf(p), equip: p.equip || null, equipN: p.equipN || 0, bag: p.bag, items: p.items, shopBought: p.shopBought, garden: p.garden || [],
         captureKills: p.captureKills, killsBy: p.killsBy || null, trainStats: p.trainStats, trainVisits: p.trainVisits,
         bondTrain: p.bondTrain, careMistakes: p.careMistakes, foodEaten: p.foodEaten,
         foodCounts: p.foodCounts, reserve: p.reserve, partners: p.partners,
@@ -3470,8 +3679,9 @@
         skills: p.skills || null, skillPoints: p.skillPoints || 0, skillOffer: p.skillOffer || null,
         tamerLevel: p.tamerLevel || 1, tamerXp: p.tamerXp || 0, tamerXpNext: p.tamerXpNext || this._tamerNeed(p.tamerLevel || 1),
         statPoints: (this._attrs(p), p.statPoints || 0), attrs: p.attrs || null,
-        attrBonus: this._ro() ? this._jobBonus(p) : null,
-        burst: Math.floor(p.burst || 0), burstLeft: p.burstLeft > 0 ? Math.round(p.burstLeft * 10) / 10 : 0, burstForm: p.burstLeft > 0 ? p.burstForm : null, burstStyle: p.burstLeft > 0 ? p.burstStyle : null, shiny: !!p.shiny, passives: p.passives || [],
+        attrBonus: this._ro() ? this._jobBonus(p) : null, attrParts: this._ro() ? this._attrParts(p) : null,
+        moveMul: p.stats ? [Math.round(p.stats.monSpeedMul * 100), Math.round(p.stats.speedMul * 100), Math.round((p.stats.trackSpeed || 0) * 100), p.stats.boots || 0, Math.round(p.stats.magnetMul * 100)] : null,
+        burst: Math.floor(p.burst || 0), burstLeft: p.burstLeft > 0 ? Math.round(p.burstLeft * 10) / 10 : 0, burstForm: p.burstLeft > 0 ? p.burstForm : null, burstStyle: p.burstLeft > 0 ? p.burstStyle : null, shiny: !!p.shiny, shinyBoost: p.shinyBoost || 0, passives: p.passives || [],
         evoOffer: p.evoOffer || null, evoCount: p.evoCount || 0, holdbacks: p.holdbacks || 0, evoHoldUntil: p.evoHoldUntil || 0,
         farmVisitIndex: p.farmVisitIndex, pendingFarm: p.pendingFarm,
         lastFarmAt: p.lastFarmAt || 0, farmDueAt: p.farmDueAt,
@@ -3485,6 +3695,7 @@
         omenSeen: !!p.omenSeen, miracleShimmer: p.miracleShimmer || 0,
         proximityClose: !!p.proximityClose, deliberateLoss: !!p.deliberateLoss,
         undamagedKills: p.undamagedKills || 0, peakHappiness: p.peakHappiness,
+        trainFresh: p.trainFresh, trainTired: p.trainTired || 0, trainBoost: p.trainBoost || 0, evoFruit: p.evoFruit || 0, shopVisit: p.shopVisit || null, trainKills: p.trainKills || 0, farmGates: p.farmGates || 0,
         clock: p.clock, formsReached: p.formsReached || {},
         downed: !!p.downed
       });
@@ -3492,7 +3703,7 @@
     for (i = 0; i < this.enemies.length; i++) {
       e = this.enemies[i];
       if (e.dead) continue;
-      outE.push({ _id: e._id, type: e.type, x: e.x, y: e.y, hp: e.hp, maxHp: e.maxHp, facing: e.facing, flash: e.flash, radius: e.radius, dead: false, boss: e.boss, mega: e.mega, lord: !!e.lord, rival: !!e.rival, virus: !!e.virus, dmgMul: e.dmgMul, st: stBits(e), zz: e.zz ? 1 : 0, war: e.war || null, fac: this._factionOf ? this._factionOf(e) : null, rally: e.rally || null, alv: e.alv || 0, lv: e.lv || 1, nem: e.nem || 0, nemTitle: e.nemTitle || null, nemScale: e.nemScale || 1 });
+      outE.push({ _id: e._id, type: e.type, x: e.x, y: e.y, hp: e.hp, maxHp: e.maxHp, facing: e.facing, flash: e.flash, radius: e.radius, dead: false, boss: e.boss, mega: e.mega, lord: !!e.lord, rival: !!e.rival, virus: !!e.virus, dmgMul: e.dmgMul, st: stBits(e), zz: e.zz ? 1 : 0, war: e.war || null, fac: this._factionOf ? this._factionOf(e) : null, rally: e.rally || null, alv: e.alv || 0, lv: e.lv || 1, nem: e.nem || 0, nemTitle: e.nemTitle || null, nemScale: e.nemScale || 1, raider: e.raider ? 1 : 0, giant: e.giant || 0 });
     }
     for (i = 0; i < this.orbs.length; i++) {
       o = this.orbs[i];
@@ -3529,6 +3740,8 @@
       }).call(this),
       merchant: this.merchant || null,
       runOver: this.runOver,
+      nest: this.siege && this.siege.nest ? { x: this.siege.nest.x, y: this.siege.nest.y, eggs: this.siege.nest.eggs.map(function (g) { return [g.x, g.y, Math.round(g.hp), g.max, g.k || 0]; }), cost: this._siegeRepairCost ? this._siegeRepairCost() : 0, night: !!this.siege.inNight,
+        fences: (this.siege.nest.fences || []).map(function (f) { return [f.x, f.y, Math.round(f.hp), f.max, f.built ? 1 : 0]; }), wood: this.siege.nest.wood } : null,
       rejected: this.rejected,
       farm: this.farm || null,
       brawl: (this.brawlSim && this.brawlSim.snapshot()) || this.brawl || null,
@@ -3571,6 +3784,13 @@
   else if (root.DBH && root.DBH.installNemesis) root.DBH.installNemesis(MissionSim, { dist2: dist2, norm: norm });
   if (isNode) require("./modes-sim.js")(MissionSim, { dist2: dist2, norm: norm });
   else if (root.DBH && root.DBH.installModes) root.DBH.installModes(MissionSim, { dist2: dist2, norm: norm });
+  if (isNode) require("./event-sim.js")(MissionSim, { dist2: dist2, norm: norm });
+  else if (root.DBH && root.DBH.installWorldEvents) root.DBH.installWorldEvents(MissionSim, { dist2: dist2, norm: norm });
+  ["story", "siege", "versus", "spire"].forEach(function (m) {
+    var fn = { story: "installStory", siege: "installSiege", versus: "installVersus", spire: "installSpires" }[m];
+    if (isNode) require("./" + m + "-sim.js")(MissionSim, { dist2: dist2, norm: norm });
+    else if (root.DBH && root.DBH[fn]) root.DBH[fn](MissionSim, { dist2: dist2, norm: norm });
+  });
   var api = { MissionSim: MissionSim, isIllegal: MissionSim.isIllegal };
   D.net = D.net || {};
   D.net.mission = api;

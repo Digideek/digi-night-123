@@ -1,4 +1,4 @@
-/* Digi Night — the Lab. DigiBits (js/cosmetics.js) buy small permanent boosts
+/* Digi Night — the Lab. DigiCoins (js/cosmetics.js) buy small permanent boosts
  * (data.js LAB). Levels are kept on the profile; a run reads them once when the
  * tamer joins (mission-sim.js _lab), so a purchase applies from the next run. */
 (function (global) {
@@ -14,8 +14,8 @@
   function cost(id) { var n = level(id), c = costs(id); return n >= c.length ? null : c[n]; }
   function bits() { return D.cosmetics && D.cosmetics.bits ? D.cosmetics.bits() : 0; }
   function mods() {
-    var m = { hp: 1, dmg: 1, magnet: 1, xp: 1, bits: 1, farm: 0, burst: 1, speed: 1, bxp: 1, data: 1, crop: 1, belly: 1 }, L = cfg().list, i, n;
-    for (i = 0; i < L.length; i++) { n = level(L[i].id); if (!n) continue; if (L[i].stat === "farm") m.farm += L[i].per * n; else if (m[L[i].stat] != null) m[L[i].stat] *= 1 + L[i].per * n; }
+    var m = { hp: 1, dmg: 1, magnet: 1, xp: 1, bits: 1, farm: 0, burst: 1, speed: 1, bxp: 1, data: 1, crop: 1, belly: 1, moveslot: 0 }, L = cfg().list, i, n;
+    for (i = 0; i < L.length; i++) { n = level(L[i].id); if (!n) continue; if (L[i].stat === "farm" || L[i].stat === "moveslot") m[L[i].stat] += L[i].per * n; else if (m[L[i].stat] != null) m[L[i].stat] *= 1 + L[i].per * n; }
     return m;
   }
   function canBuyAny() { var L = cfg().list, i, c, b = bits(); for (i = 0; i < L.length; i++) { c = cost(L[i].id); if (c != null && c <= b) return true; } return false; }
@@ -29,7 +29,7 @@
     s = store(); s[id] = level(id) + 1; D.profile.save();
     return { ok: true, level: s[id] };
   }
-  function amount(u, n) { return u.unit === "slot" ? (1 + n) + " slot" + (n ? "s" : "") : u.unit === "s" ? "+" + Math.round(u.per * n) + " s" : "+" + (Math.round(u.per * n * 1000) / 10) + "%"; }
+  function amount(u, n) { return u.unit === "move" ? (n ? "+" + n + " move slot" : "no extra slot") : u.unit === "slot" ? (1 + n) + " slot" + (n ? "s" : "") : u.unit === "s" ? "+" + Math.round(u.per * n) + " s" : "+" + (Math.round(u.per * n * 1000) / 10) + "%"; }
 
   /* a little pixel icon per upgrade, drawn once */
   var ICON = {
@@ -62,8 +62,8 @@
       h += "<div class='lab-card" + (c == null ? " is-max" : "") + (flashId === u.id ? " is-got" : "") + "' data-lab='" + u.id + "'><canvas width='64' height='64' class='lab-ico'></canvas>" +
         "<div class='lab-mid'><b>" + u.name + "</b><span>" + u.text + "</span><div class='lab-pips'>";
       for (j = 0; j < costs(u.id).length; j++) h += "<i" + (j < n ? " class='on'" : "") + "></i>";
-      h += "</div><small>" + (n || u.unit === "slot" ? "Now " + amount(u, n) : "Not started") + (c != null ? "  →  " + amount(u, n + 1) : "  ·  maxed") + "</small></div>" +
-        "<button type='button' class='btn lab-buy" + (can ? " is-can" : "") + "' data-buy='" + u.id + "'" + (c == null ? " disabled" : "") + ">" + (c == null ? "MAX" : c + " DigiBits") + "</button></div>";
+      h += "</div><small>" + (n || u.unit === "slot" || u.unit === "move" ? "Now " + amount(u, n) : "Not started") + (c != null ? "  →  " + amount(u, n + 1) : "  ·  maxed") + "</small></div>" +
+        "<button type='button' class='btn lab-buy" + (can ? " is-can" : "") + "' data-buy='" + u.id + "'" + (c == null ? " disabled" : "") + ">" + (c == null ? "MAX" : c + " DigiCoins") + "</button></div>";
     }
     grid.innerHTML = h;
     cards = grid.querySelectorAll(".lab-card");
@@ -72,7 +72,7 @@
       if (D.iconArt) D.iconArt.lab(cards[i].querySelector("canvas"), u, { max: cost(u) == null });   /* js/icon-art.js */
       else icon(cards[i].querySelector("canvas"), u);
     }
-    if ($("lab-foot")) $("lab-foot").textContent = "Every finished run pays DigiBits, and each new Tamer Rank pays more. Boosts apply from your next run.";
+    if ($("lab-foot")) $("lab-foot").textContent = "Every finished run pays DigiCoins, and each new Tamer Rank pays more. Boosts apply from your next run.";
   }
   function onClick(e) {
     var t = e.target.closest ? e.target.closest("[data-buy]") : null, r;
@@ -82,7 +82,7 @@
     else {
       if (D.uiSfx) D.uiSfx("ui");
       t.classList.remove("is-no"); void t.offsetWidth; t.classList.add("is-no");
-      if ($("lab-foot")) $("lab-foot").textContent = r.reason === "broke" ? "You need " + r.need + " more DigiBits for that." : r.reason === "max" ? "That one is as far as it goes." : "Not ready yet, try again in a moment.";
+      if ($("lab-foot")) $("lab-foot").textContent = r.reason === "broke" ? "You need " + r.need + " more DigiCoins for that." : r.reason === "max" ? "That one is as far as it goes." : "Not ready yet, try again in a moment.";
     }
   }
   function init() {

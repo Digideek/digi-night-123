@@ -14,17 +14,19 @@
     try { if (!(D.net && D.net.brawl)) require("./brawl-sim.js"); } catch (err) {}
     try { if (!D.partyRules) require("../party-rules.js"); } catch (err) {}
     try { if (!D.weather) require("../weather.js"); } catch (err) {}
+    try { if (!D.minigames) require("./minigames.js"); } catch (err) {}
   }
+  function MG() { return D.minigames || null; }
   function rarityApi() { return (D.net && D.net.rarity) || (D.rarity) || null; }
 
   var INTENTS = {
-    capture: 1, hatch: 1, evolve: 1, "evolve.hold": 1, "pvp.flag": 1, "dna.ask": 1, "dna.answer": 1, burst: 1, "breather.end": 1, "prop.use": 1, "stat.add": 1, "skill.add": 1, levelup: 1,
+    capture: 1, hatch: 1, evolve: 1, "evolve.hold": 1, "pvp.flag": 1, "side.pick": 1, "dna.ask": 1, "dna.answer": 1, burst: 1, "breather.end": 1, "prop.use": 1, "stat.add": 1, "skill.add": 1, "skill.equip": 1, levelup: 1,
     "shop.buy": 1,
     "farm.enter": 1, "farm.tick": 1, "farm.pet": 1, "farm.feed": 1, "farm.plant": 1, "farm.harvest": 1,
     "field.feed": 1,
     "farm.item": 1, "farm.trainStart": 1, "farm.trainInput": 1, "farm.return": 1,
     "brawl.begin": 1, "brawl.bet": 1, "brawl.ready": 1, "brawl.conclude": 1,
-    "brawl.dismiss": 1, "lifecycle.ack": 1
+    "brawl.dismiss": 1, "lifecycle.ack": 1, "shiny.guard": 1, "bag.discard": 1, "bag.use": 1, "siege.repair": 1, "siege.build": 1
   };
 
   var FORGED = {
@@ -55,6 +57,8 @@
     this.settled = this.account.settledPayouts || {};
     this._persist = opts.persist || null;
     this._listeners = [];
+    /* 17z33: each armor route asks for its own Digimental (shop.js) */
+    if (this.data.applyDigimentals) this.data.applyDigimentals(this.data.EVO_TREE || (typeof EVO_TREE !== "undefined" ? EVO_TREE : null));
   }
 
   function normalizeAccount(raw) {
@@ -206,10 +210,20 @@
     var SH = data.SHINY, simS = this.sim(), rollS = (simS && simS.rng) || Math.random, becameShiny = false;
     /* a Prism Shard triples the chance; a Lucky Charm makes the first digivolution of the run 20 times likelier */
     var shMul = (simS && simS._gear ? simS._gear(p).shiny : 1) * ((p.luckyShiny && kind !== "hatch") ? p.luckyShiny : 1);
-    if (SH && grew && kind !== "dna.revert" && !p.shiny && rollS() < SH.chance * shMul) { p.shiny = true; becameShiny = true; }
+    if (simS && simS._blood && data.BLOODLINE) shMul *= 1 + data.BLOODLINE.shiny * simS._blood(p, "shiny");   /* a bloodline's Lucky Scales */
+    /* 17z33: hatching can come out shiny too, at the same chance; a shiny is a little stronger in
+     * everything (SHINY.evoBoost when it turned shiny digivolving, SHINY.hatchBoost when it hatched shiny) */
+    var hatching = kind === "hatch" && prev && this._isEgg(prev);
+    if (SH && (grew || hatching) && kind !== "dna.revert" && kind !== "duel" && !p.shiny && rollS() < SH.chance * shMul) {
+      p.shiny = true; becameShiny = true;
+      p.shinyBoost = hatching ? (SH.hatchBoost || 0.05) : (SH.evoBoost || 0.025);
+      p._statsKey = null;
+      p.shinyGuardDue = 1;                          /* the shiny moment on its screen may ask for its guard once (shiny.guard) */
+    }
+    if (p.shiny && !p.shinyBoost) p.shinyBoost = SH ? (SH.evoBoost || 0.025) : 0.025;
     if (grew && kind !== "hatch" && kind !== "dna.revert") p.luckyShiny = 0;
     if (base.maxHp) {
-      p.maxHp = Math.round(base.maxHp * Math.pow(1.16, (p.statLevels && p.statLevels.maxHp) || 0) * ((p.perks && p.perks.hp) || 1) * this._vitMul(p) * this._skillHpMul(p));
+      p.maxHp = Math.round(base.maxHp * Math.pow(1.16, (p.statLevels && p.statLevels.maxHp) || 0) * ((p.perks && p.perks.hp) || 1) * this._vitMul(p) * this._skillHpMul(p) * (1 + (p.shiny ? p.shinyBoost || 0 : 0)));
       /* a fresh form arrives in good shape: at least most of its health */
       p.hp = clamp(p.maxHp * Math.max(ratio, grew ? (EB.minHpRatio || 0.75) : 0.45) + 12, 1, p.maxHp);
       p._allyHpMul = 1;   /* an ally's max-health passive is put back on by the sim */
@@ -249,9 +263,9 @@
     p.formsReached[to] = true;
     if (kind !== "dna.revert") this._recordDiscovery(p, prev, to, kind || "standard");
     this._checkUnlocks(p);
-    this.emit({ type: kind === "hatch" ? "hatch" : "evolve", id: p.id, from: prev, to: to, kind: kind || "standard",
+    if (kind !== "duel") this.emit({ type: kind === "hatch" ? "hatch" : "evolve", id: p.id, from: prev, to: to, kind: kind || "standard",
       boost: grew ? { hp: Math.max(0, p.maxHp - hpWas), atk: Math.round((EB.damage || 0) * 100), rate: Math.round((EB.cooldown || 0) * 100), spd: Math.round((EB.speed || 0) * 100) } : null });
-    if (p.shiny && kind !== "dna.revert") this.emit({ type: "shiny", id: p.id, form: to, first: becameShiny });
+    if (p.shiny && kind !== "dna.revert") this.emit({ type: "shiny", id: p.id, form: to, first: becameShiny, boost: Math.round((p.shinyBoost || 0) * 1000) / 10, hatched: becameShiny && hatching });
     if (this.sim() && this.sim()._noteStage) this.sim()._noteStage(p);   /* first Mega, for the boards (modes-sim.js) */
     return { ok: true, from: prev, to: to, kind: kind || "standard" };
   };
@@ -308,6 +322,25 @@
 
   /* The PvP flag (Nov 20, pvp-sim.js): on at once; off only after PVP.flagOff seconds, so it can't be
    * dropped to slip out of a fight. */
+  /* Your side in the turf war (17z33, turf.js). One biome can be your friend at a time: picking a
+   * side drops the old one back to neutral (and its rallied Digimon go home, faction-sim.js);
+   * "just survive" (side null) means no biome befriends you at all. */
+  Progression.prototype._handlers["side.pick"] = function (intent) {
+    var sim = this.sim(), p = this.player(intent.id), BD = this.data.biomes && this.data.biomes.DEFS, side = intent.side || null, k;
+    if (!sim || !p) return { ok: false, reason: "no-run" };
+    if (side && !(BD && BD[side])) return { ok: false, reason: "no such biome" };
+    if (side && p.side === side) return { ok: true, side: side };
+    if (p.trust) for (k in p.trust) if (k !== side && p.trust[k] > 0) {
+      p.trust[k] = 0;
+      if (p.allied) delete p.allied[k];
+      this.emit({ type: "trust", id: p.id, fac: k, level: "neutral", value: 0 });
+    }
+    p.side = side;
+    p.free = !side;
+    this.emit({ type: "side.pick", id: p.id, side: side });
+    return { ok: true, side: side };
+  };
+
   Progression.prototype._handlers["pvp.flag"] = function (intent) {
     var sim = this.sim(), p = this.player(intent.id), P = this.data.PVP || {};
     if (!sim || !p) return { ok: false, reason: "no-run" };
@@ -343,26 +376,11 @@
       this.emit({ type: "prop.used", kind: kind, key: key, x: px, y: py, id: p.id });
       return { ok: true, kind: kind };
     }
-    S = T.spire || {}; SC = this.data.SEASONS_CFG || {};
-    year = Math.floor(sim.time / (((SC.lengthSec || 360) * 4) || 1440));
-    defs = sim._enemies();
-    for (s2 = Math.min(year, (S.evil || []).length - 1); s2 >= 0 && !type; s2--) {
-      want = [];
-      for (k = 0; k < S.evil[s2].length; k++) if (defs[S.evil[s2][k]] || (this.data.SPECIES && this.data.SPECIES[S.evil[s2][k]])) want.push(S.evil[s2][k]);
-      if (want.length) type = want[Math.floor(strHash(key + "|" + s2) * want.length)];
-    }
-    if (type) {
-      c = sim._snap(px, py + 44, 16, 220);
-      e = sim.spawnEnemy(type, { x: c.x, y: c.y, boss: true, keepType: true, quiet: true });
-      if (e) {
-        e.spire = true;
-        e.radius *= (S.size || 1);
-        e.maxHp = e.hp = e.maxHp * (S.hpMul || 1);
-        e.dmgMul = (e.dmgMul || 1) * (S.dmgMul || 1);
-      }
-    }
-    this.emit({ type: "prop.used", kind: kind, key: key, x: px, y: py, id: p.id, enemyType: e ? type : null });
-    return { ok: true, kind: kind, enemyType: e ? type : null };
+    /* 17z33: a gamble (spire-sim.js): most often a swarm of little ones, now and then a pack with a
+     * Rookie at its head, rarely something huge after a rumble; beat everything for a chest */
+    var res = sim._spireBreak ? sim._spireBreak(p, key, px, py) : { tier: "small", enemyType: null };
+    this.emit({ type: "prop.used", kind: kind, key: key, x: px, y: py, id: p.id, tier: res.tier, enemyType: res.enemyType || null, count: res.count || 0 });
+    return { ok: true, kind: kind, tier: res.tier, enemyType: res.enemyType || null };
   };
 
   Progression.prototype._handlers["breather.end"] = function (intent) {
@@ -376,7 +394,9 @@
   Progression.prototype._handlers.burst = function (intent) {
     var sim = this.sim(), p = this.player(intent.id);
     if (!sim || !p || !sim.startBurst) return { ok: false, reason: "no-player" };
-    return sim.startBurst(p);
+    var r = sim.startBurst(p);
+    if (r && r.ok) p.burstUses = (p.burstUses || 0) + 1;      /* Story's warp goal */
+    return r;
   };
 
   /* ---------- DNA digivolution (js/dna.js) ---------- */
@@ -526,8 +546,10 @@
   Progression.prototype._luckyRoute = function (p, pick) {
     var TL = this.data.TAMER_LEVEL, sim = this.sim();
     var luk = (sim && sim._ro && sim._ro()) ? sim._attrsEff(p).luk : ((p.attrs && p.attrs.luk) || 0);
-    if (!TL || !luk || !p.evoOffer) return null;
-    var chance = Math.min(TL.luckyEvoMax || 0.25, luk * (TL.luckyEvoPer || 0.004));
+    var fruit = p.evoFruit || 0;                                    /* an Evo Fruit (data.js FOOD): spent on this digivolution */
+    p.evoFruit = 0;
+    if (!fruit && (!TL || !luk || !p.evoOffer)) return null;
+    var chance = Math.max(fruit, TL ? Math.min(TL.luckyEvoMax || 0.25, (luk || 0) * (TL.luckyEvoPer || 0.004)) : 0);
     var rng = (sim && sim.rng) || Math.random;
     if (rng() >= chance) return null;
     var tree = this.data.EVO_TREE || (typeof EVO_TREE !== "undefined" ? EVO_TREE : null);
@@ -539,6 +561,7 @@
       if (!(this.data.SPECIES && this.data.SPECIES[b.to])) continue;
       seen[b.to] = 1; pool.push(b);
     }
+    if (!pool.length && fruit) p.evoFruit = fruit;                  /* nowhere rare to go from here: the fruit keeps */
     return pool.length ? pool[Math.floor(rng() * pool.length) % pool.length] : null;
   };
 
@@ -548,6 +571,20 @@
   };
 
   /* Spend one skill point (one per job level) in the partner's skill tree. */
+  /* Swap which learned moves are equipped (17z33, Isaac): any time, at no cost. */
+  Progression.prototype._handlers["skill.equip"] = function (intent) {
+    var p = this.player(intent.id), sim = this.sim(), SK = sim && sim._sk && sim._sk();
+    if (!p || !SK || !SK.applyEquip) return { ok: false, reason: "no-player" };
+    if (sim._isEgg(p.form)) return { ok: false, reason: "Not hatched yet" };
+    sim._syncMoves(p);
+    var ids = SK.active(this.data, p.skills || {}).map(function (a) { return a.id; });
+    var r = SK.applyEquip(p.equip, ids, String(intent.skill || ""), intent.drop ? String(intent.drop) : null, !!intent.off, p.equipN || sim.equipSlots(p));
+    if (!r.ok) return r;
+    p.equip = r.list;
+    sim._syncMoves(p);
+    this.emit({ type: "skill.equip", id: p.id, equip: p.equip.slice() });
+    return { ok: true, equip: p.equip.slice() };
+  };
   Progression.prototype._handlers["skill.add"] = function (intent) {
     var p = this.player(intent.id), sim = this.sim(), SK = sim && sim._sk && sim._sk();
     if (!p || !SK) return { ok: false, reason: "no-player" };
@@ -857,15 +894,27 @@
     if (!shopOk) return { ok: false, reason: "Jijimon isn't here" };
     p.shopBought = p.shopBought || {};
     var bought = p.shopBought[item.id] || 0;
+    /* 17z33: only what Jijimon has this visit, and only so many of it */
+    var skey = data.shopKey ? data.shopKey(sim) : "none";
+    if (data.shopStock && data.shopStock(skey, p.id).indexOf(item.id) < 0) return { ok: false, reason: "Not in stock this visit" };
+    if (!p.shopVisit || p.shopVisit.key !== skey) p.shopVisit = { key: skey, n: {} };
+    if (item.perVisit && (p.shopVisit.n[item.id] || 0) >= item.perVisit) return { ok: false, reason: "Sold out this visit" };
     var price = data.shopPrice ? data.shopPrice(item.id, bought) : (item.price || 0);
     if (item.kind === "key" && (p.items || []).indexOf(item.item || item.id) >= 0) {
       return { ok: false, reason: "Already owned" };
     }
+    if (item.kind === "upgrade" && bought >= (item.max || 1)) return { ok: false, reason: "Maxed out" };   /* 17z33: Sprint Boots */
     if ((p.bits || 0) < price) return { ok: false, reason: "Need " + price + " Bits (have " + (p.bits || 0) + ")" };
     p.bits -= price;
     p.shopBought[item.id] = bought + 1;
+    p.shopVisit.n[item.id] = (p.shopVisit.n[item.id] || 0) + 1;
     p.bag = p.bag || {};
     if (item.kind === "food") p.bag[item.food] = (p.bag[item.food] || 0) + (item.count || 3);
+    else if (item.kind === "seed") p.bag[item.seed] = (p.bag[item.seed] || 0) + (item.count || 1);
+    else if (item.id === "ticket") {                        /* a fresh training session, now */
+      var FR = (data.FARM_CFG && data.FARM_CFG.fresh) || { start: 3 };
+      p.trainFresh = (p.trainFresh == null ? (FR.start != null ? FR.start : 3) : p.trainFresh) + 1;
+    }
     else if (item.kind === "consumable" || item.kind === "instant") p.bag[item.id] = (p.bag[item.id] || 0) + 1;
     else if (item.kind === "key") {
       p.items = p.items || [];
@@ -930,6 +979,7 @@
     var yc = this._yardClamp(c, c.yardW ? c.yardW / 2 : 660, c.yardH ? c.yardH / 2 : 420);
     sim.farm = {
       active: true,
+      since: sim.time || 0,                      /* 17z33: which visit (the shop's stock follows it) */
       scheduled: scheduled,
       x: yc.x, y: yc.y, mx: yc.x + 28, my: yc.y + 8,
       facing: 1, mfacing: -1, moving: false, monMoving: false,
@@ -972,7 +1022,7 @@
       p.time = sim.time;
       R.tick(p, dt, { dist: Math.sqrt(dx * dx + dy * dy), clock: sim._clock ? sim._clock() : p.clock, time: sim.time, silentHunger: false });
     }
-    if (farm.stayLeft <= 0) return this.act({ type: "farm.return", id: p.id, reason: "auto" });
+    if (farm.stayLeft <= 0 && !fc.noTimeLimit) return this.act({ type: "farm.return", id: p.id, reason: "auto" });
     return { ok: true, farm: farm, fullness: p.fullness };
   };
 
@@ -980,33 +1030,16 @@
     var a = farm.activity;
     var st = ((this.data.FARM_CFG && this.data.FARM_CFG.stations) || {})[a.id];
     if (!st) { farm.activity = null; return; }
-    a.t += dt;
-    if (a.id === "bag") {
-      a.beat = (a.beat || 0) + dt;
-      if (a.window > 0) a.window -= dt;
-      if (a.beat >= 0.62) { a.beat = 0; a.window = 0.34; }
-    } else if (a.id === "track") {
-      var g = trackGeom(this.data);
-      var peri = ellipsePerimeter(g.rx, g.ry);
-      var targetLaps = g.lapsTarget || 1.25;
-      var dur = a.dur || st.timeCost || 8;
-      var distPerSec = peri * targetLaps / Math.max(0.5, dur);
-      if (inp && (Math.abs(inp.x) + Math.abs(inp.y) > 0.25)) {
-        a.pace = Math.min(1.3, (a.pace || 0) + dt * 0.8);
-        a.score = Math.min(1.25, a.score + dt * 0.12);
-        distPerSec *= 1 + a.pace * 0.35;
-      } else {
-        a.pace = Math.max(0, (a.pace || 0) - dt * 0.6);
-      }
-      var deriv = Math.sqrt(Math.pow(g.rx * Math.sin(a.angle), 2) + Math.pow(g.ry * Math.cos(a.angle), 2));
-      a.angle += (distPerSec * dt) / Math.max(8, deriv);
-      if (a.angle >= Math.PI * 2) {
-        a.laps += Math.floor(a.angle / (Math.PI * 2));
-        a.angle = a.angle % (Math.PI * 2);
-      }
-      a.mx = g.cx + g.rx * Math.cos(a.angle);
-      a.my = g.cy + g.ry * Math.sin(a.angle);
+    if (a.mg) {
+      MG().tick(a.mg, dt, inp, (this.sim() && this.sim().rng) || Math.random);
+      a.t = a.mg.t;
+      if (a.mg.kind === "lanes") { var lp = MG().lanesPos(a.mg); a.mx = lp.x; a.my = lp.y; if (Math.abs(lp.dx) > 1) farm.mfacing = lp.dx > 0 ? 1 : -1; }
+      farm.mx = a.mx; farm.my = a.my;
+      if (a.mg.done) this._finishTrain(p, farm);
+      return;
     }
+    a.t += dt;
+    farm.mx = a.mx; farm.my = a.my;
     if (a.t >= a.dur) this._finishTrain(p, farm);
   };
 
@@ -1025,10 +1058,7 @@
       lapsTarget: st.lapsTarget != null ? st.lapsTarget : 1.25
     };
   }
-  function ellipsePerimeter(rx, ry) {
-    var h = Math.pow(rx - ry, 2) / Math.pow(rx + ry, 2);
-    return Math.PI * (rx + ry) * (1 + (3 * h) / (10 + Math.sqrt(4 - 3 * h)));
-  }
+
 
   Progression.prototype._finishTrain = function (p, farm) {
     var a = farm.activity;
@@ -1038,22 +1068,35 @@
     if (!st) return { ok: false, reason: "no-station" };
     p.trainVisits = p.trainVisits || { bag: 0, board: 0, track: 0, bond: 0 };
     p.trainStats = p.trainStats || { offense: 0, intelligence: 0, agility: 0 };
-    var visits = p.trainVisits[a.id] || 0;
-    var dim = st.diminish != null ? st.diminish : 0.65;
-    var gain = (st.gain || 10) * Math.pow(dim, visits) * (a.score || 0.7);
-    gain = Math.max(1, Math.round(gain));
-    p.trainVisits[a.id] = visits + 1;
+    var FC = this.data.FARM_CFG || {}, FR = FC.fresh || { max: 3, start: 3 };
+    /* 17z33: the gain is the station's, after repeats, tiredness, farm gates and a Protein Steak (minigames.js
+     * preview), times how well the mini game went */
+    var pv = MG().preview(FC, st, p);
+    var score = a.mg ? MG().score(a.mg) : (a.score || 0.7), grade = MG().gradeOf(score);
+    if (p.trainFresh == null) p.trainFresh = FR.start != null ? FR.start : 3;
+    if (p.trainFresh > 0) { p.trainFresh -= 1; p.trainTired = 0; } else p.trainTired = (p.trainTired || 0) + 1;
+    p.trainBoost = 0;
+    var gain = Math.max(1, Math.round(pv.base * score));
+    p.trainVisits[a.id] = pv.visits + 1;
+    var before;
     if (st.stat === "bond") {
-      p.bondTrain = clamp((p.bondTrain || 0) + gain, 0, 100);
+      before = p.bondTrain || 0;
+      p.bondTrain = clamp(before + gain, 0, 100);
       p.happiness = clamp((p.happiness || 0) + Math.round(gain * 0.35), 0, 100);
     } else {
-      p.trainStats[st.stat] = (p.trainStats[st.stat] || 0) + gain;
-      p.happiness = clamp((p.happiness || 0) + ((this.data.FARM_CFG && this.data.FARM_CFG.trainJoy) || 6) * 0.5, 0, 100);
+      before = p.trainStats[st.stat] || 0;
+      p.trainStats[st.stat] = before + gain;
+      p.happiness = clamp((p.happiness || 0) + (FC.trainJoy || 6) * 0.5, 0, 100);
     }
     farm.trained = true;
-    farm.trainCd = (this.data.FARM_CFG && this.data.FARM_CFG.trainCooldown) || 0;
-    this.emit({ type: "farm.train", id: p.id, station: a.id, gain: gain, stat: st.stat, laps: a.laps || 0 });
-    return { ok: true, gain: gain, stat: st.stat };
+    farm.trainCd = FC.trainCooldown || 0;
+    var next = MG().preview(FC, st, p);
+    p.trainCount = (p.trainCount || 0) + 1;                  /* Story's training goal */
+    this.emit({ type: "farm.train", id: p.id, station: a.id, gain: gain, stat: st.stat, before: before, after: before + gain,
+      grade: grade.id, gradeLabel: grade.label, score: Math.round(score * 100) / 100, detail: a.mg ? MG().summary(a.mg) : "",
+      base: Math.round(pv.base * 10) / 10, repeat: Math.round(pv.repeat * 100), fresh: pv.fresh, tired: Math.round(pv.tired * 100),
+      gates: p.farmGates || 0, gateMul: Math.round(pv.gate * 100), boost: pv.boost > 1 ? pv.boost : 0, freshLeft: p.trainFresh, nextGreat: next.great });
+    return { ok: true, gain: gain, stat: st.stat, grade: grade.id };
   };
 
   Progression.prototype._handlers["farm.trainStart"] = function (intent) {
@@ -1064,53 +1107,35 @@
     if (sim.farm.trainCd > 0) return { ok: false, reason: "cooldown" };
     var st = ((this.data.FARM_CFG && this.data.FARM_CFG.stations) || {})[intent.station];
     if (!st) return { ok: false, reason: "no-station" };
+    var FC = this.data.FARM_CFG || {};
+    if (st.fullnessCost && (p.fullness || 0) < (FC.trainMinFull || 33)) return { ok: false, reason: "Too hungry to train: feed it first" };   /* 17z33: food is the stamina */
     if (st.fullnessCost) p.fullness = Math.max(0, (p.fullness || 0) - st.fullnessCost);
-    var g = st.id === "track" ? trackGeom(this.data) : null;
+    /* 17z33: the punching bag, chalkboard and track are short mini games (net/minigames.js); play is as before */
+    var mg = MG() && MG().KIND[st.id] ? MG().create(st.id, sim.rng || Math.random, st.id === "track" ? trackGeom(this.data) : null) : null;
     sim.farm.activity = {
-      id: st.id,
-      t: 0,
-      dur: st.timeCost || 6,
-      hits: 0,
-      needed: st.id === "bag" ? 5 : (st.id === "board" ? 1 : 0),
-      score: 0.65,
-      beat: 0,
-      window: 0,
-      quiz: st.id === "board" ? makeQuiz(this.sim()) : null,
-      choice: -1,
-      angle: 0,
-      laps: 0,
-      pace: 0,
-      mx: g ? g.cx + g.rx : st.x,
-      my: g ? g.cy : st.y
+      id: st.id, t: 0, dur: mg ? mg.dur : (st.timeCost || 6), hits: 0, score: mg ? 0 : 0.65, cheer: 0, mg: mg,
+      mx: st.x + 28, my: st.y + 8
     };
     return { ok: true, activity: sim.farm.activity };
   };
-
-  function makeQuiz(sim) {
-    var shapes = ["○", "△", "□"];
-    var answer = sim && sim.rng ? Math.floor(sim.rng() * 3) : 1;
-    return { prompt: "Which one matches  " + shapes[answer] + "  ?", options: shapes, answer: answer };
-  }
 
   Progression.prototype._handlers["farm.trainInput"] = function (intent) {
     var sim = this.sim();
     var farm = sim && sim.farm;
     var a = farm && farm.activity;
     if (!a) return { ok: false, reason: "no-activity" };
-    if (a.id === "bag" && (intent.kind === "interact" || intent.kind === "confirm")) {
-      if (a.window > 0) { a.hits += 1; a.score = Math.min(1.25, a.score + 0.12); a.window = 0; }
-      else a.score = Math.max(0.35, a.score - 0.06);
-    } else if (a.id === "board" && (intent.kind === "slot" || intent.kind === "choice")) {
-      if (intent.value == null || !a.quiz) return { ok: false, reason: "no-choice" };
-      a.choice = intent.value;
-      a.score = (intent.value === a.quiz.answer) ? 1.15 : 0.55;
-      a.hits = 1;
-      a.t = Math.max(a.t, a.dur - 0.6);
-    } else if (a.id === "bond" && (intent.kind === "interact" || intent.kind === "confirm")) {
+    if (a.mg) {
+      var r = MG().input(a.mg, intent.kind, intent.value, sim.rng || Math.random);
+      if (!r) return { ok: false, reason: "bad-input" };
+      if (a.mg.done) { var p = this.player(intent.id); if (p) this._finishTrain(p, farm); }
+      return { ok: true, res: r };
+    }
+    if (a.id === "bond" && (intent.kind === "interact" || intent.kind === "confirm")) {
       a.cheer = (a.cheer || 0) + 1;
       a.score = Math.min(1.2, a.score + 0.08);
-    } else return { ok: false, reason: "bad-input" };
-    return { ok: true, score: a.score };
+      return { ok: true, score: a.score };
+    }
+    return { ok: false, reason: "bad-input" };
   };
 
   Progression.prototype._handlers["farm.pet"] = function (intent) {
@@ -1129,29 +1154,114 @@
    * health; a balanced diet (meat + veg) makes every meal count for more. */
   Progression.prototype._eat = function (p, kind, def) {
     p.bag[kind] -= 1;
-    p.fullness = clamp((p.fullness || 0) + (def.fullness || 20), 0, (this.data.CARE && this.data.CARE.fullnessMax) || 100);
+    /* 17z33: favourite a third, ordinary a quarter, disliked a sixth (data.js foodFill) */
+    var fill = this.data.foodFill ? this.data.foodFill(p.form, kind) : (def.fullness || 20);
+    p.fullness = clamp((p.fullness || 0) + fill, 0, (this.data.CARE && this.data.CARE.fullnessMax) || 100);
+    p._lastFill = fill;
+    p._disAte = !!(this.data.isDisliked && this.data.isDisliked(p.form, kind));
+    if (p._disAte) p.happiness = clamp((p.happiness || 0) + ((this.data.CARE && this.data.CARE.dislikeJoy) || -3), 0, (this.data.CARE && this.data.CARE.happinessMax) || 100);
     p.happiness = clamp((p.happiness || 0) + (def.happiness || 4), 0, (this.data.CARE && this.data.CARE.happinessMax) || 100);
+    p._favAte = !!(this.data.isFavourite && this.data.isFavourite(p.form, kind));      /* its favourite: a lot happier (17z33) */
+    if (p._favAte) p.happiness = clamp(p.happiness + ((this.data.CARE && this.data.CARE.favJoy) || 12), 0, (this.data.CARE && this.data.CARE.happinessMax) || 100);
     p.foodEaten = (p.foodEaten || 0) + 1;
     p.foodCounts = p.foodCounts || {};
     p.foodCounts[kind] = (p.foodCounts[kind] || 0) + 1;
     var diet = this.data.dietOf ? this.data.dietOf(p.foodCounts) : null;
     var dcfg = this.data.DIET || {};
-    var heal = def.hpHeal || 0;
-    if (diet && diet.balanced) {
-      p.happiness = clamp((p.happiness || 0) + (def.happiness || 4) * (dcfg.joyBonus || 0.5), 0, (this.data.CARE && this.data.CARE.happinessMax) || 100);
-      heal += dcfg.hpHealBonus || 0.08;
-    }
-    if (heal > 0 && p.maxHp && !p.downed) p.hp = Math.min(p.maxHp, (p.hp || 0) + p.maxHp * heal);
+    if (diet && diet.balanced) p.happiness = clamp((p.happiness || 0) + (def.happiness || 4) * (dcfg.joyBonus || 0.5), 0, (this.data.CARE && this.data.CARE.happinessMax) || 100);
+    /* 17z33: meals don't heal; a vegetable's lasting boost comes from foodCounts (data.js vegBoosts, mission-sim _stats) */
+    p._rareFx = def.rare ? this._rareEat(p, kind, def) : null;
     return diet;
+  };
+  /* What a rare food (data.js FOOD, rare: true) does beyond filling the belly. Returns what happened. */
+  Progression.prototype._rareEat = function (p, kind, def) {
+    var sim = this.sim(), rng = (sim && sim.rng) || Math.random, out = { kind: kind }, keys, k;
+    if (def.trainMul) { p.trainBoost = Math.max(p.trainBoost || 1, def.trainMul); out.trainBoost = p.trainBoost; }
+    if (def.statUp) {
+      p.trainStats = p.trainStats || { offense: 0, intelligence: 0, agility: 0 };
+      keys = ["offense", "intelligence", "agility"]; k = keys[Math.floor(rng() * keys.length) % keys.length];
+      p.trainStats[k] = (p.trainStats[k] || 0) + def.statUp;
+      out.stat = k; out.statUp = def.statUp;
+    }
+    if (def.evoChance) { p.evoFruit = Math.max(p.evoFruit || 0, def.evoChance); out.evoFruit = true; }
+    if (def.mistakes) { p.careMistakes = (p.careMistakes || 0) + def.mistakes; out.mistakes = def.mistakes; out.careMistakes = p.careMistakes; }
+    if (kind === "golden_meat") out.full = true;
+    if (kind === "sweet_nut") out.joy = true;
+    return out;
   };
 
   /* Feeding in the middle of a battle: walk up to your Digimon and hand it
    * something from the bag. Instant; it keeps fighting. */
+  /* the shiny moment (17z33): a few seconds where nothing can hurt the tamer or the partner, once per new shiny */
+  /* 17z33: use a tool from Jijimon's stall out in the world. The Gate Key and the Treasure Map are spent here
+   * (the screen opens the farm / marks the spires); a Lure calls a pack of the kind you're closest to catching. */
+  Progression.prototype._handlers["bag.use"] = function (intent) {
+    var p = this.player(intent.id), sim = this.sim(), item = String(intent.item || ""), C = this.data.CAPTURE || {}, best = null, bestR = -1, k, need, r, i, n, a, c, e, made = 0;
+    if (!p || !sim) return { ok: false, reason: "no-run" };
+    if (["gateKey", "lure", "map"].indexOf(item) < 0) return { ok: false, reason: "Can't use that here" };
+    if (!(p.bag && p.bag[item] > 0)) return { ok: false, reason: "None left" };
+    if (sim.farm && sim.farm.active) return { ok: false, reason: "Use it out in the world" };
+    if (item === "lure") {
+      for (k in (p.killsBy || {})) {
+        if (!p.killsBy[k] || !(this.data.ENEMIES && this.data.ENEMIES[k]) || this.data.ENEMIES[k].boss) continue;
+        need = this.data.captureKoNeeded ? this.data.captureKoNeeded(k) : 30;
+        r = p.killsBy[k] / need;
+        if (r > bestR) { bestR = r; best = k; }
+      }
+      if (!best) return { ok: false, reason: "Beat some wild Digimon first: the Lure calls the kind you've beaten most" };
+      n = (C.lurePack || 6);
+      for (i = 0; i < n; i++) {
+        a = (Math.PI * 2 * i) / n + (sim.rng ? sim.rng() : Math.random()) * 0.5;
+        c = sim._snap ? sim._snap(p.x + Math.cos(a) * 300, p.y + Math.sin(a) * 300, 12, 200) : { x: p.x + Math.cos(a) * 300, y: p.y + Math.sin(a) * 300 };
+        e = sim.spawnEnemy ? sim.spawnEnemy(best, { x: c.x, y: c.y, keepType: true, quiet: true }) : null;
+        if (e) made++;
+      }
+      if (!made) return { ok: false, reason: "Nothing came" };
+    }
+    p.bag[item] -= 1;
+    this.emit({ type: "bag.use", id: p.id, item: item, kind: best, count: made });
+    return { ok: true, item: item, kind: best, count: made };
+  };
+  /* throw something out of the bag (17z33, the I inventory): to make room for better food, say */
+  /* Night Siege: rebuild a smashed egg at the nest, by day, for DigiCoins (siege-sim.js) */
+  Progression.prototype._handlers["siege.repair"] = function (intent) {
+    var p = this.player(intent.id);
+    if (!p) return { ok: false, reason: "no-player" };
+    var sim = this.sim();
+    if (!sim || !sim._siegeRepair || !(sim.siege && sim.siege.nest)) return { ok: false, reason: "Not in Night Siege" };
+    return sim._siegeRepair(p);
+  };
+  /* Night Siege: put up a piece of fence round the nest, by day, for wood and coins (siege-sim.js) */
+  Progression.prototype._handlers["siege.build"] = function (intent) {
+    var p = this.player(intent.id), sim = this.sim();
+    if (!p) return { ok: false, reason: "no-player" };
+    if (!sim || !sim._siegeBuild || !(sim.siege && sim.siege.nest)) return { ok: false, reason: "Not in Night Siege" };
+    return sim._siegeBuild(p, intent.i);
+  };
+  Progression.prototype._handlers["bag.discard"] = function (intent) {
+    var p = this.player(intent.id), item = String(intent.item || ""), n = Math.max(1, Math.floor(+intent.n || 1));
+    if (!p) return { ok: false, reason: "no-player" };
+    p.bag = p.bag || {};
+    if (!(p.bag[item] > 0)) return { ok: false, reason: "None left" };
+    n = Math.min(n, p.bag[item]);
+    p.bag[item] -= n;
+    this.emit({ type: "bag.discard", id: p.id, item: item, n: n, left: p.bag[item] || 0 });
+    return { ok: true, item: item, n: n, left: p.bag[item] || 0 };
+  };
+  Progression.prototype._handlers["shiny.guard"] = function (intent) {
+    var p = this.player(intent.id), sec = (this.data.SHINY && this.data.SHINY.guardSec) || 3.2;
+    if (!p || !p.shiny || !p.shinyGuardDue) return { ok: false, reason: "no-shiny" };
+    p.shinyGuardDue = 0;
+    p.monInvuln = Math.max(p.monInvuln || 0, sec); p.tamerInvuln = Math.max(p.tamerInvuln || 0, sec);
+    this.emit({ type: "shiny.guard", id: p.id, sec: sec });
+    return { ok: true, sec: sec };
+  };
   Progression.prototype._handlers["field.feed"] = function (intent) {
     var p = this.player(intent.id);
     var sim = this.sim();
     if (!p || !sim) return { ok: false, reason: "no-run" };
     if (sim.farm && sim.farm.active) return this.act({ type: "farm.feed", id: intent.id, food: intent.food });
+    if (!(this.data.FARM_CFG && this.data.FARM_CFG.fieldFeed)) return { ok: false, reason: "Feed it at the farm" };   /* 17z33: meals are at the farm */
     if (sim.phase && sim.phase !== "playing") return { ok: false, reason: "Not now" };
     if (p.downed) return { ok: false, reason: "It is down" };
     var kind = intent.food;
@@ -1159,6 +1269,7 @@
     if (!def) return { ok: false, reason: "no-food" };
     p.bag = p.bag || {};
     if (!(p.bag[kind] > 0)) return { ok: false, reason: "None left" };
+    if ((p.fullness || 0) >= ((this.data.CARE && this.data.CARE.fullRefuse) || 96)) return { ok: false, reason: "It's full!", full: true };
     /* no distance check: the tamer can feed from anywhere */
     var refuseFn = (this.data.rarity && this.data.rarity.shouldRefuseFeed) || (rarityApi() && rarityApi().shouldRefuseFeed);
     if (refuseFn && refuseFn(p)) {
@@ -1166,8 +1277,8 @@
       return { ok: false, reason: "refused", refused: true };
     }
     var diet = this._eat(p, kind, def);
-    this.emit({ type: "field.feed", id: p.id, food: kind, fullness: p.fullness, balanced: !!(diet && diet.balanced) });
-    return { ok: true, food: kind, fullness: p.fullness, balanced: !!(diet && diet.balanced) };
+    this.emit({ type: "field.feed", id: p.id, food: kind, fullness: p.fullness, balanced: !!(diet && diet.balanced), fav: !!p._favAte });
+    return { ok: true, food: kind, fullness: p.fullness, balanced: !!(diet && diet.balanced), fav: !!p._favAte };
   };
 
   Progression.prototype._handlers["farm.feed"] = function (intent) {
@@ -1180,6 +1291,7 @@
     if (!def) return { ok: false, reason: "no-food" };
     p.bag = p.bag || {};
     if (!(p.bag[kind] > 0)) return { ok: false, reason: "empty" };
+    if ((p.fullness || 0) >= ((this.data.CARE && this.data.CARE.fullRefuse) || 96)) return { ok: false, reason: "It's full!", full: true };
     var refuseFn = (this.data.rarity && this.data.rarity.shouldRefuseFeed) || (rarityApi() && rarityApi().shouldRefuseFeed);
     if (refuseFn && refuseFn(p)) {
       sim.farm.refused += 1;
@@ -1188,8 +1300,8 @@
     }
     var diet = this._eat(p, kind, def);
     sim.farm.fed += 1;
-    this.emit({ type: "farm.feed", id: p.id, food: kind, fullness: p.fullness, balanced: !!(diet && diet.balanced) });
-    return { ok: true, food: kind, fullness: p.fullness, balanced: !!(diet && diet.balanced) };
+    this.emit({ type: "farm.feed", id: p.id, food: kind, fullness: p.fullness, balanced: !!(diet && diet.balanced), fav: !!p._favAte, dis: !!p._disAte, fill: p._lastFill, rare: p._rareFx || null });
+    return { ok: true, food: kind, fullness: p.fullness, balanced: !!(diet && diet.balanced), fav: !!p._favAte, dis: !!p._disAte, fill: p._lastFill, rare: p._rareFx || null };
   };
 
   Progression.prototype._plotNear = function (sim, idx) {
@@ -1221,7 +1333,7 @@
     p.garden = p.garden || [];
     if (p.garden[idx] && p.garden[idx].crop) return { ok: false, reason: "occupied" };
     p.bag[seed] -= 1;
-    p.garden[idx] = { crop: crop, plantedAt: sim.time, readyAt: sim.time + (def.growSec || 180) / (sim._lab ? sim._lab(p).crop : 1) };
+    p.garden[idx] = { crop: crop, plantedAt: sim.time, readyAt: sim.time + (def.growSec || 180) / (sim._lab ? sim._lab(p).crop : 1) / (sim._gear ? (sim._gear(p).crop || 1) : 1) };
     this.emit({ type: "farm.plant", id: p.id, plot: idx, crop: crop });
     return { ok: true, plot: idx, crop: crop };
   };
@@ -1554,7 +1666,7 @@
   function payoutCfg(data) {
     var c = (data && data.DIGIBITS) || {};
     return {
-      name: c.name || "DigiBits",
+      name: c.name || "DigiCoins",
       winReward: c.winReward != null ? c.winReward : 8,
       betPool: c.betPool != null ? c.betPool : 6,
       minBetPayout: c.minBetPayout != null ? c.minBetPayout : 1
@@ -1564,6 +1676,9 @@
   /* Called from the sim tick: hatch timer + auto-evolve. */
   Progression.prototype.tickPlaying = function (p, dt) {
     if (!p) return;
+    var vsim = this.sim();
+    if (vsim && vsim._vsEvo && vsim._mode && vsim._mode() === "versus" && vsim.vs) { vsim._vsEvo(p, this); return; }   /* Versus: the meter decides (versus-sim.js) */
+    if (vsim && vsim._duelSetup && vsim._mode && vsim._mode() === "duel" && vsim.vs) { vsim._duelSetup(p, this); return; }   /* Duel: as it is, no digivolving */
     if (this._isEgg(p.form)) {
       p.hatchLeft = Math.max(0, (p.hatchLeft == null ? ((this.data.HATCH && this.data.HATCH.time) || 20) : p.hatchLeft) - dt);
       if (p.hatchLeft <= 0) this.act({ type: "hatch", id: p.id });
@@ -1610,9 +1725,7 @@
   };
 
   Progression.prototype._tickFarmYard = function (p, farm, dt, inp, fc) {
-    if (!farm || farm.activity && farm.activity.id === "track") {
-      /* Track pose is owned by _tickFarmActivity. Tamer may still wander. */
-    }
+    if (farm && farm.activity && farm.activity.mg && farm.activity.mg.kind === "lanes") { farm.moving = false; return; }   /* the stick switches the partner's lane */
     var speed = ((this.data && this.data.TAMER && this.data.TAMER.speed) || 168);
     inp = inp || { x: 0, y: 0 };
     var nx = (farm.x || 0) + (inp.x || 0) * speed * dt;

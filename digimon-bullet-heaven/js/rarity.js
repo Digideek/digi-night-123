@@ -293,7 +293,7 @@
           if (typeof statsOrRun.time === "number") runTime = statsOrRun.time;
           else if (typeof statsOrRun.runTime === "number") runTime = statsOrRun.runTime;
         }
-        cycle = (runTime / DAY_SECONDS) % 1;
+        cycle = (runTime / CLOCK.DAY_SECONDS) % 1;
       }
     } else if (clockOverride) {
       hour = clockOverride.hour != null ? clockOverride.hour : 12;
@@ -306,7 +306,7 @@
         if (typeof statsOrRun.time === "number") runTime = statsOrRun.time;
         else if (typeof statsOrRun.runTime === "number") runTime = statsOrRun.runTime;
       }
-      cycle = (runTime / DAY_SECONDS) % 1;
+      cycle = (runTime / CLOCK.DAY_SECONDS) % 1;
     }
     realP = periodOfHour(hour);
     cycleP = periodOfCycle(cycle);

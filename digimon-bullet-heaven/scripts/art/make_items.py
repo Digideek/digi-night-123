@@ -130,6 +130,94 @@ def bits(frame):
         p.line([(14, 6), (14, 22)], pale); p.px(13, 8, WHITE)
     return p.finish()
 
+# ---------------------------------------------------------------- rare foods (spire chests, 17z33)
+def sweet_nut():
+    """A big glazed nut with a drip of honey and a heart glint."""
+    p = Pen(); shell = rgb('#c07a3a'); glaze = rgb('#ffcf5a')
+    p.oval(14, 15, 9, 8, 0.3, shell)
+    p.line([(8, 13), (19, 20)], dk(shell)); p.line([(10, 10), (21, 16)], dk(shell))
+    p.oval(13, 10, 7, 3.4, 0.3, glaze); p.poly([(16, 12), (18, 12), (17, 17)], glaze, edge=False)
+    p.ell(16, 16, 18, 18, glaze, edge=False)
+    for x, y in ((21, 4), (23, 4), (20, 5), (21, 5), (22, 5), (23, 5), (24, 5), (21, 6), (22, 6), (23, 6), (22, 7)): p.px(x, y, rgb('#ff6aa8'))
+    sparkle(p, 10, 9, False)
+    return p.finish()
+
+def protein_steak():
+    """A thick T-bone steak with grill marks."""
+    p = Pen(); m = rgb('#b8322c'); fat = rgb('#f4dcc8'); sear = rgb('#5a1810')
+    p.oval(14, 15, 11, 8, -0.2, fat)
+    p.oval(14, 15, 9.4, 6.6, -0.2, m)
+    p.line([(13, 9), (15, 21)], rgb('#f6ecd2'), 2)
+    for a in (6, 10, 18, 22): p.line([(a, 11), (a + 3, 19)], sear, 1)
+    p.px(9, 11, lt(m)); p.px(10, 10, WHITE)
+    return p.finish()
+
+def golden_meat():
+    """The classic haunch, but solid gold and glittering."""
+    p = Pen(); bone = rgb('#fff6d8'); m = rgb('#f0b820'); sear = rgb('#a86a10')
+    p.line([(6, 22), (22, 6)], dk(bone), 5); p.line([(6, 22), (22, 6)], bone, 3)
+    for cx, cy in ((4, 21), (7, 24), (21, 4), (24, 7)): p.ell(cx - 2, cy - 2, cx + 2, cy + 2, bone)
+    p.oval(14, 14, 8.6, 6.6, -math.pi / 4, m)
+    p.oval(12, 12, 4.4, 2.2, -math.pi / 4, rgb('#fff0a0'), edge=False)
+    p.line([(13, 19), (19, 13)], sear, 1)
+    sparkle(p, 10, 10); sparkle(p, 19, 17, False); sparkle(p, 24, 12, False)
+    return p.finish()
+
+def digi_seed():
+    """A glowing seed with circuit lines and a sprout of data."""
+    p = Pen(); c = rgb('#3ad8a8'); hi = rgb('#b8fff0'); line = rgb('#0e6a5a')
+    p.oval(14, 17, 6.5, 8, 0.2, c)
+    p.line([(12, 12), (12, 17), (15, 17), (15, 21)], line); p.px(12, 12, hi); p.px(15, 21, hi)
+    p.line([(14, 9), (14, 4)], rgb('#4fb83c')); p.poly([(14, 6), (9, 2), (10, 6)], rgb('#4fb83c')); p.poly([(14, 5), (19, 1), (18, 6)], rgb('#4fb83c'))
+    p.px(11, 13, WHITE); sparkle(p, 21, 11, False)
+    return p.finish()
+
+def evo_fruit():
+    """A rainbow-striped fruit with a star leaf: something strange inside."""
+    p = Pen(); body = rgb('#a050ff')
+    p.ell(5, 7, 23, 25, body)
+    bands = [rgb('#ff5a7a'), rgb('#ffb84a'), rgb('#fff05a'), rgb('#5aff9a'), rgb('#5ac8ff')]
+    for i, b in enumerate(bands):
+        y = 10 + i * 3
+        p.line([(7 + (1 if i in (0, 4) else 0), y), (21 - (1 if i in (0, 4) else 0), y)], b, 1)
+    p.poly([(14, 7), (16, 1), (18, 5), (23, 4), (19, 8)], rgb('#4fb83c'))
+    p.px(9, 11, WHITE); p.px(10, 10, WHITE); sparkle(p, 22, 21, False)
+    return p.finish()
+
+def moldy_meat():
+    """The haunch gone bad: grey-green, spotted, with a stink line."""
+    p = Pen(); bone = rgb('#c8c0a0'); m = rgb('#7a8a4a'); spot = rgb('#4a5a2a'); fuzz = rgb('#b8e070')
+    p.line([(6, 22), (22, 6)], dk(bone), 5); p.line([(6, 22), (22, 6)], bone, 3)
+    for cx, cy in ((4, 21), (7, 24), (21, 4), (24, 7)): p.ell(cx - 2, cy - 2, cx + 2, cy + 2, bone)
+    p.oval(14, 14, 8.6, 6.6, -math.pi / 4, m)
+    for x, y in ((11, 13), (15, 11), (17, 16), (13, 17)): p.ell(x - 1, y - 1, x + 1, y + 1, spot, edge=False)
+    for x, y in ((12, 10), (18, 13), (10, 16)): p.px(x, y, fuzz)
+    p.line([(3, 6), (5, 4), (3, 2)], rgb('#9ab060')); p.line([(7, 5), (9, 3), (7, 1)], rgb('#9ab060'))
+    return p.finish()
+
+def wood():
+    """Night Siege (17z33): a little bundle of three logs, tied with a cord, their cut ends showing rings."""
+    p = Pen(); bark = rgb('#7a4a24'); cut = rgb('#e0b878'); ring = rgb('#a87840'); cord = rgb('#c83a2a')
+    for y0, x0, x1 in ((15, 4, 22), (9, 6, 24), (19, 7, 25)):
+        p.rect(x0, y0, x1, y0 + 5, bark)
+        p.line([(x0 + 3, y0 + 2), (x1 - 4, y0 + 2)], dk(bark))
+        p.ell(x1 - 3, y0, x1 + 2, y0 + 5, cut)
+        p.px(x1 - 1, y0 + 2, ring); p.px(x1, y0 + 2, ring)
+    p.line([(13, 8), (13, 26)], cord, 2)
+    return p.finish()
+
+def evo():
+    """Versus (17z33): a DIGIVOLVE orb: a round amber token with a white double chevron pointing up."""
+    p = Pen(); c = rgb('#ff9a2a'); rim = rgb('#ffd060'); w = WHITE
+    p.ell(4, 4, 23, 23, c)
+    p.ell(7, 7, 20, 20, rim, edge=False)
+    p.ell(8, 8, 19, 19, c, edge=False)
+    for dy in (0, 5):
+        p.poly([(13.5, 8 + dy), (19, 13 + dy), (17, 15 + dy), (13.5, 11.5 + dy), (10, 15 + dy), (8, 13 + dy)], w, edge=False)
+    return p.finish()
+
+RARE = (('sweet_nut', sweet_nut), ('protein_steak', protein_steak), ('golden_meat', golden_meat), ('digi_seed', digi_seed), ('evo_fruit', evo_fruit), ('moldy_meat', moldy_meat))
+
 SEEDS = (('carrot', '#f08a28'), ('cucumber', '#5cb848'), ('tomato', '#e83a30'), ('corn', '#f4d040'), ('cabbage', '#9ad860'), ('potato', '#c8a060'))
 
 def seed(col):
@@ -148,6 +236,8 @@ def main():
     frames = [('meat', meat()), ('fish', fish()), ('berry', berry()), ('xp_0', xp(0)), ('xp_1', xp(1))]
     frames += [('bits_%d' % i, bits(i)) for i in range(4)]
     frames += [('seed_' + n, seed(c)) for n, c in SEEDS]
+    frames += [(n, f()) for n, f in RARE]
+    frames += [('wood', wood()), ('evo', evo())]
     for name, im in frames: im.save(os.path.join(out, name + '.png'))
     if len(sys.argv) > 1:
         Z = 6; sheet = Image.new('RGBA', (len(frames) * S * Z, S * Z), (74, 122, 58, 255))

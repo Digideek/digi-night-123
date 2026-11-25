@@ -10,7 +10,7 @@
   "use strict";
   var D = (global.DBH = global.DBH || {});
 
-  var DAY_SECONDS = 180;
+  var DAY_SECONDS = 243;               /* 17z33: 35% longer (was 180); still two days a season */
 
   function periodOfHour(hour) {
     hour = ((hour % 24) + 24) % 24;

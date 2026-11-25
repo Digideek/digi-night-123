@@ -71,7 +71,7 @@
   function clockOf(battleTime, clockHour) {
     return {
       hour: clockHour != null ? clockHour : 12,
-      cycle: ((battleTime || 0) / DAY_SECONDS) % 1
+      cycle: ((battleTime || 0) / CLOCK.DAY_SECONDS) % 1
     };
   }
 
@@ -90,7 +90,7 @@
           if (typeof statsOrRun.time === "number") runTime = statsOrRun.time;
           else if (typeof statsOrRun.runTime === "number") runTime = statsOrRun.runTime;
         }
-        cycle = (runTime / DAY_SECONDS) % 1;
+        cycle = (runTime / CLOCK.DAY_SECONDS) % 1;
       }
     } else {
       hour = 12;
@@ -99,7 +99,7 @@
         if (typeof statsOrRun.time === "number") runTime = statsOrRun.time;
         else if (typeof statsOrRun.runTime === "number") runTime = statsOrRun.runTime;
       }
-      cycle = (runTime / DAY_SECONDS) % 1;
+      cycle = (runTime / CLOCK.DAY_SECONDS) % 1;
     }
     realP = periodOfHour(hour);
     cycleP = periodOfCycle(cycle);
@@ -230,10 +230,10 @@
 
   function shouldRefuseFeed(run) {
     if (!run) return false;
-    if ((run.fullness || 0) <= 15) return false;
+    if ((run.fullness || 0) <= 45) return false;          /* 17z33: a hungry partner always eats; a sulky one only turns down food it doesn't need yet (was 15) */
     var mood = deriveMood(run);
     if (mood !== "stubborn" && mood !== "sulky") {
-      if ((run.starveCycles || 0) >= 1 && (run.happiness || 0) < 70 && (run.fullness || 0) > 20) {
+      if ((run.starveCycles || 0) >= 1 && (run.happiness || 0) < 50 && (run.fullness || 0) > 45) {
         mood = "stubborn";
         run.mood = "stubborn";
       } else {

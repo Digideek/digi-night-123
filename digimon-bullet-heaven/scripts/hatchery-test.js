@@ -71,6 +71,7 @@ function champs(diet, n) {
   ok(seen.length === 4 && seen[0].hatched && !seen[0].unlocked && !seen[1].unlocked && seen[2].unlocked === H.egg.line && !seen[3].unlocked, "the line (" + H.egg.line + ") opens the moment it reaches Rookie, not before");
   ok(H.egg.stage === 4 && D.moveStageIdx(H.egg.form) === 3 && R.cost(H) === null && R.feed(H, "beast", 10).reason === "max", "it stops at Champion (" + H.egg.form + ")");
   ok(H.egg.route.length === 4 && H.egg.route.every((f, i) => D.moveStageIdx(f) === i), "its route is one form per stage: " + H.egg.route.join(" > "));
+  ok(H.rookies && H.rookies[H.egg.route[2]] === 1 && Object.keys(H.rookies).length === 1, "the Rookie it grew into is kept (" + H.egg.route[2] + "): Versus lets you bring it");
   /* into a run */
   const u = R.use(H);
   ok(u && u.form === u.route[3] && u.level === 14 && u.bias.beast > 0.9 && H.egg === null && R.use(H) === null, "taking it into a run spends it: " + u.form + ", job level " + u.level + ", and its diet goes with it");

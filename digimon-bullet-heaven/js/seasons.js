@@ -1,7 +1,7 @@
 /* Digimon Bullet Heaven — seasons.
  *
  * Battle time runs through Spring → Summer → Fall → Winter, `lengthSec`
- * each (6 minutes), then loops to Spring of the next year. Every season
+ * each (about 8 minutes), then loops to Spring of the next year. Every season
  * that passes makes the field harder (enemy HP, damage, speed, spawn rate
  * and cap), with a little more XP to keep pace. The clock is battle time
  * only (sim.time / run.time), so farm visits and brawls do not advance it.
@@ -17,16 +17,18 @@
   var D = global.DBH = global.DBH || {};
 
   var CFG = {
-    lengthSec: 360,
+    lengthSec: 486,                  /* 17z33: 35% longer (was 360, 6 minutes) */
     order: ["spring", "summer", "fall", "winter"],
     labels: { spring: "Spring", summer: "Summer", fall: "Fall", winter: "Winter" },
     /* Per season passed (Year 1 Spring = 0, Year 1 Summer = 1, …). */
+    /* 17z33: each season's step 10% bigger (was 0.20 / 0.10 / 0.02 / 0.10 / 0.08), since the seasons got
+       35% longer; the XP step is unchanged */
     step: {
-      enemyHpMul: 0.20,
-      enemyAtkMul: 0.10,
-      enemySpdMul: 0.02,
-      spawnMul: 0.10,
-      capMul: 0.08,
+      enemyHpMul: 0.22,
+      enemyAtkMul: 0.11,
+      enemySpdMul: 0.022,
+      spawnMul: 0.11,
+      capMul: 0.088,
       xpMul: 0.08
     },
     max: {
@@ -74,13 +76,23 @@
    * is 0 by day and 1 in full night, easing over dusk and dawn. After dark
    * the field is faster, notices you from further off and bites more often
    * (DAY.night), all scaled by `dark` so it comes on with the light. */
-  var CLOCK = D.dayClock || (typeof module !== "undefined" && module.exports ? require("./day-clock.js") : { DAY_SECONDS: 180, DUSK_AT: 0.58, NIGHT_AT: 0.76 });
+  var CLOCK = D.dayClock || (typeof module !== "undefined" && module.exports ? require("./day-clock.js") : { DAY_SECONDS: 243, DUSK_AT: 0.58, NIGHT_AT: 0.76 });
   var DAY = {
     lengthSec: CLOCK.DAY_SECONDS,
     duskAt: CLOCK.DUSK_AT, nightAt: CLOCK.NIGHT_AT, dawnEnd: 0.10,
     night: { enemySpdMul: 0.15, aggroMul: 0.5, atkRateMul: 0.25 },
     labels: { dawn: "Dawn", day: "Day", dusk: "Dusk", night: "Night" }
   };
+  /* the day's length for a mode (17z33): Night Siege's days are shorter (data.js SIEGE.dayLen), every other
+     mode keeps the clock's. The sim (modes-sim.js) and every screen (game.js) call this; it only changes
+     anything when the mode's length differs from the one in use. Seasons keep their own length. */
+  var BASE_DAY = CLOCK.DAY_SECONDS;
+  function useMode(mode) {
+    var S = D.SIEGE, want = mode === "siege" && S && S.dayLen ? S.dayLen : BASE_DAY;
+    if (DAY.lengthSec === want) return false;
+    DAY.lengthSec = want; CLOCK.DAY_SECONDS = want;
+    return true;
+  }
   function smooth(a, b, x) { var t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); }
   function dayInfo(time) {
     var c = (Math.max(0, time || 0) / DAY.lengthSec) % 1, dark, dusk, dawn, id;
@@ -290,6 +302,27 @@
     fall: ["#c86e28", 0.08],
     winter: ["#aac8eb", 0.10]
   };
+  /* Several flat colour washes over the whole screen, one after another, come to one wash of a
+   * single colour (normal "over" blending stacks exactly). Painted as one: the same picture for one
+   * full-screen pass instead of up to four (17z33). list: [[hex, alpha], ...] bottom to top. */
+  function tintStack(ctx, w, h, list) {
+    var keep = 1, pr = 0, pg = 0, pb = 0, i, c, a, A;
+    for (i = 0; i < list.length; i++) {
+      a = list[i][1]; if (!(a > 0)) continue;
+      c = parse(list[i][0]);
+      pr = pr * (1 - a) + c[0] * a; pg = pg * (1 - a) + c[1] * a; pb = pb * (1 - a) + c[2] * a;
+      keep *= 1 - a;
+    }
+    A = 1 - keep;
+    if (A < 0.004) return;
+    ctx.save();
+    ctx.globalAlpha = 1;
+    if (ctx && ctx.isWebGL) ctx.fillStyle = "rgba(" + Math.round(pr) + "," + Math.round(pg) + "," + Math.round(pb) + "," + A.toFixed(4) + ")";
+    else ctx.fillStyle = "rgba(" + Math.round(pr / A) + "," + Math.round(pg / A) + "," + Math.round(pb / A) + "," + A.toFixed(4) + ")";
+    ctx.fillRect(0, 0, w, h);
+    ctx.restore();
+  }
+  function gradeOf(season) { return GRADE[season] || null; }
   function drawGrade(ctx, w, h, season) {
     var g = GRADE[season];
     if (!g) return;
@@ -303,10 +336,13 @@
   D.SEASONS_CFG = CFG;
   D.seasons = {
     CFG: CFG,
+    tintStack: tintStack,
+    gradeOf: gradeOf,
     info: info,
     mods: mods,
     applyTo: applyTo,
     DAY: DAY,
+    useMode: useMode,
     dayInfo: dayInfo,
     darkOf: darkOf,
     aggroScale: aggroScale,

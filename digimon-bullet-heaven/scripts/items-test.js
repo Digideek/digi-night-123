@@ -20,7 +20,7 @@ D.cosmetics.load();
 const kinds = k => I.list.filter(x => x.kind === k);
 
 /* the catalogue */
-ok(kinds("crest").length === 6 && kinds("charm").length === 16 && kinds("cons").length === 4, "6 Crest Pieces, 16 Charms, 4 one-run items");
+ok(kinds("crest").length === 6 && kinds("charm").length === 16 && kinds("cons").length === 15, "6 Crest Pieces, 16 Charms, 15 one-run items");
 ok(I.list.every(x => x.name && x.text && x.fx && I.drop.rarity[x.rarity] != null), "each has a name, what it does, and a rarity");
 ok(!I.list.some(x => /crit/i.test(x.text) && /guarantee|every first/i.test(x.text)), "no guaranteed-critical item");
 
@@ -32,7 +32,7 @@ ok(IT.count() === 0, "a boss does not always drop (1 in 3)");
 seq = [0.1, 0.1, 0.5, 0.0]; si = 0; IT.onEvent({ type: "kill", boss: true, killer: "me" }, "me", run);
 ok(IT.count() === 1 && Object.keys(save.gear).length === 1 && IT.byId(Object.keys(save.gear)[0]).kind === "charm" && IT.loadout().charm, "when it does, a Charm: kept, and the first one goes straight on");
 seq = [0.1, 0.1, 0.5, 0.0]; si = 0; const bits0 = D.cosmetics.bits(); IT.onEvent({ type: "kill", boss: true, killer: "me" }, "me", run);
-ok(Object.keys(save.gear).length === 1 && D.cosmetics.bits() - bits0 === I.dupeBits.common, "the same Charm again turns into " + I.dupeBits.common + " DigiBits");
+ok(Object.keys(save.gear).length === 1 && D.cosmetics.bits() - bits0 === I.dupeBits.common, "the same Charm again turns into " + I.dupeBits.common + " DigiCoins");
 seq = [0.1, 0.9, 0.5, 0.0]; si = 0; IT.onEvent({ type: "kill", boss: true, killer: "me" }, "me", run);
 ok(Object.keys(save.cons).length === 1, "or a one-run item, which stacks");
 IT.onEvent({ type: "kill", boss: true, killer: "someone" }, "me", run);
@@ -52,12 +52,17 @@ ok(IT.slots() === 1 && IT.loadout().crest.length === 1 && IT.loadout().crest[0] 
 D.profile.lab().port = 1;
 IT.equip("crest", "c_scan");
 ok(IT.slots() === 2 && IT.loadout().crest.join() === "c_weather,c_scan" && IT.fxOn("scan") && IT.fxOn("weather"), "the Lab's Digivice Port gives a second slot");
-save.cons = { u_protein: 2 }; IT.equip("cons", "u_protein"); IT.equip("scroll", 0);
-ok(IT.loadout().scroll === "rg" && !IT.loadout().use, "a scroll and a consumable share the one-run slot");
-IT.equip("cons", "u_protein");
-ok(IT.loadout().use === "u_protein" && !IT.loadout().scroll, "packing one unpacks the other");
+/* 17z33: three one-run places (four with the Lab's Kit Bag); a scroll takes one */
+save.cons = { u_protein: 2, u_bits: 1, u_str: 1, u_egg: 1 }; IT.equip("cons", "u_protein"); IT.equip("scroll", 0);
+ok(IT.useSlots() === 3 && IT.loadout().scroll === "rg" && IT.loadout().uses.join() === "u_protein", "a scroll and a one-run item can go in together");
+IT.equip("cons", "u_bits"); IT.equip("cons", "u_str");
+ok(IT.loadout().uses.join() === "u_bits,u_str" && IT.loadout().scroll === "rg", "three places: a fourth item pushes the oldest out");
+D.profile.lab().kit = 1; IT.equip("cons", "u_egg");
+ok(IT.useSlots() === 4 && IT.loadout().uses.join() === "u_bits,u_str,u_egg" && IT.loadout().scroll === "rg", "the Lab's Kit Bag: a fourth place");
+IT.equip("scroll", 0); IT.equip("cons", "u_protein");
 let end = IT.endRun({ time: 200, gear: IT.loadout() });
-ok(save.cons.u_protein === 1 && end.spent === "Protein", "a run uses it up");
+ok(save.cons.u_protein === 1 && !save.cons.u_bits && !save.cons.u_str && !save.cons.u_egg && /Protein/.test(end.spent) && /Bit Pouch/.test(end.spent), "a run uses up everything packed (" + end.spent + ")");
+ok(IT.loadout().uses.join() === "u_protein", "and what's left of them stays packed");
 IT.endRun({ time: 5, gear: IT.loadout() });
 ok(save.cons.u_protein === 1, "a run that ends before the hatch does not");
 
@@ -89,6 +94,21 @@ ok(w.p.hp === w.p.maxHp * 0.5 && !w.p.secondWind && !(w.p.faint > 0), "Second Wi
 w.p.monInvuln = 0; w.sim.hurtMon(w.p, 5000, { type: "numemon" }); ok(w.p.hp === 0, "only once");
 w = mk({ use: "u_bait" }); ok(w.sim.rivalBait === true, "Rival Bait marks the run");
 w = mk({ use: "u_lucky" }); ok(w.p.luckyShiny === 20 && mk({ charm: "m_prism" }).sim._gear(mk({ charm: "m_prism" }).p).shiny === 3, "Lucky Charm x20 on the first digivolution, Prism Shard x3 all run");
+/* 17z33: the head starts */
+w = mk({ uses: ["u_str", "u_bits", "u_lunch"] });
+ok(w.p.gear.uses.length === 3 && w.sim._jobBonus(w.p).str - mk(null).sim._jobBonus(mk(null).p).str === 3 && w.sim._attrParts(w.p).item.str === 3, "Power Seed: +3 STR (shown as its own part of the bonus)");
+ok(w.p.bits >= 50 && w.p.fullness === 100 && w.p.bag.meat === 3, "Bit Pouch: 50 Bits; Lunchbox: a full belly and 3 meat");
+w = mk({ uses: ["u_egg", "u_shiny", "u_tonic"] });
+ok(w.sim._gear(w.p).xp === 1.1 && w.sim._gear(w.p).shiny === 2 && w.sim._gear(w.p).crop === 1.3, "Lucky Egg +10% XP, Shiny Charm x2 shiny, Sprout Tonic crops 30% faster");
+w.sim.time = 400; const xe = w.p.xp; w.sim._eatOrb(w.p, { kind: "xp", value: 1 }); ok(Math.abs((w.p.xp - xe) - 1.1) < 1e-9, "  and the XP really is 10% more");
+w = mk({ uses: ["u_str", "u_agi", "u_vit", "u_int", "u_dex"] }); ok(w.p.gear.uses.length === 4, "no more than four reach the run, whatever a client sends");
+/* lucky finds on the map */
+IT._rnd(() => 0); const c0 = IT.count(); IT.onEvent({ type: "kill", killer: "me", x: 0, y: 0 }, "me", run);
+ok(IT.count() === c0 + 1, "a wild Digimon you beat can drop a one-run item (" + I.drop.field * 100 + "%, big ones " + I.drop.elite * 100 + "%)");
+IT._rnd(() => 0.99); const c1 = IT.count(); IT.onEvent({ type: "kill", killer: "me", x: 0, y: 0 }, "me", run); IT.onEvent({ type: "chest.open", id: "me", chest: "gold" }, "me", run);
+ok(IT.count() === c1, "  but usually doesn't");
+IT._rnd(() => 0.3); IT.onEvent({ type: "chest.open", id: "me", chest: "gold" }, "me", run); ok(IT.count() === c1 + 1, "a gold spire chest: " + I.drop.chest.gold * 100 + "%");
+IT._rnd(Math.random);
 /* scroll */
 w = mk({ scroll: "rg" }); w.sim._movePartner(w.p, 1 / 30);
 ok(w.p.skills.rg === 1 && !w.p.scroll, "a scroll of a passive takes on any partner");

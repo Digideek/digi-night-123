@@ -32,6 +32,9 @@
  * base level 8, 1.7x at 13, 2.2x at 18 and 4x at 35, and enemy health grows
  * to match (data.js PACING.buildHp). Unspent points leave you far behind.
  *
+ * Farm training (17z33) adds free bonus points too, one for every FARM.per of a training stat:
+ * Offense -> STR and DEX, Intelligence -> INT and LUK, Agility -> AGI, Bond -> VIT.
+ *
  * Growth: every base level also adds one stat point by itself, in a fixed
  * six-level pattern that follows the Digimon's element (levelBonus below).
  * It is a hair, about a seventh of what the level's status points can buy.
@@ -100,13 +103,23 @@
     b.luk += fl(n / 2);
     return b;
   }
+  /* 17z33: the farm's share of the green bonus */
+  var FARM = { per: 10, map: { offense: ["str", "dex"], intelligence: ["int", "luk"], agility: ["agi"], bond: ["vit"] } };
+  function farmBonus(trainStats, bondTrain) {
+    var b = { str: 0, agi: 0, vit: 0, int: 0, dex: 0, luk: 0 }, k, n, i, ts = trainStats || {};
+    for (k in FARM.map) {
+      n = fl(((k === "bond" ? bondTrain : ts[k]) || 0) / FARM.per);
+      for (i = 0; i < FARM.map[k].length; i++) b[FARM.map[k][i]] += n;
+    }
+    return b;
+  }
   function plus(a, b) {
     var o = {}, i, k;
     for (i = 0; i < ORDER.length; i++) { k = ORDER[i]; o[k] = ((a && a[k]) || 0) + ((b && b[k]) || 0); }
     return o;
   }
 
-  var api = { ORDER: ORDER, NAMES: NAMES, TEXT: TEXT, CFG: CFG, fresh: fresh, cost: cost, pointsFor: pointsFor, derive: derive, hitChance: hitChance, jobBonus: jobBonus, levelBonus: levelBonus, plus: plus };
+  var api = { ORDER: ORDER, NAMES: NAMES, TEXT: TEXT, CFG: CFG, fresh: fresh, cost: cost, pointsFor: pointsFor, derive: derive, hitChance: hitChance, jobBonus: jobBonus, levelBonus: levelBonus, plus: plus, farmBonus: farmBonus, FARM: FARM };
   if (root.DBH) root.DBH.RO = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));

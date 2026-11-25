@@ -4,17 +4,25 @@
  * is what it looks and sounds like on the screen:
  *
  *   numbers   chunky pixel damage numbers that pop out of the enemy and
- *             fall away. Bigger for a bigger share of its health; gold with
- *             a "!" for a critical, orange for a weakness, grey for a
- *             resisted hit, pale blue for lightning. Several hits on one
- *             enemy in the same instant add up into one number.
+ *             fall away, one for every single hit (17z33, Isaac: never added
+ *             together, so you see what each hit did), in every mode, PvP
+ *             included. Bigger for a bigger share of its health. A critical
+ *             is bigger again, gold, with "!" and a small CRIT over it; a
+ *             weakness is orange with an up arrow, a resisted hit grey with
+ *             a down arrow (shapes as well as colours); pale blue for
+ *             lightning. Hits on one enemy in the same instant fan out so
+ *             each stays readable. Nothing is shown for hits on your own
+ *             partner (Isaac). Every miss shows MISS in the same letters.
  *   sparks    a quick star where the blow lands, chips flying on past it.
  *   punch     the enemy squashes and leans away for a moment.
  *   kick      the camera jolts along the line of the blow and springs back;
  *             a critical or a boss kill also pushes the view in a touch.
- *   hitstop   on a critical, a kill, a boss kill or a heavy hit on your
- *             partner, the fight holds still for a few hundredths of a
- *             second (solo runs only; online the clock is shared).
+ *   hitstop   only on a big hit (17z33, Isaac: "not every hit, only big hits"):
+ *             one blow taking a big share of an enemy's health, a critical
+ *             that is also big, a tough or boss kill, or a heavy hit on your
+ *             partner. Ordinary kills and small criticals never pause. The
+ *             hold is a few hundredths of a second (solo runs only; online
+ *             the clock is shared).
  *   sound     a thump per hit, a sharper crack for a critical, a crunch for
  *             a kill, a boom for a boss.
  *
@@ -26,10 +34,11 @@
   var D = (global.DBH = global.DBH || {});
 
   var CFG = {
-    numbers: 44, numbersLow: 16,              /* most on screen at once (low: reduced effects) */
-    merge: 0.1,                               /* hits on one enemy within this many seconds add into one number */
+    numbers: 140, numbersLow: 48,             /* most on screen at once (low: reduced effects); every hit gets its own */
+    fan: 0.12,                                /* hits on one enemy this close together fan out instead of overlapping */
     life: 0.75, critLife: 1.0,
-    stop: { crit: 0.045, kill: 0.03, toughKill: 0.07, bossKill: 0.17, hurt: 0.06 },
+    stop: { big: 0.05, toughKill: 0.07, bossKill: 0.17, hurt: 0.06 },
+    bigFrac: 0.35, bigCritFrac: 0.2,          /* a "big hit": this share of the enemy's full health (a critical: less) */
     stopGap: 0.14,                            /* at least this long between two short holds */
     kick: { hit: 1.4, crit: 5, kill: 3, toughKill: 6, bossKill: 12, hurt: 5 },
     zoom: { crit: 0.012, toughKill: 0.016, bossKill: 0.045 },
@@ -49,12 +58,21 @@
     "7": ["11111", "00001", "00010", "00100", "01000", "01000", "01000"],
     "8": ["01110", "10001", "10001", "01110", "10001", "10001", "01110"],
     "9": ["01110", "10001", "10001", "01111", "00001", "00010", "01100"],
-    "!": ["00100", "00100", "00100", "00100", "00100", "00000", "00100"]
+    "!": ["00100", "00100", "00100", "00100", "00100", "00000", "00100"],
+    /* an arrow beside the number: up for a weakness, down for a resisted hit (not colour alone) */
+    "^": ["00100", "01110", "11111", "00100", "00100", "00100", "00000"],
+    "v": ["00000", "00100", "00100", "00100", "11111", "01110", "00100"],
+    "C": ["01110", "10001", "10000", "10000", "10000", "10001", "01110"],
+    "R": ["11110", "10001", "10001", "11110", "10100", "10010", "10001"],
+    "I": ["01110", "00100", "00100", "00100", "00100", "00100", "01110"],
+    "T": ["11111", "00100", "00100", "00100", "00100", "00100", "00100"],
+    "M": ["10001", "11011", "10101", "10101", "10001", "10001", "10001"],
+    "S": ["01111", "10000", "10000", "01110", "00001", "00001", "11110"]
   };
-  var ORDER = "0123456789!", CW = 7, CH = 9;
+  var ORDER = "0123456789!^vCRITMS", CW = 7, CH = 9;
   var COLORS = {
     norm: ["#ffffff", "#c9d4ea"], crit: ["#fff2a0", "#ffb81a"], weak: ["#ffc08a", "#ff6a2a"],
-    resist: ["#b4bfd4", "#77839c"], burn: ["#ffb060", "#ff6a1a"], poison: ["#d8a8f0", "#a05ad0"], bleed: ["#e87078", "#b02a34"], bolt: ["#eaf6ff", "#8cc4ff"], mate: ["#d6dcec", "#9aa6c0"], hurt: ["#ffb0a0", "#ff4a3a"]
+    resist: ["#b4bfd4", "#77839c"], burn: ["#ffb060", "#ff6a1a"], poison: ["#d8a8f0", "#a05ad0"], bleed: ["#e87078", "#b02a34"], bolt: ["#eaf6ff", "#8cc4ff"], mate: ["#d6dcec", "#9aa6c0"], miss: ["#dfe6f4", "#9aa8c4"]
   };
   var sheets = {};
   function sheet(kind) {
@@ -93,25 +111,22 @@
   }
 
   /* e: the hit event { enemyId, damage, x, y, c (critical), m (1 weak, -1 resisted), k (it killed) }
-   * o: { own, mate, bolt, frac (damage as a share of the enemy's full health), radius, sx, sy (where the blow came from), big } */
+   * o: { own, mate, bolt, frac (damage as a share of the enemy's full health), radius, sx, sy (where the blow came from), big,
+ *      bigMove (one of the big, wound-up moves), tough (the enemy has half again your partner's health) } */
   function hit(e, o) {
     o = o || {};
     if (e.dot) return dot(e, o);
     var kind = e.c ? "crit" : (e.m > 0 ? "weak" : (e.m < 0 ? "resist" : (o.bolt ? "bolt" : (o.mate ? "mate" : "norm"))));
-    var val = Math.max(1, Math.round(e.damage || 0)), r = o.radius || 12, frac = o.frac || 0, i, n = null, cap = reduced() ? CFG.numbersLow : CFG.numbers;
+    var val = Math.max(1, Math.round(e.damage || 0)), r = o.radius || 12, frac = o.frac || 0, i, n, cap = reduced() ? CFG.numbersLow : CFG.numbers, near = 0, key = e.enemyId != null ? e.enemyId : "p" + e.pvp;
     var dx = o.sx != null ? e.x - o.sx : rnd(-1, 1), dy = o.sy != null ? e.y - o.sy : -1, l = Math.sqrt(dx * dx + dy * dy) || 1;
     dx /= l; dy /= l;
-    /* several blows on one enemy at once read as one number */
-    for (i = nums.length - 1; i >= 0; i--) if (nums[i].id === e.enemyId && nums[i].t < CFG.merge && !nums[i].hurt && !nums[i].dot) { n = nums[i]; break; }
-    if (n) {
-      n.val += val; n.t = 0; n.frac += frac;
-      if (e.c) { n.kind = "crit"; n.life = CFG.critLife; }
-      else if (n.kind !== "crit" && kind !== "norm" && kind !== "mate") n.kind = kind;
-    } else {
-      if (nums.length >= cap) nums.shift();
-      n = { id: e.enemyId, x: e.x + rnd(-6, 6), y: e.y - r - 8, vx: dx * 26 + rnd(-22, 22), vy: -rnd(90, 125), val: val, kind: kind, frac: frac, t: 0, life: e.c ? CFG.critLife : CFG.life, a: o.mate ? 0.75 : 1 };
-      nums.push(n);
-    }
+    /* every hit is its own number (never added together); ones landing on the same enemy at the same moment
+       fan out, alternately left and right and a little higher each, so none hides another */
+    for (i = nums.length - 1; i >= 0; i--) if (nums[i].id === key && nums[i].t < CFG.fan && !nums[i].dot) near++;
+    if (nums.length >= cap) nums.shift();
+    n = { id: key, x: e.x + rnd(-4, 4) + (near ? (near % 2 ? 1 : -1) * Math.ceil(near / 2) * 20 : 0), y: e.y - r - 8 - Math.min(6, near) * 10,
+      vx: dx * 26 + rnd(-18, 18) + (near ? (near % 2 ? 1 : -1) * 22 : 0), vy: -rnd(90, 125), val: val, kind: kind, frac: frac, t: 0, life: e.c ? CFG.critLife : CFG.life, a: o.mate ? 0.75 : 1 };
+    nums.push(n);
     n.size = 2 + (n.frac > 0.5 ? 1 : 0) + (n.kind === "crit" ? 1 : 0);
     /* the enemy squashes and leans away from the blow */
     if (e.enemyId != null) {
@@ -126,9 +141,22 @@
     }
     if (o.own) {
       kick(dx, dy, e.c ? CFG.kick.crit : CFG.kick.hit);
-      if (e.c) { hold(CFG.stop.crit); if (!reduced()) zoomP = Math.max(zoomP, CFG.zoom.crit); }
+      if (e.c && !reduced()) zoomP = Math.max(zoomP, CFG.zoom.crit);
+      /* only a big hit holds the fight for a moment: a big move landing a real share, or a heavy blow
+         (or a critical) on a tough enemy. Knocking out small fry in one go is never "big". */
+      if ((o.bigMove && frac >= CFG.bigCritFrac) || (o.tough && (frac >= CFG.bigFrac || (e.c && frac >= CFG.bigCritFrac)))) hold(CFG.stop.big);
     }
     if (!o.mate && clock - soundT >= CFG.soundGap) { soundT = clock; snd(e.c ? "crit" : "hit", Math.min(1, 0.55 + frac)); }
+  }
+
+  /* a hit that missed (17z33, Isaac: every miss says so): MISS in the same pixel letters, pale and small, drifting
+     up off the target; misses at one spot at the same moment fan out like the numbers do */
+  function miss(e) {
+    var cap = reduced() ? CFG.numbersLow : CFG.numbers, near = 0, i, n;
+    for (i = nums.length - 1; i >= 0; i--) { n = nums[i]; if (n.kind === "miss" && n.t < CFG.fan && Math.abs(n.x0 - e.x) < 12 && Math.abs(n.y0 - e.y) < 12) near++; }
+    if (nums.length >= cap) nums.shift();
+    nums.push({ id: "miss", x0: e.x, y0: e.y, x: e.x + rnd(-3, 3) + (near ? (near % 2 ? 1 : -1) * Math.ceil(near / 2) * 26 : 0), y: e.y - 4 - Math.min(6, near) * 10,
+      vx: rnd(-14, 14), vy: -rnd(55, 75), val: "MISS", kind: "miss", frac: 0, t: 0, life: 0.7, a: 0.95, size: 1.5, dot: true });
   }
 
   /* what a burn, poison or bleed took in the last second: a small number in its own colour
@@ -158,20 +186,16 @@
     }
     if (o.own !== false) {
       kick(dx, dy, o.big ? CFG.kick.bossKill : (o.tough ? CFG.kick.toughKill : CFG.kick.kill));
-      hold(o.big ? CFG.stop.bossKill : (o.tough ? CFG.stop.toughKill : CFG.stop.kill));
+      if (o.big || o.tough) hold(o.big ? CFG.stop.bossKill : CFG.stop.toughKill);   /* ordinary kills never pause */
       if (!reduced() && (o.big || o.tough)) zoomP = Math.max(zoomP, o.big ? CFG.zoom.bossKill : CFG.zoom.toughKill);
     }
     snd(o.big ? "bigkill" : "kill");
     soundT = clock;
   }
 
-  /* your partner is hit: `ratio` of its full health gone in one blow */
+  /* your partner is hit: `ratio` of its full health gone in one blow. No number (Isaac): the red wince and,
+     for a heavy blow, the jolt say it. */
   function hurt(x, y, amount, ratio, sx, sy) {
-    var cap = reduced() ? CFG.numbersLow : CFG.numbers;
-    if (amount >= 1) {
-      if (nums.length >= cap) nums.shift();
-      nums.push({ id: -1, hurt: true, x: x + rnd(-6, 6), y: y - 26, vx: rnd(-20, 20), vy: -rnd(70, 100), val: Math.round(amount), kind: "hurt", frac: ratio, t: 0, life: CFG.life, a: 1, size: 2 + (ratio > 0.1 ? 1 : 0) + (ratio > 0.25 ? 1 : 0) });
-    }
     if (ratio >= 0.04) hurtFlash = Math.max(hurtFlash, Math.min(1, 0.35 + ratio * 3));
     if (ratio >= 0.1) { hold(CFG.stop.hurt); kick(sx != null ? x - sx : rnd(-1, 1), sy != null ? y - sy : rnd(-1, 1), CFG.kick.hurt); }
   }
@@ -230,7 +254,7 @@
       n = nums[i];
       sh = sheet(n.kind);
       if (!sh) continue;
-      str = String(n.val) + (n.kind === "crit" ? "!" : "");
+      str = String(n.val) + (n.kind === "crit" ? "!" : (n.kind === "weak" ? "^" : (n.kind === "resist" ? "v" : "")));
       /* pops out big, settles, fades at the end */
       pop = n.dot ? 1 : (n.t < 0.1 ? 1.7 - 7 * n.t : 1);
       sc = n.size * pop;
@@ -242,6 +266,11 @@
       for (j = 0; j < str.length; j++) {
         ci = ORDER.indexOf(str.charAt(j));
         if (ci >= 0) ctx.drawImage(sh, ci * CW, 0, CW, CH, Math.round(x + j * (CW - 1) * sc), Math.round(n.y - CH * sc), Math.round(CW * sc), Math.round(CH * sc));
+      }
+      /* a critical says so in words, small, over the number */
+      if (n.kind === "crit") {
+        var cs = Math.max(1, Math.round(sc * 0.5)), cw = 4 * (CW - 1) * cs, cx = n.x - cw / 2, cy = n.y - CH * sc - 2;
+        for (j = 0; j < 4; j++) { ci = ORDER.indexOf("CRIT".charAt(j)); ctx.drawImage(sh, ci * CW, 0, CW, CH, Math.round(cx + j * (CW - 1) * cs), Math.round(cy - CH * cs), CW * cs, CH * cs); }
       }
       ctx.restore();
     }
@@ -262,7 +291,7 @@
   D.hitFx = {
     CFG: CFG,
     attach: function (h) { host = h; },
-    hit: hit, kill: kill, hurt: hurt,
+    hit: hit, kill: kill, hurt: hurt, miss: miss,
     update: update, stopping: stopping, punchOf: punchOf,
     draw: draw, drawScreen: drawScreen, clear: clear,
     kickX: function () { return kickX; }, kickY: function () { return kickY; }, zoom: function () { return 1 + zoomP; },

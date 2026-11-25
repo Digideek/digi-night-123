@@ -53,7 +53,7 @@
         '<div class="ts-grid">' +
           '<button type="button" data-a="skills" id="ts-skills">Skills<i id="ts-skills-pts" hidden></i></button>' +
           '<button type="button" data-a="stats" id="ts-stats">Status<i id="ts-stats-pts" hidden></i></button>' +
-          '<button type="button" data-a="shop" id="ts-shop">Shop</button>' +
+          '<button type="button" data-a="inv" id="ts-inv">Bag</button>' +
           '<button type="button" data-a="pvp" id="ts-pvp">PvP flag</button>' +
           '<button type="button" data-a="music" id="ts-music">Music</button>' +
           '<button type="button" data-a="mute" id="ts-mute">Sound</button>' +

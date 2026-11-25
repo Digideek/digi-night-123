@@ -37,6 +37,14 @@
     return { x: 800, y: 200, w: 140, h: 90 };
   }
 
+  /* 17z33: the way out: a Digi-gate in the fence's south opening. Walk up and press E. */
+  function exitPoint() {
+    var gp = plots(), f = fenceRect(), E = cfg().exitGate || {};
+    var gx = gp.length ? (gp[0].x + gp[gp.length - 1].x + gp[gp.length - 1].w) / 2 : (f.x0 + f.x1) / 2;
+    return { x: gx, y: E.y != null ? E.y : f.y1 - 16, reach: E.reach || 66 };
+  }
+  function nearExit(x, y) { var e = exitPoint(); return dist(x, y, e.x, e.y) <= e.reach; }
+
   function shopPoint() {
     var s = shedRect();
     return { x: s.x + (s.w || 140) / 2, y: s.y + (s.h || 90) - 10 };
@@ -133,7 +141,8 @@
           visit.activity.score = sim.farm.activity.score;
         }
       }
-      if (sim.farm.activity && visit.activity && sim.farm.activity.quiz) visit.activity.quiz = sim.farm.activity.quiz;
+      /* 17z33: a mini game can end early (net/minigames.js); the authority settles it and the card shows it */
+      if (visit.activity && !sim.farm.activity) { visit.activity = null; visit.trained = true; }
     }
   }
 
@@ -196,7 +205,7 @@
     }
   }
 
-  function foodIds() { return ["meat", "fish", "berry"].concat(D.CROP_ORDER || []); }
+  function foodIds() { return ["meat", "fish", "berry"].concat(D.CROP_ORDER || [], D.RARE_FOODS || []); }   /* last: rare foods from spire chests (17z33) */
   function seedIds() { return (D.CROP_ORDER || []).map(function (c) { return "seed_" + c; }); }
 
   function bagCount(run, id) {
@@ -544,7 +553,8 @@
       buddy: pickBuddy(run),
       done: false
     };
-    if (st.id === "board") act.quiz = makeQuiz();
+    if (D.minigames && D.minigames.KIND[st.id]) act.dur = 999;    /* 17z33: the authority ends it (net/minigames.js) */
+    else if (st.id === "board") act.quiz = makeQuiz();
     if (hasAuth()) {
       var started = authAct({ type: "farm.trainStart", id: localId(), station: st.id });
       if (!started.ok) {
@@ -599,6 +609,11 @@
     var a = visit.activity;
     if (a.done) return;
     if (hasAuth()) authAct({ type: "farm.trainInput", id: localId(), kind: kind, value: value });
+    if (hasAuth() && D.minigames && D.minigames.KIND[a.id]) {        /* 17z33: the panel (farm-train.js) shows what happened */
+      pullAuth();
+      sfx("ui");
+      return;
+    }
     if (a.id === "bag" && (kind === "interact" || kind === "confirm")) {
       if (a.window > 0) {
         a.hits += 1;
@@ -904,7 +919,7 @@
       var fed = authAct({ type: "farm.feed", id: localId(), food: kind });
       pullAuth();
       if (fed.refused) {
-        if (host.float) host.float(visit.mx, visit.my - 28, "…", "#c0b8a0");
+        if (host.float) host.float(visit.mx, visit.my - 28, "Sulking: not hungry enough to give in", "#c0b8a0");
         sfx("hurt");
         render();
         return false;
@@ -915,8 +930,20 @@
         return false;
       }
       var defA = D.FOOD[kind];
-      if (host.float) host.float(visit.mx, visit.my - 32, defA.name + "! +" + defA.fullness, defA.color);
+      if (host.float) host.float(visit.mx, visit.my - 32, defA.name + "! +" + (fed.fill || defA.fullness), defA.color);
+      if (fed.dis && host.float) host.float(visit.mx, visit.my - 66, "It doesn't like that much \u2639", "#c0b8a0");
       if (fed.balanced && host.float) host.float(visit.mx, visit.my - 50, "Balanced diet! ♥", "#a8f080");
+      if (fed.fav && host.float && !defA.rare) host.float(visit.mx, visit.my - 66, "Its favourite! ♥♥", "#ff8ac8");
+      if (fed.rare && host.float) {                                  /* 17z33: a rare food from a spire chest */
+        var R = fed.rare, rl = null;
+        if (R.trainBoost) rl = "Next training counts x" + R.trainBoost + "!";
+        else if (R.stat) rl = "+" + R.statUp + " " + R.stat.charAt(0).toUpperCase() + R.stat.slice(1) + " for good!";
+        else if (R.evoFruit) rl = "Something stirs inside it...";
+        else if (R.mistakes) rl = "+" + R.mistakes + " care mistakes  (" + R.careMistakes + " now)";
+        else if (R.full) rl = "Stuffed, and it loved it!";
+        else if (R.joy) rl = "So happy! \u2665\u2665\u2665";
+        if (rl) host.float(visit.mx, visit.my - 66, rl, R.mistakes ? "#9ab060" : defA.color);
+      }
       sfx("meat");
       render();
       return true;
@@ -936,13 +963,10 @@
     run.foodCounts = run.foodCounts || {};
     run.foodCounts[kind] = (run.foodCounts[kind] || 0) + 1;
     var dietL = D.dietOf ? D.dietOf(run.foodCounts) : null;
-    var healL = def.hpHeal || 0;
     if (dietL && dietL.balanced) {
       run.happiness = clamp((run.happiness || 0) + (def.happiness || 4) * ((D.DIET && D.DIET.joyBonus) || 0.5), 0, (D.CARE && D.CARE.happinessMax) || 100);
-      healL += (D.DIET && D.DIET.hpHealBonus) || 0.08;
       if (host.float) host.float(visit.mx, visit.my - 50, "Balanced diet! ♥", "#a8f080");
     }
-    if (healL > 0 && run.maxHp) run.hp = Math.min(run.maxHp, (run.hp || 0) + run.maxHp * healL);
     visit.fed += 1;
     if (host.float) host.float(visit.mx, visit.my - 32, def.name + "! +" + def.fullness, def.color);
     sfx("meat");
@@ -1129,6 +1153,7 @@
   function interact() {
     if (!visit || !visit.active) return;
     if (visit.activity) { activityInput("interact"); return; }
+    if (nearExit(visit.x, visit.y)) { end("ready"); return; }             /* 17z33: the gate out */
     var run = host && host.getRun && host.getRun();
     var shop = shopPoint();
     var stall = dist(visit.x, visit.y, shop.x, shop.y) < 70;
@@ -1202,23 +1227,18 @@
     }
     root.classList.add("is-on");
     var run = host && host.getRun && host.getRun();
-    var stay = el("farm-stay");
-    if (stay) {
-      if (onDemand()) { stay.textContent = "The world goes on without you"; stay.classList.remove("is-warn"); }
-      else {
-        stay.textContent = "Auto-return " + formatTime(visit.stayLeft);
-        stay.classList.toggle("is-warn", visit.stayLeft <= 10);
-      }
-    }
     var mood = el("farm-mood");
     if (mood && run) {
-      var joyName = (D.happinessTier && D.happinessTier(run.happiness).name) || "Content";
-      var ts = run.trainStats || {};
-      mood.textContent = "Joy " + Math.round(run.happiness || 0) + " · " + joyName +
-        "  ·  Fullness " + Math.round(run.fullness || 0) +
-        "  ·  Meals " + (run.foodEaten || 0) +
-        ((D.dietOf && D.dietOf(run.foodCounts).balanced) ? "  ·  Diet: Balanced" : "") +
-        (visit.refused ? "  ·  Turned down food ×" + visit.refused : "");
+      /* 17z33: joy and fullness are on the bars at the top left, the mood on the strip below them */
+      var extra = ((D.dietOf && D.dietOf(run.foodCounts).balanced) ? "Diet: balanced" : "") + (visit.refused ? (D.dietOf && D.dietOf(run.foodCounts).balanced ? "  ·  " : "") + "Turned down food ×" + visit.refused : "");
+      mood.textContent = (extra ? extra + "\n" : "") +
+        /* 17z33: what training will give right now */
+        "Training" + (run.farmGates ? " +" + Math.min(100, run.farmGates * 10) + "% from " + run.farmGates + " gate" + (run.farmGates === 1 ? "" : "s") : " (take nests over for a bonus)") +
+        "  ·  Fresh sessions " + (run.trainFresh == null ? 3 : run.trainFresh) + "/" + ((cfg().fresh || {}).max || 3) +
+        ((run.trainFresh === 0) ? " (beat " + Math.max(0, ((cfg().fresh || {}).killsPer || 10) - (run.trainKills || 0)) + " more wild Digimon for one)" : "") +
+        "  ·  A session costs a quarter of the belly" + ((run.fullness || 0) < (cfg().trainMinFull || 33) ? ": too hungry to train" : "") +
+        (run.trainBoost > 1 ? "  ·  Next session x" + run.trainBoost + " (Protein Steak)" : "") +
+        (run.evoFruit ? "  ·  Evo Fruit: its next digivolution may go somewhere rare" : "");
     }
     var icon = el("farm-hunger-icon");
     if (icon) {
@@ -1226,24 +1246,17 @@
       icon.hidden = !show;
       icon.setAttribute("aria-hidden", show ? "false" : "true");
     }
-    var ret = el("btn-farm-return");
-    if (ret) ret.classList.toggle("is-hungry", !!(run && isHungry(run) && (cfg().exitHungerPrompt || "icon") === "icon"));
-    var trainBtn = el("btn-farm-train");
-    if (trainBtn) {
-      var stNear = visit.activity ? (cfg().stations || {})[visit.activity.id] : nearestStation(visit.x, visit.y);
-      var label = "Train";
-      if (visit.activity) {
-        if (visit.activity.id === "bag") label = "Punch";
-        else if (visit.activity.id === "board") label = "Answer";
-        else if (visit.activity.id === "bond") label = "Cheer";
-        else label = "Running…";
-      } else if (stNear) {
-        if (stNear.id === "bag") label = "Punch";
-        else if (stNear.id === "board") label = "Study";
-        else if (stNear.id === "track") label = "Run";
-        else if (stNear.id === "bond") label = "Play";
-      }
-      trainBtn.textContent = label;
+
+    /* 17z33: one action button that says what E does here (the Train button did the same thing) */
+    var actBtn = el("btn-farm-pet");
+    if (actBtn) {
+      var stNear = visit.activity ? (cfg().stations || {})[visit.activity.id] : nearestStation(visit.x, visit.y), plN = !visit.activity && nearestPlot(visit.x, visit.y), label = "Pet / Use";
+      if (visit.activity) label = visit.activity.id === "bag" ? "Punch" : (visit.activity.id === "board" ? "Repeat it" : (visit.activity.id === "bond" ? "Cheer" : "Switch lane"));
+      else if (nearExit(visit.x, visit.y)) label = "Leave";
+      else if (dist(visit.x, visit.y, shopPoint().x, shopPoint().y) < 70) label = "Shop";
+      else if (plN) label = "Garden";
+      else if (stNear) label = stNear.id === "bag" ? "Power Strike" : (stNear.id === "board" ? "Pattern Recall" : (stNear.id === "track" ? "Rockfall Run" : "Play"));
+      if (actBtn.getAttribute("data-glyph-label") !== label) { actBtn.setAttribute("data-glyph-label", label); actBtn.textContent = label; if (D.input && D.input.applyGlyphs) D.input.applyGlyphs(actBtn.parentNode); }
     }
     var slotsEl = el("farm-slots");
     if (slotsEl && run) {
@@ -1284,10 +1297,11 @@
       var n = el(id);
       if (n) n.addEventListener("click", fn);
     }
-    on("btn-farm-return", function () { end("ready"); });
+    /* 17z33: no Return button: you leave by the gate (exitPoint). Status in its place (Skills is K / its chip). */
+    on("btn-farm-status", function () { if (D.hud && D.hud.act) D.hud.act("stats"); });
     on("btn-farm-pet", function () { interact(); });
-    on("btn-farm-train", function () { train(); });
-    on("btn-farm-shop", function () { if (host && host.openShop) host.openShop(); });
+    on("btn-farm-bag", function () { if (D.inventoryUi) D.inventoryUi.toggle(); });
+    on("btn-farm-skills", function () { if (D.hud && D.hud.act) D.hud.act("skills"); });   /* 17z33: the shop is Jijimon's cottage door (E) */
   }
 
   /* Cached stylized File Island props. Visual only — anchors, hitboxes,
@@ -1948,6 +1962,7 @@
     if (!a) return;
     var st = (cfg().stations || {})[a.id];
     if (!st) return;
+    if (D.minigames && D.minigames.KIND[a.id] && hasAuth()) return;   /* 17z33: drawn in its own panel (farm-train.js) */
     ctx.save();
     ctx.textAlign = "center";
     ctx.font = "13px Trebuchet MS, sans-serif";
@@ -2000,33 +2015,35 @@
     var gx1 = gp.length ? gp[gp.length - 1].x + gp[gp.length - 1].w : 826, gy1 = gp.length ? gp[gp.length - 1].y + gp[gp.length - 1].h : 676;
     var gcx = (gx0 + gx1) / 2;
     var cx = (f.x0 + f.x1) / 2, cy = (f.y0 + f.y1) / 2;
-    /* a round yard in the middle; lanes run out from it to each station and down past the garden to the gate */
-    var bagX = sts.bag ? sts.bag.x : 260, bagY = sts.bag ? sts.bag.y : 430, brdX = sts.board ? sts.board.x : 520, brdY = sts.board ? sts.board.y : 250;
-    var bondX = sts.bond ? sts.bond.x : 1020, bondY = sts.bond ? sts.bond.y : 480;
+    /* 17z33: a planned yard. A stone plaza in the middle; straight cobbled paths from it to the cottage door
+     * (north), the training yard (west), the play lawn (east, and on to the track's start gate) and the
+     * garden (south, and on through the gate). */
+    var bagX = sts.bag ? sts.bag.x : 450, bagY = sts.bag ? sts.bag.y : 390, brdX = sts.board ? sts.board.x : 305, brdY = sts.board ? sts.board.y : 390;
+    var bondX = sts.bond ? sts.bond.x : 975, bondY = sts.bond ? sts.bond.y : 380;
+    var shed = shedRect(), door = shed.y + (shed.h || 90) + 2;
+    var plaza = { x: cx, y: cy, rx: 96, ry: 60 };
+    var trainYard = { x: Math.min(brdX, bagX) - 80, y: Math.min(brdY, bagY) - 72, w: Math.abs(bagX - brdX) + 160, h: 160, kind: "sand" };
+    var playYard = { x: bondX - 115, y: bondY - 90, w: 230, h: 190, kind: "lawn" };
     var paths = [
-      [cx, cy, cx, cy, 132],
-      [shop.x, shop.y + 8, shop.x, shop.y + 40, 44], [shop.x, shop.y + 40, cx + 30, cy - 30, 36],
-      [cx, cy + 40, gcx, gy0 - 22, 38],
-      [gcx, gy1 + 30, gcx, f.y1 + 150, 40],
-      [cx - 40, cy, bagX + 70, bagY - 4, 30], [bagX + 70, bagY - 4, bagX + 30, bagY, 30],
-      [cx - 20, cy - 40, brdX + 30, brdY + 70, 30], [brdX + 30, brdY + 70, brdX, brdY + 26, 30],
-      [cx + 40, cy + 10, bondX - 70, bondY + 4, 30], [bondX - 70, bondY + 4, bondX - 36, bondY + 22, 30]
+      [shop.x, door - 6, cx, plaza.y - plaza.ry + 6, 44],
+      [plaza.x - plaza.rx + 6, cy, trainYard.x + trainYard.w + 2, cy, 40],
+      [plaza.x + plaza.rx - 6, cy, playYard.x - 2, cy, 40],
+      [playYard.x + playYard.w + 2, cy, g.cx + g.rx - g.width / 2 - 4, cy, 36],
+      [gcx, plaza.y + plaza.ry - 6, gcx, gy0 - 18, 44],
+      [gcx, gy1 + 18, gcx, f.y1 + 150, 44]
     ];
-    var pads = [];
+    var pads = [plaza];
+    plaza.kind = "plaza";
     pads.push({ x: 92, y: 124, rx: 46, ry: 26, kind: "stone" });
     pads.push({ x: 90, y: 776, rx: 52, ry: 24, kind: "worn" });
     pads.push({ x: 1232, y: 132, rx: 62, ry: 34, kind: "worn" }, { x: 1232, y: 776, rx: 66, ry: 28, kind: "worn" });
-    if (sts.bond) pads.push({ x: sts.bond.x, y: sts.bond.y + 22, rx: 78, ry: 40, kind: "worn" });
-    if (sts.bag) pads.push({ x: sts.bag.x, y: sts.bag.y + 2, rx: 50, ry: 26, kind: "sand" });
-    if (sts.board) pads.push({ x: sts.board.x, y: sts.board.y + 6, rx: 50, ry: 24, kind: "stone" });
-    var shed = shedRect();
     var beds = [
-      { x: shed.x - 6, y: shed.y + (shed.h || 90) + 6, w: 54, h: 18 },
-      { x: shed.x + (shed.w || 140) - 48, y: shed.y + (shed.h || 90) + 6, w: 54, h: 18 }
+      { x: shop.x - 66, y: door + 4, w: 40, h: 18 },
+      { x: shop.x + 26, y: door + 4, w: 40, h: 18 }
     ];
     var ground = FA.paintGround({
       bounds: { x0: -720, y0: -480, x1: 2040, y1: 1300 },
-      fence: f, track: g, paths: paths, pads: pads, beds: beds,
+      fence: f, track: g, paths: paths, pads: pads, beds: beds, yards: [trainYard, playYard],
       garden: { x: gx0, y: gy0, w: gx1 - gx0, h: gy1 - gy0, plots: gp },
       pal: pal
     });
@@ -2038,8 +2055,16 @@
       { x: 1214, y: 104, art: P.hay }, { x: 1250, y: 126, art: P.hay }, { x: 1226, y: 140, art: P.hay },
       { x: 86, y: 770, art: P.trough },
       { x: 1236, y: 772, art: P.hay }, { x: 1196, y: 780, art: P.flowerPot }, { x: 1272, y: 760, art: P.flowerPot },
-      { x: gx1 + 34, y: gy0 + 70, art: P.scarecrow },
-      { x: gx0 - 30, y: gy0 + 26, art: P.gardenSign }
+      { x: gx1 + 52, y: gy0 + 70, art: P.scarecrow },
+      { x: gx0 - 50, y: gy0 + 26, art: P.gardenSign },
+      /* 17z33: lamps round the plaza, benches, the training yard's crates and barrel, planters on the lawn */
+      { x: plaza.x - plaza.rx + 10, y: plaza.y - plaza.ry - 4, art: P.lamp }, { x: plaza.x + plaza.rx - 10, y: plaza.y - plaza.ry - 4, art: P.lamp },
+      { x: plaza.x - 62, y: plaza.y + plaza.ry + 26, art: P.bench }, { x: plaza.x + 62, y: plaza.y + plaza.ry + 26, art: P.bench },
+      { x: trainYard.x + 26, y: trainYard.y + 34, art: P.crates }, { x: trainYard.x + trainYard.w - 24, y: trainYard.y + 30, art: P.barrel },
+      { x: trainYard.x + trainYard.w - 24, y: trainYard.y + trainYard.h - 14, art: P.barrel },
+      { x: playYard.x + 20, y: playYard.y + 24, art: P.planter }, { x: playYard.x + playYard.w - 20, y: playYard.y + 24, art: P.planter },
+      { x: playYard.x + 20, y: playYard.y + playYard.h - 10, art: P.planter }, { x: playYard.x + playYard.w - 20, y: playYard.y + playYard.h - 10, art: P.planter },
+      { x: shop.x - 150, y: door - 30, art: P.barrel }, { x: shop.x + 156, y: door - 30, art: P.crates }
     ];
     /* Woods around the fence and planting in the yard's corners, from the same art the
      * Digital World uses (js/terrain-art.js through D.sprites.drawProp), so the farm sits in it. */
@@ -2083,7 +2108,7 @@
       }
     }
     /* a few flowers along the lanes and round the cottage */
-    if (!winter) [[shop.x - 96, shop.y + 34], [shop.x + 98, shop.y + 30], [cx - 78, cy - 52], [cx + 84, cy + 46], [gx1 + 62, gy1 + 30], [gx0 - 84, gy0 + 96], [bagX - 62, bagY + 22], [brdX + 66, brdY + 30], [bondX + 86, bondY + 52]]
+    if (!winter) [[gx1 + 70, gy1 - 10], [gx0 - 70, gy1 - 6], [plaza.x - 150, plaza.y - 96], [plaza.x + 150, plaza.y - 96], [plaza.x - 150, plaza.y + 110], [plaza.x + 150, plaza.y + 110]]
       .forEach(function (q, qi) { plant(qi & 1 ? "flower" : "flower2", q[0], q[1]); });
     plant("log", 1150, 742); plant("stump", 164, 96);
     var bd = D.seasons ? D.seasons.ground(pal.dark || "#2e6a24", "grass", season, 0.5) : (pal.dark || "#2e6a24");
@@ -2103,8 +2128,10 @@
     /* Same top-down angle. During a track lap, follow the partner so the
      * full perimeter circuit is visible. Overview zooms to fit the yard. */
     if (visit.activity && visit.activity.id === "track" && !visit._overview) {
+      /* 17z33: Rockfall Run: follow the runner, a little pulled back and lower on screen, clear of the panel */
       camX = visit.mx;
-      camY = visit.my;
+      camY = visit.my - 50;
+      camScale = 0.9;
     }
     if (visit._shotCam) {
       camX = visit._shotCam.x;
@@ -2183,6 +2210,7 @@
       ctx.imageSmoothingEnabled = false;
       ctx.drawImage(scene.fence.canvas, scene.fence.x, scene.fence.y, scene.fence.w, scene.fence.h);
       ctx.restore();
+      if (D.farmTrain && D.farmTrain.drawWorld) D.farmTrain.drawWorld(ctx, add, t, trackGeom());   /* 17z33: the track's facelift and Rockfall Run */
       /* Upright props, depth-sorted with the actors. */
       add(shed.y + (shed.h || 90) + 2, function () { FA.blit(ctx, FA.props.cottage(), shed.x + (shed.w || 140) / 2, shed.y + (shed.h || 90) + 2); });
       if (sts.bag) {
@@ -2218,6 +2246,14 @@
     if (run && D.sprites && D.sprites.drawPartner) {
       add(visit.my, function () { D.sprites.drawPartner(ctx, run.form, sx(visit.mx), sy(visit.my), visit.mfacing, 1.2, t || 0, false, false, visit.monMoving); });
     }
+    /* 17z33: the gate out of the farm, in the fence's south opening */
+    (function () {
+      var ex = exitPoint();
+      if (D.farmGates && D.farmGates.draw) add(ex.y, function () {
+        D.farmGates.draw(ctx, { x: ex.x, y: ex.y }, t || 0, !visit.activity && nearExit(visit.x, visit.y), "#9ad8ff",
+          { sign: "WORLD", hint: D.input && D.input.touchMode ? "Tap Pet / Use: back to the world" : "E: back to the world" + (run && isHungry(run) ? "  (it's hungry!)" : "") });
+      });
+    })();
     items.sort(function (a, b) { return a.y - b.y; });
     var ii;
     for (ii = 0; ii < items.length; ii++) items[ii].fn();
@@ -2248,10 +2284,25 @@
     if (sts.bag) sign("Punching Bag", sts.bag.x, sts.bag.y + 30);
     if (sts.board) sign("Chalkboard", sts.board.x, sts.board.y + 32);
     if (sts.bond) sign("Play", sts.bond.x, sts.bond.y + 54);
-    var gpl = plots();
-    if (gpl.length) sign("Garden", gpl[0].x + (gpl[gpl.length - 1].x + gpl[gpl.length - 1].w - gpl[0].x) / 2, gpl[gpl.length - 1].y + gpl[gpl.length - 1].h + 34);
+    /* 17z33: under each sign, what it trains and what a session gives right now (farm-train.js) */
+    function statLine(id, x, y) {
+      var L = D.farmTrain && D.farmTrain.signLine(id), w;
+      if (!L) return;
+      ctx.font = "bold 13px Trebuchet MS, sans-serif";
+      w = ctx.measureText(L.text).width;
+      ctx.fillStyle = L.col; ctx.fillRect(Math.round(x - w / 2 - 8), Math.round(y - 14), Math.round(w + 16), 21);
+      ctx.fillStyle = "rgba(8,12,22,0.92)"; ctx.fillRect(Math.round(x - w / 2 - 7), Math.round(y - 13), Math.round(w + 14), 19);
+      ctx.fillStyle = "#ffffff"; ctx.fillText(L.text, x, y + 1);
+    }
+    if (!visit.activity) {
+      if (sts.bag) statLine("bag", sts.bag.x, sts.bag.y + 58);
+      if (sts.board) statLine("board", sts.board.x, sts.board.y + 60);
+      if (sts.bond) statLine("bond", sts.bond.x, sts.bond.y + 82);
+    }
+    /* 17z33: no "Garden" plate: the garden's own signpost and its beds say it */
     var gT = trackGeom();
-    sign("Running Track", gT.cx + 150, gT.cy + gT.ry + gT.width / 2 + 16);
+    sign("Running Track", gT.cx + 330, gT.cy + gT.ry + gT.width / 2 - 8);      /* 17z33: clear of the WORLD gate */
+    if (!visit.activity && sts.track) statLine("track", gT.cx + 330, gT.cy + gT.ry + gT.width / 2 + 20);
 
     ctx.font = "13px Trebuchet MS, sans-serif";
     if (dist(visit.x, visit.y, shop.x, shop.y) < 70 && !visit.activity) {
@@ -2265,9 +2316,9 @@
       else ptxt = ((D.CROPS[ps.crop] && D.CROPS[ps.crop].name) || ps.crop) + " · grows in battle · " + fmtLeft(ps.readyAt - now);
       label(ptxt, plotN.cx, plotN.y - 8, "#e8ffd0");
     }
-    var near = !visit.activity && !plotN && nearestStation(visit.x, visit.y);
+    var near = !visit.activity && !plotN && !nearExit(visit.x, visit.y) && nearestStation(visit.x, visit.y);
     if (near) {
-      var verb = near.id === "bag" ? "Punch" : near.id === "board" ? "Study" : near.id === "track" ? "Run a lap" : "Play together";
+      var verb = near.id === "bag" ? "Power Strike" : near.id === "board" ? "Pattern Recall" : near.id === "track" ? "Rockfall Run" : "Play together";
       var nx = near.x, ny = near.y;
       if (near.id === "track") {
         var gNear = trackGeom();

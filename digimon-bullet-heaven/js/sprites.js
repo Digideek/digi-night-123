@@ -302,6 +302,36 @@
     pumpPreload();
   }
 
+  /* The idle frame most like all the others (the medoid): a blink or a twitch is the odd one out, so
+   * the frame picked has its eyes open and a settled pose. Worked out once per species, small. */
+  var stillCache = {};
+  function stillFrame(id, anim) {
+    var key = id + ":" + anim, off = official[id], frames, n, i, j, W = 48, c, g, px = [], d, a, b, k, best = 0, bestSum = 1e18, sum, src, sc;
+    if (stillCache[key] != null) return stillCache[key];
+    frames = off && (off[anim] && off[anim][0] ? off[anim] : off.idle);
+    if (!off || !off.ready || !frames || !frames.length) return 0;          /* not loaded yet: ask again later */
+    n = frames.length;
+    if (n < 3) return (stillCache[key] = 0);
+    try {
+      c = document.createElement("canvas"); c.width = c.height = W; g = c.getContext("2d");
+      for (i = 0; i < n; i++) {
+        src = getSheet(id, anim, i, false);
+        g.clearRect(0, 0, W, W);
+        sc = Math.min(W / (src.width || W), W / (src.height || W));
+        g.drawImage(src, 0, 0, (src.width || W) * sc, (src.height || W) * sc);
+        d = g.getImageData(0, 0, W, W).data; a = new Uint8Array(W * W);
+        for (k = 0; k < W * W; k++) a[k] = d[k * 4 + 3] < 40 ? 0 : 1 + ((d[k * 4] * 3 + d[k * 4 + 1] * 6 + d[k * 4 + 2]) / 10 | 0) % 254;
+        px.push(a);
+      }
+      for (i = 0; i < n; i++) {
+        sum = 0;
+        for (j = 0; j < n; j++) { if (i === j) continue; a = px[i]; b = px[j]; for (k = 0; k < a.length; k++) sum += a[k] > b[k] ? a[k] - b[k] : b[k] - a[k]; }
+        if (sum < bestSum) { bestSum = sum; best = i; }
+      }
+    } catch (e) { best = 0; }
+    return (stillCache[key] = best);
+  }
+
   function speciesReady(id) {
     return !!(official[id] && official[id].ready && official[id].idle && official[id].idle[0]);
   }
@@ -756,6 +786,76 @@
       "...KYIYK....",
       "....KKK.....",
       "............",
+      "............"
+    ],
+    ticket: [
+      "............",
+      "............",
+      "KKKKKKKKKKKK",
+      "KYYYYKYYYYYK",
+      "KYKKYKYWWWYK",
+      "K.YY.KYYYYYK",
+      "K.YY.KYWWWYK",
+      "KYKKYKYYYYYK",
+      "KYYYYKYYYYYK",
+      "KKKKKKKKKKKK",
+      "............",
+      "............"
+    ],
+    gateKey: [
+      "............",
+      "...KKKK.....",
+      "..KUUUUK....",
+      "..KUKKUK....",
+      "..KUUUUK....",
+      "...KUUK.....",
+      "....KUK.....",
+      "....KUKK....",
+      "....KUUUK...",
+      "....KUKK....",
+      "....KUUUK...",
+      ".....KKK...."
+    ],
+    lure: [
+      "............",
+      "......KKK...",
+      ".....KSSSK..",
+      "....KS...K..",
+      "....KS......",
+      ".KK.KS......",
+      "KMMKKS......",
+      "KMWMMK......",
+      "KMMMMK......",
+      ".KMMK.......",
+      "..KK........",
+      "............"
+    ],
+    map: [
+      "............",
+      ".KKKKKKKKKK.",
+      ".KCCCCCCCCK.",
+      ".KCCNCCCCCK.",
+      ".KCNCNCCRCK.",
+      ".KCCCCNRKRK.",
+      ".KCCCCCCRCK.",
+      ".KCNNCCCCCK.",
+      ".KCCCNCCCCK.",
+      ".KCCCCCCCCK.",
+      ".KKKKKKKKKK.",
+      "............"
+    ],
+    sprintBoots: [
+      "............",
+      "...KKKK.....",
+      "..KBBBBK.KK.",
+      "..KBUBBKKWWK",
+      "..KBBBBKWWK.",
+      "..KBBYBBKK..",
+      "..KBBBYBBK..",
+      ".KBBBBBBBBK.",
+      ".KUBBBBBBBBK",
+      ".KWWWWWWWWWK",
+      "..KKKKKKKKK.",
       "............"
     ],
     meatPack: [
@@ -2399,10 +2499,12 @@
     m.ctx.drawImage(src, 0, 0);
     try { d = m.ctx.getImageData(0, 0, src.width, src.height).data; } catch (e) { return (shinyMaps[id] = null); }
     for (i = 0; i < 36; i++) bins[i] = 0;
+    var darkN = 0;
     for (i = 0; i < d.length; i += 4) {
       if (d[i + 3] < 128) continue;
       opaque++;
       hsl = rgb2hsl(d[i], d[i + 1], d[i + 2]);
+      if (hsl[2] < 0.24) darkN++;
       /* "is it a colour at all" goes by chroma: near-white fur has a high HSL saturation but hardly any colour */
       if ((Math.max(d[i], d[i + 1], d[i + 2]) - Math.min(d[i], d[i + 1], d[i + 2])) / 255 < 0.15 || hsl[2] < 0.12 || hsl[2] > 0.93) continue;
       bins[Math.floor(hsl[0] / 10) % 36] += hsl[1]; tot += hsl[1]; sat++;
@@ -2422,7 +2524,8 @@
       pair = SHINY_PAIRS[(h0 + tries) % SHINY_PAIRS.length];
       if (!main || (hueDist(pair[0], main.hue) >= 55 && (!second || hueDist(pair[1], second.hue) >= 35))) break;
     }
-    return (shinyMaps[id] = { main: main, second: second, a: pair[0], b: pair[1], pale: !main || (opaque ? sat / opaque : 0) < 0.35, twist: 40 + (h0 % 5) * 25 });
+    /* 17z33: a mostly black Digimon (Botamon...) would only change its eyes: its dark body takes the colour too */
+    return (shinyMaps[id] = { main: main, second: second, a: pair[0], b: pair[1], pale: !main || (opaque ? sat / opaque : 0) < 0.35, dark: opaque ? darkN / opaque > 0.45 : false, twist: 40 + (h0 % 5) * 25 });
   }
   function shinyCanvas(id, src) {
     var map = shinyMapFor(id, (official[id] && official[id].idle && official[id].idle[0]) || src);
@@ -2434,6 +2537,11 @@
     for (i = 0; i < d.length; i += 4) {
       if (d[i + 3] < 8) continue;
       hsl = rgb2hsl(d[i], d[i + 1], d[i + 2]); h = hsl[0]; s2 = hsl[1]; l = hsl[2];
+      if (map.dark && l >= 0.05 && l < 0.3 && (Math.max(d[i], d[i + 1], d[i + 2]) - Math.min(d[i], d[i + 1], d[i + 2])) / 255 < 0.2) {
+        rgbv = hsl2rgb(map.a, 0.55, Math.min(0.42, l * 1.45 + 0.04));      /* a black body: deep colour, the darkest outline kept */
+        d[i] = rgbv[0]; d[i + 1] = rgbv[1]; d[i + 2] = rgbv[2];
+        continue;
+      }
       if (l < 0.12) continue;                                   /* outlines stay */
       if ((Math.max(d[i], d[i + 1], d[i + 2]) - Math.min(d[i], d[i + 1], d[i + 2])) / 255 < 0.15 || l > 0.93) {
         /* greys and whites: only coloured on a Digimon that is mostly grey or white */
@@ -2536,6 +2644,9 @@
     var anim = moving || fly ? "walk" : "idle";
     var wk = walkInfo(id, t, moving, fly, phase, pace);
     var fi = animFrame(wk.tt, moving, fly, official[id] && official[id].fps ? wk.fps : 0);
+    /* a still picture (t = 0, not moving: portraits, the egg grid, the digivolution log): its most
+     * typical idle frame, never one caught mid-blink (17z33) */
+    if (!t && !moving) fi = stillFrame(id, anim);
     var sheet = getSheet(id, anim, fi, flash);
     if (tint && !flash) sheet = tintCanvas(sheet, tint);
     var stride = moving && !fly && wk.still;
@@ -2728,13 +2839,26 @@
     drawProp(ctx, kind, x, y);
   }
 
-  function drawProp(ctx, kind, x, y) {
-    var c = decorCanvas(kind), sp = propSpread(kind), a = atlasOf(c);
+  /* sway (17z33): screen pixels the crown leans by in the wind. The sprite is drawn in two slices: the
+   * trunk (bottom 40%, cut on an art-pixel row) stays put and the crown above it moves, with the shadow
+   * left where the tree stands. */
+  function drawProp(ctx, kind, x, y, sway) {
+    var c = decorCanvas(kind), sp = propSpread(kind), a = atlasOf(c), X = Math.round(x - c.width / 2), Y = Math.round(y - c.height + 6), top, k;
     if (sp > 0) shadow(ctx, x, y, sp, 0.3);
     ctx.save();
     ctx.imageSmoothingEnabled = false;
-    if (a) ctx.drawImage(a.cv, a.sx, a.sy, a.w, a.h, Math.round(x - c.width / 2), Math.round(y - c.height + 6), c.width, c.height);
-    else ctx.drawImage(c, Math.round(x - c.width / 2), Math.round(y - c.height + 6));
+    if (sway) {
+      top = Math.round(c.height * 0.6 / 3) * 3;
+      k = a ? a.h / c.height : 1;
+      if (a) {
+        ctx.drawImage(a.cv, a.sx, a.sy + top * k, a.w, a.h - top * k, X, Y + top, c.width, c.height - top);
+        ctx.drawImage(a.cv, a.sx, a.sy, a.w, top * k, X + sway, Y, c.width, top);
+      } else {
+        ctx.drawImage(c, 0, top, c.width, c.height - top, X, Y + top, c.width, c.height - top);
+        ctx.drawImage(c, 0, 0, c.width, top, X + sway, Y, c.width, top);
+      }
+    } else if (a) ctx.drawImage(a.cv, a.sx, a.sy, a.w, a.h, X, Y, c.width, c.height);
+    else ctx.drawImage(c, X, Y);
     ctx.restore();
   }
 
@@ -2881,7 +3005,39 @@
     }
   }
 
+  /* With the WebGL renderer each radial gradient is a 256x256 texture stretched over the screen,
+   * so the warm light and the dark edge were two full-screen passes every frame. Layered once into
+   * one texture ("over" stacks exactly), they're drawn in one pass and look the same (17z33). */
+  var vigTex = null;
+  function vignetteTex() {
+    if (vigTex || typeof document === "undefined") return vigTex;
+    var c = document.createElement("canvas"), g, grd;
+    c.width = 256; c.height = 256; g = c.getContext("2d");
+    grd = g.createRadialGradient(128, 128, 0, 128, 128, 128);
+    grd.addColorStop(0, "rgba(255, 236, 196, 0.08)"); grd.addColorStop(1, "rgba(0,0,0,0)");
+    g.fillStyle = grd; g.fillRect(0, 0, 256, 256);
+    grd = g.createRadialGradient(128, 128, 0, 128, 128, 128);
+    grd.addColorStop(0, "rgba(0,0,0,0)"); grd.addColorStop(1, "rgba(10,12,8,0.42)");
+    g.fillStyle = grd; g.fillRect(0, 0, 256, 256);
+    vigTex = c;
+    return c;
+  }
   function drawVignette(ctx, viewW, viewH, desperation, t) {
+    if (ctx && ctx.isWebGL && vignetteTex()) {
+      var sm = ctx.imageSmoothingEnabled;
+      ctx.imageSmoothingEnabled = true;
+      ctx.drawImage(vigTex, 0, 0, viewW, viewH);
+      ctx.imageSmoothingEnabled = sm;
+      if (desperation) {
+        var pulse0 = 0.28 + Math.sin((t || 0) * 8) * 0.08;
+        var dg0 = ctx.createRadialGradient(viewW / 2, viewH / 2, Math.min(viewW, viewH) * 0.2, viewW / 2, viewH / 2, Math.max(viewW, viewH) * 0.7);
+        dg0.addColorStop(0, "rgba(0,0,0,0)");
+        dg0.addColorStop(1, "rgba(160,20,0," + pulse0 + ")");
+        ctx.fillStyle = dg0;
+        ctx.fillRect(0, 0, viewW, viewH);
+      }
+      return;
+    }
     var light = ctx.createRadialGradient(viewW * 0.2, viewH * 0.12, 8, viewW * 0.2, viewH * 0.12, Math.max(viewW, viewH) * 0.85);
     light.addColorStop(0, "rgba(255, 236, 196, 0.08)");
     light.addColorStop(1, "rgba(0,0,0,0)");
@@ -3000,8 +3156,15 @@
     { id: "nyx", name: "Violet", blurb: "", glow: "#9a6af0" },
     { id: "null", name: "White", blurb: "", glow: "#e8ecf4" },
     { id: "rune", name: "Red", blurb: "", glow: "#ff5a4a" },
-    { id: "echo", name: "Blue", blurb: "", glow: "#4a8aff" }
+    { id: "echo", name: "Blue", blurb: "", glow: "#4a8aff" },
+    /* 17z33: a reward for one of the testers. Secret: not on the picker until it's unlocked on this
+     * device (unlockTamer). Black, broad-shouldered, a forward cap and a cigarette (drawSmoke). */
+    { id: "smoke", name: "Black", blurb: "", glow: "#8a94a8", secret: true, faint: true }
   ];
+  /* where the cigarette's tip is in each frame (scripts/art/holo4.py TIPS), in frame pixels */
+  var SMOKE_TIPS = {"down":{"idle":[[41,31],[41,29],[41,29],[41,31]],"walk":[[41,29],[41,29],[41,28],[41,28],[41,29],[41,29],[41,31],[41,31]]},"side":{"idle":[[47,30],[47,29],[47,29],[47,30]],"walk":[[47,29],[47,29],[47,27],[47,27],[47,29],[47,29],[47,30],[47,30]]}};
+  function secretOpen(id) { try { return !!(global.localStorage && global.localStorage.getItem("dbh_secret_" + id)); } catch (e) { return false; } }
+  function unlockTamer(id) { try { global.localStorage.setItem("dbh_secret_" + id, "1"); } catch (e) {} }
   /* Nov 20 (scripts/art/holo3.py): an eight-frame walk (contact, down, passing, up, twice) and a
    * four-frame breathing idle in each view */
   var TAMER_FRAME_DIRS = { down: { idle: 4, walk: 8 }, up: { idle: 4, walk: 8 }, side: { idle: 4, walk: 8 } };
@@ -3060,7 +3223,7 @@
     return fr;
   }
 
-  function getTamerList() { return TAMER_IDS.slice(); }
+  function getTamerList() { return TAMER_IDS.filter(function (t) { return !t.secret || secretOpen(t.id); }); }
 
   function hasTamer(id) { return !!(id && tamerPacks[id]); }
 
@@ -3072,7 +3235,7 @@
     return sheets[key];
   }
 
-  /* ---------- how a projection walks and shimmers (Nov 20) ----------
+  /* ---------- how a projection moves and shimmers (Nov 20; 17z33: it glides on mist, no steps) ----------
    * The walk is driven by distance, not the clock: one full cycle (two steps) per TAMER_STRIDE px,
    * so the feet keep pace with the ground at any speed and stop mid-step when you stop. Each
    * projection (keyed by the caller) keeps its own phase, the way it last faced and when it turned.
@@ -3080,6 +3243,7 @@
    * a lean into the walk, a quick squash on a turn, and a sliced glitch when it is hit.
    * D.sprites.onTamerStep(key, x, y, dir) is called as each foot lands (game.js: dust, ripples). */
   var TAMER_STRIDE = 56, tamerState = {}, glowCache = {};
+  function tamerFaint(id) { for (var i = 0; i < TAMER_IDS.length; i++) if (TAMER_IDS[i].id === id) return !!TAMER_IDS[i].faint; return false; }
   function tamerGlowCol(id) { for (var i = 0; i < TAMER_IDS.length; i++) if (TAMER_IDS[i].id === id) return TAMER_IDS[i].glow; return "#7cf0ff"; }
   function tamerGlow(sheet, id, key) {
     var k = key, c, g;
@@ -3110,16 +3274,20 @@
   function drawTamer(ctx, x, y, facing, t, flash, moving, evoReady, tdir, tamerId, key) {
     var anim = moving ? "walk" : "idle";
     var S = key ? stepTamerState(key, x, y, facing, moving, t || 0) : null;
-    /* walk: by distance when we know who this is, else by the clock; idle: a slow breath */
-    var fi = moving ? (S ? Math.floor(S.dist / TAMER_STRIDE * 8) : animFrame(t, true, false, 16)) : animFrame(t, false, false, 2.6);
+    /* 17z33: a projection glides (no steps): its "walk" frames are a float, played by the clock */
+    var fi = moving ? Math.floor((t || 0) * 8) : animFrame(t, false, false, 2.6);
     var dir = (tdir === "up" || tdir === "down" || tdir === "side") ? tdir : "side";
     var sheet = tamerReady ? getTamerFrame(tamerId, dir, anim, fi, false) : null;
     var usedNew = !!sheet;
     if (!sheet) sheet = getTamerSheet(anim, fi, flash);
     var SP = global.DBH && global.DBH.sprites;
-    if (S && S.landed && SP && SP.onTamerStep) { try { SP.onTamerStep(key, x, y, dir); } catch (e) {} }
-    var mul = usedNew ? 1 : 1.45;
-    var spread = usedNew ? 1.05 : TAMER_SET.spread * mul;
+    /* 17z33: the legless frames (scripts/art/holo4.py, 60 x 84) are shown 1:1 */
+    var holo4 = usedNew && sheet.width >= 60;
+    /* menus and portraits (no key) were laid out for the old 56-px figure: fit the new one to them */
+    var mul = usedNew ? (holo4 && !key ? 0.72 : 1) : 1.45;
+    var spread = usedNew ? 0.8 : TAMER_SET.spread * mul;
+    /* 17z33: the projection lights the ground round it in its own colour, a soft pool that breathes */
+    if (holoIn(usedNew, sheet, key)) holoPool(ctx, x, y, tamerGlowCol(tamerId), t || 0, tamerFaint(tamerId));
     shadow(ctx, x, y, spread * (moving ? 0.95 : 1), 0.3);
     if (evoReady) {
       var pulse = 1 + Math.sin((t || 0) * 10) * 0.15;
@@ -3135,9 +3303,12 @@
     var flip = (!usedNew || dir === "side") && facing < 0;
     var turn = S ? Math.max(0, 1 - ((t || 0) - S.turnT) / 0.14) : 0;               /* a quick squash on a turn */
     var squashX = (flash ? 1.08 : 1) * (1 - turn * 0.22), squashY = (flash ? 0.94 : 1) * (1 + turn * 0.06);
-    var lean = moving && dir === "side" ? 0.06 : 0;                                    /* into the walk */
-    var bob = usedNew ? 0 : Math.sin((t || 0) * 5) * (moving ? 0 : 1) * mul;
-    var ox = Math.round(-sheet.width / 2), oy = Math.round(-sheet.height + 4);
+    var lean = moving && dir === "side" ? 0.09 : 0;                                    /* leaning into the glide */
+    var seed = (key ? String(key).length * 1.7 : 0) + (x * 0.013);
+    var bob = usedNew ? Math.sin((t || 0) * 2.1 + seed) * 0.9 : Math.sin((t || 0) * 5) * (moving ? 0 : 1) * mul;   /* a slow hover */
+    var ox = Math.round(-sheet.width / 2), oy = Math.round(-sheet.height + (holo4 ? 6 : 4));
+    var mistK = holo4 ? mul : 1;
+    if (holo4) drawHoloTrail(ctx, S, x, y, sheet, ox, oy, flip, mul, tamerId, t || 0);
     /* the odd flicker a projection has (rare, brief) */
     var fl = Math.sin((t || 0) * 13.7 + (x * 0.01)) * Math.sin((t || 0) * 3.1);
     var alpha = fl > 0.97 ? 0.72 : 1;
@@ -3146,9 +3317,11 @@
     ctx.translate(Math.round(x), Math.round(y + bob));
     if (lean) ctx.rotate(lean * (flip ? -1 : 1));
     ctx.scale((flip ? -1 : 1) * mul * squashX, mul * squashY);
+    /* remembered so litTamers can draw it again as light, after the night wash */
+    if (S && holo4) S.lit = { sheet: sheet, x: Math.round(x), y: Math.round(y + bob), py: y, lean: lean * (flip ? -1 : 1), sx: (flip ? -1 : 1) * mul * squashX, sy: mul * squashY, ox: ox, oy: oy, col: tamerGlowCol(tamerId), faint: tamerFaint(tamerId) };
     if (usedNew) {
       var gl = tamerGlow(sheet, tamerId, tamerId + "|" + dir + "|" + anim + "|" + (((fi % sheet.__n) + sheet.__n) % sheet.__n || 0) + "|" + sheet.width);
-      if (gl) { ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha = 0.38 + Math.sin((t || 0) * 2.2) * 0.08; ctx.drawImage(gl, ox - 8, oy - 8); ctx.restore(); }
+      if (gl) { ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha = (tamerFaint(tamerId) ? 0.12 : 0.38) + Math.sin((t || 0) * 2.2) * 0.08; ctx.drawImage(gl, ox - 8, oy - 8); ctx.restore(); }
     }
     ctx.globalAlpha = alpha;
     if (flash && usedNew) {
@@ -3163,6 +3336,12 @@
     } else {
       ctx.drawImage(sheet, ox, oy);
     }
+    if (usedNew && !flash && key) {
+      /* 17z33: bright scanlines scrolling slowly down through it (four baked phases of the frame's own
+         shape, so they never spill outside it); held still with reduced effects */
+      var sv = holoScan(sheet, (global.DBH && global.DBH.reducedFx) ? 0 : Math.floor((t || 0) * 7 + seed * 3));
+      if (sv) { ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha = tamerFaint(tamerId) ? 0.08 : 0.2; ctx.drawImage(sv, ox, oy); ctx.restore(); }
+    }
     if (usedNew && !flash) {
       /* a scan band rising through it every few seconds */
       var per = 3.2, ph = (((t || 0) + (x * 0.003)) % per) / per;
@@ -3174,6 +3353,192 @@
         ctx.drawImage(sheet, ox, oy);
         ctx.restore();
       }
+    }
+    ctx.restore();
+    if (holo4) drawHoloMist(ctx, x, y + bob, t || 0, tamerGlowCol(tamerId), moving, facing, dir, seed, mistK);
+    if (holo4 && tamerId === "smoke") drawSmoke(ctx, x, y + bob, t || 0, dir, anim, fi, flip, mul, ox, oy, seed, facing, moving);
+  }
+  /* 17z33: a projection is light, so the night wash shouldn't dim it. After the wash, game.js calls this
+   * (in world space) and every projection drawn this frame is drawn again, added on top, with its pool
+   * on the ground; a = how dark it is. Each one is then forgotten until it is drawn again. */
+  function litTamers(ctx, a, t) {
+    var k, L;
+    for (k in tamerState) {
+      L = tamerState[k].lit;
+      if (!L) continue;
+      tamerState[k].lit = null;
+      if (a < 0.02) continue;
+      holoPool(ctx, L.x, L.py, L.col, t || 0, L.faint, a);
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      ctx.globalAlpha = a * (L.faint ? 0.25 : 0.55);
+      ctx.imageSmoothingEnabled = false;
+      ctx.translate(L.x, L.y);
+      if (L.lean) ctx.rotate(L.lean);
+      ctx.scale(L.sx, L.sy);
+      ctx.drawImage(L.sheet, L.ox, L.oy);
+      ctx.restore();
+    }
+  }
+  function holoIn(usedNew, sheet, key) { return usedNew && sheet.width >= 60 && !!key; }   /* in the world, not a menu */
+  var poolCv = {};
+  function holoPool(ctx, x, y, col, t, faint, k) {
+    var c = poolCv[col], g, gr;
+    if (!c) {
+      if (typeof document === "undefined") return;
+      c = document.createElement("canvas"); c.width = c.height = 64; g = c.getContext("2d");
+      gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+      gr.addColorStop(0, col); gr.addColorStop(0.35, rgbaOf(col, 0.55)); gr.addColorStop(1, rgbaOf(col, 0));
+      g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
+      poolCv[col] = c;
+    }
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    ctx.imageSmoothingEnabled = true;
+    ctx.globalAlpha = ((faint ? 0.14 : 0.34) + Math.sin(t * 1.7) * 0.05) * (k == null ? 1 : k);
+    ctx.drawImage(c, Math.round(x - 46), Math.round(y - 15), 92, 30);
+    ctx.globalAlpha *= 0.7;
+    ctx.drawImage(c, Math.round(x - 20), Math.round(y - 7), 40, 14);           /* brighter right under it */
+    ctx.restore();
+  }
+  function rgbaOf(hex, a) { var n = parseInt(hex.slice(1), 16); return "rgba(" + ((n >> 16) & 255) + "," + ((n >> 8) & 255) + "," + (n & 255) + "," + a + ")"; }
+  /* the frame's shape with every 4th row lit, in four phases; kept on the frame's canvas */
+  function holoScan(sheet, step) {
+    var arr = sheet.__scan, i, c, g, y;
+    if (!arr) {
+      if (typeof document === "undefined") return null;
+      arr = sheet.__scan = [];
+      for (i = 0; i < 4; i++) {
+        c = document.createElement("canvas"); c.width = sheet.width; c.height = sheet.height; g = c.getContext("2d");
+        g.drawImage(sheet, 0, 0);
+        g.globalCompositeOperation = "source-in"; g.fillStyle = "#ffffff";
+        for (y = i; y < sheet.height; y += 4) g.fillRect(0, y, sheet.width, 1);
+        arr.push(c);
+      }
+    }
+    return arr[((step % 4) + 4) % 4];
+  }
+  /* ---------- the mist a projection is made of below the waist (17z33) ----------
+   * motes in its colour drift down from the waist and spread, fading before the ground; moving, they
+   * stream out behind it. And a glide leaves a short trail: faint copies where it just was. */
+  function drawHoloMist(ctx, x, y, t, col, moving, facing, dir, seed, k0) {
+    k0 = k0 || 1;
+    var k, n = 30, ph, mx, my, a, sz, back = moving ? (dir === "side" ? -facing : 0) : 0, up = moving && dir === "up" ? 1 : (moving && dir === "down" ? -1 : 0);
+    var top = -25, bot = -2, rows, ry, f, hw, jx, fl;
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    ctx.fillStyle = col;
+    /* where the legs would be: a faint column of scanlines, tapering to the ring, flickering and
+     * slipping sideways, so a body is still sensed down there, coming apart */
+    rows = Math.round((bot - top) / 1.5);
+    for (k = 0; k < rows; k++) {
+      f = k / rows; ry = y + (top + k * 1.5) * k0;
+      hw = (7 - 3.5 * f) * k0;
+      fl = Math.sin(t * 23 + k * 1.7 + seed * 5) * Math.sin(t * 7.1 + k * 0.9);
+      jx = (fl > 0.82 ? (fl - 0.82) * 30 : 0) * (k % 2 ? 1 : -1) * k0 + back * f * 6 * k0;
+      a = (0.22 - 0.14 * f) * (0.75 + 0.25 * Math.sin(t * 13 + k));
+      if (a <= 0.02) continue;
+      ctx.globalAlpha = a;
+      ctx.fillRect(x - hw + jx, ry, hw * 2, Math.max(1, 0.75 * k0));
+    }
+    /* a few bright glitch slices sliding across it */
+    for (k = 0; k < 3; k++) {
+      ph = ((t * (0.7 + k * 0.23) + k * 0.37 + seed) % 1 + 1) % 1;
+      fl = Math.sin(t * (17 + k * 5) + k * 3 + seed * 7);
+      if (fl < 0.2) continue;
+      ry = y + (top + ph * (bot - top)) * k0;
+      hw = (6 - 3 * ph) * k0;
+      jx = Math.sin(t * 31 + k * 2.3) * 4 * k0;
+      ctx.globalAlpha = 0.35 + 0.35 * fl;
+      ctx.fillRect(x - hw + jx, ry, hw * 2 * (0.5 + 0.5 * Math.abs(Math.sin(t * 9 + k))), Math.max(1, 1.1 * k0));
+    }
+    /* sparkles: motes drift down from the waist and spread, fading before the ground; moving, they
+     * stream out behind it; a few twinkle bright white */
+    for (k = 0; k < n; k++) {
+      ph = ((t * (moving ? 0.9 : 0.5) + k / n + seed * 0.37) % 1 + 1) % 1;
+      mx = x + (Math.sin(k * 2.39 + t * 1.3) * (3 + ph * 8) + back * ph * 15) * k0;
+      my = y + (top + 1 + ph * 22 + up * ph * 7) * k0;
+      a = (1 - ph * 0.85) * (0.6 + 0.4 * Math.sin(k * 5.1 + t * 9));
+      if (a <= 0.04) continue;
+      sz = (k % 5 === 0 ? 2 : (k % 3 === 0 ? 1.5 : 1)) * Math.max(1, k0);
+      ctx.globalAlpha = a;
+      ctx.fillStyle = (k % 7 === 0 && Math.sin(t * 11 + k) > 0.3) ? "#ffffff" : col;
+      ctx.fillRect(Math.round(mx * 2) / 2, Math.round(my * 2) / 2, sz, sz);
+    }
+    /* 17z33: and a few pixels come loose from the mist and float up past the body, slowing and fading,
+       as if the projection were shedding data (none with reduced effects) */
+    if (!(global.DBH && global.DBH.reducedFx)) for (k = 0; k < 10; k++) {
+      ph = ((t * 0.32 + k / 10 + seed * 0.61) % 1 + 1) % 1;
+      mx = x + (Math.sin(k * 3.7 + seed) * (6 + ph * 5) + Math.sin(t * 1.9 + k) * 2 * ph - back * ph * 10) * k0;
+      my = y + (top + 6 - Math.sqrt(ph) * 62) * k0;
+      a = Math.min(1, ph * 6) * (1 - ph) * 0.75;
+      if (a <= 0.04) continue;
+      ctx.globalAlpha = a;
+      ctx.fillStyle = k % 4 === 0 ? "#ffffff" : col;
+      ctx.fillRect(Math.round(mx), Math.round(my), Math.max(1, Math.round(k0 * (k % 3 === 0 ? 2 : 1))), Math.max(1, Math.round(k0 * (k % 3 === 0 ? 2 : 1))));
+    }
+    ctx.restore();
+  }
+  /* the cigarette (17z33): the tip glows a dull red; every few seconds he takes a drag (the tip flares
+   * bright), then breathes out a puff of pixel smoke that curls up and drifts off; in between a thin
+   * wisp rises from the tip. All of it in world space, so the smoke rises whichever way he faces. */
+  function drawSmoke(ctx, x, y, t, dir, anim, fi, flip, mul, ox, oy, seed, facing, moving) {
+    var T = SMOKE_TIPS[dir] && SMOKE_TIPS[dir][anim], tip, n, tx, ty, per = 7, ph, flare, k, a, q, sx, sy, r, back, sz;
+    ph = ((t + seed * 3.1) % per + per) % per;
+    flare = ph < 0.9 ? ph / 0.9 : (ph < 1.3 ? 1 : (ph < 1.7 ? 1 - (ph - 1.3) / 0.4 : 0));
+    back = dir === "side" ? -facing : 0;
+    if (T) {
+      n = T.length; tip = T[((fi % n) + n) % n];
+      tx = x + (tip[0] + ox) * mul * (flip ? -1 : 1); ty = y + (tip[1] + oy) * mul;
+    } else { tx = x; ty = y - 50 * mul; }                                    /* seen from behind: the smoke comes up past the head */
+    ctx.save();
+    if (T) {
+      /* the tip: a dull ember, flaring on the drag */
+      ctx.globalCompositeOperation = "lighter";
+      ctx.globalAlpha = 0.25 + 0.55 * flare; ctx.fillStyle = "#ff3a1a";
+      r = (1.5 + 2.5 * flare) * mul; ctx.beginPath(); ctx.arc(tx, ty, r, 0, Math.PI * 2); ctx.fill();
+      if (flare > 0.3) { ctx.globalAlpha = 0.25 * flare; ctx.beginPath(); ctx.arc(tx, ty, r * 2, 0, Math.PI * 2); ctx.fill(); }
+      ctx.globalCompositeOperation = "source-over"; ctx.globalAlpha = 1;
+      ctx.fillStyle = flare > 0.4 ? "#ffb04a" : "#d8301a"; ctx.fillRect(Math.round(tx - 1 * mul), Math.round(ty - 1 * mul), Math.max(1, Math.round(2 * mul)), Math.max(1, Math.round(2 * mul)));
+      if (flare > 0.6) { ctx.fillStyle = "#fff0c0"; ctx.fillRect(Math.round(tx - 0.5 * mul), Math.round(ty - 0.5 * mul), Math.max(1, Math.round(mul)), Math.max(1, Math.round(mul))); }
+    }
+    /* the puff he breathes out after the drag */
+    if (ph > 1.4 && ph < 4.2) {
+      q = (ph - 1.4) / 2.8;
+      for (k = 0; k < 9; k++) {
+        var kq = q - k * 0.035; if (kq <= 0) continue;
+        sx = tx - (T ? 3 * mul * (flip ? -1 : 1) : 0) + (Math.sin(k * 1.9 + t * 1.6) * (2 + kq * 9) + back * kq * 12 + (moving ? back * kq * 10 : 0)) * mul;
+        sy = ty - (kq * 26 + k * 1.2) * mul;
+        a = (1 - kq) * 0.55; sz = Math.max(1, Math.round((1 + kq * 3 + (k % 3)) * mul));
+        if (a <= 0.02) continue;
+        ctx.globalAlpha = a; ctx.fillStyle = k % 2 ? "#c8ccd4" : "#9aa0ac";
+        ctx.fillRect(Math.round(sx - sz / 2), Math.round(sy - sz / 2), sz, sz);
+      }
+    }
+    /* a thin wisp off the tip the rest of the time */
+    if (T) for (k = 0; k < 4; k++) {
+      q = ((t * 0.45 + k / 4 + seed) % 1 + 1) % 1;
+      sx = tx + (Math.sin(t * 2.3 + k * 2.1) * (1 + q * 3) + back * q * 4) * mul; sy = ty - (2 + q * 14) * mul;
+      ctx.globalAlpha = (1 - q) * 0.35 * (1 - flare); ctx.fillStyle = "#b8bcc6";
+      ctx.fillRect(Math.round(sx), Math.round(sy), Math.max(1, Math.round(mul)), Math.max(1, Math.round(mul)));
+    }
+    ctx.restore();
+  }
+  function drawHoloTrail(ctx, S, x, y, sheet, ox, oy, flip, mul, id, t) {
+    if (!S) return;
+    var tr = S.trail || (S.trail = []), last = tr[tr.length - 1], i, p, a;
+    if (!last || Math.abs(last.x - x) + Math.abs(last.y - y) > 3 || t - last.t > 0.2) { tr.push({ x: x, y: y, t: t }); if (tr.length > 6) tr.shift(); }
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
+    ctx.globalCompositeOperation = "lighter";
+    for (i = 0; i < tr.length - 1; i++) {
+      p = tr[i];
+      a = 0.16 * (1 - (t - p.t) / 0.35) * ((i + 1) / tr.length);
+      if (a <= 0.01 || (Math.abs(p.x - x) + Math.abs(p.y - y)) < 2) continue;
+      ctx.globalAlpha = a;
+      ctx.save(); ctx.translate(Math.round(p.x), Math.round(p.y)); ctx.scale((flip ? -1 : 1) * mul, mul);
+      ctx.drawImage(sheet, ox, oy, sheet.width, Math.round(sheet.height * 0.72), ox, oy, sheet.width, Math.round(sheet.height * 0.72));   /* the upper body only: the mist has no afterimage */
+      ctx.restore();
     }
     ctx.restore();
   }
@@ -3259,11 +3624,13 @@
     paintPreview: paintPreview,
     drawParallax: drawParallax,
     drawVignette: drawVignette,
+    litTamers: litTamers,
     bakeAll: bakeAll,
     loadOfficial: loadOfficialSprites,
     officialReady: function () { return officialReady; },
     loadAtlas: loadAtlas,
     preloadSpecies: preloadSpecies,
+    stillFrame: stillFrame,
     speciesReady: speciesReady,
     ensureHeight: ensureHeight,
     footfall: footfall,
@@ -3275,6 +3642,8 @@
     drawEgg: drawEgg,
     rollEggPattern: rollEggPattern,
     getTamerList: getTamerList,
+    unlockTamer: unlockTamer,
+    tamerSecretOpen: secretOpen,
     hasTamer: hasTamer,
     drawLegacyTamer: function (ctx, x, y, facing, t, flash, moving, evoReady) {
       var ready = tamerReady;

@@ -67,7 +67,7 @@
 
     MissionSim.prototype._updateWar = function (dt, wave, host) {
       var W = this._warCfg(), w = this.data.world;
-      if (!W || !w || !w.cellOwner || !w.setOwner || !w.TILE || !w.TILE() || !host) return;
+      if (!W || !w || !w.cellOwner || !w.setOwner || !w.TILE || !w.TILE() || !host || this.noWar) return;   /* Night Siege: the borders hold still */
       this._warT = (this._warT || 0) - dt;
       if (this._warT > 0) return;
       var step = W.tick, span = w.TERR * w.TILE(), seen = {}, cells = [], i, j, p, cx, cy, k, a, b, n, best, bp, push, rec, x, y, sA;

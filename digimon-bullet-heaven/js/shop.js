@@ -43,25 +43,27 @@
     /* Field Jijimon height as a fraction of the 56px tamer. */
     merchantHeightRatio: 5 / 6,
     priceGrowth: 1.5,
+    /* 17z33: Jijimon's stall, reworked. Always on the shelf: one food (at most perVisit a visit, so food
+     * stays hard-won) and Sprint Boots. The rest is his stock for this visit: a few picks from POOL,
+     * different every time (shopStock), each one to a visit. Fixed prices; only the boots climb. */
     categories: [
-      { id: "all", name: "All" },
-      { id: "food", name: "Food" },
-      { id: "care", name: "Care" },
-      { id: "battle", name: "Battle" },
-      { id: "evo", name: "Evolution" }
+      { id: "all", name: "All" }
+    ],
+    always: ["meat1", "sprintBoots"],
+    stockCount: 4,
+    pool: [
+      { pick: "ticket", w: 3 }, { pick: "seeds", w: 3 }, { pick: "gateKey", w: 2 }, { pick: "lure", w: 2 },
+      { pick: "map", w: 2 }, { pick: "digimental", w: 1 }, { pick: "eraser", w: 1 }, { pick: "crest", w: 0.5 }
     ],
     catalog: [
-      { id: "meatPack", name: "Meat Pack", desc: "Three cuts of meat for the Digifarm bag. Feed them during a farm visit. Counts toward favorite food.", base: 12, kind: "food", food: "meat", count: 3, icon: "meatPack", category: "food" },
-      { id: "fishPack", name: "Fish Pack", desc: "Three fish for the Digifarm bag. Feed them during a farm visit. Counts toward favorite food.", base: 14, kind: "food", food: "fish", count: 3, icon: "fishPack", category: "food" },
-      { id: "berryPack", name: "Berry Pack", desc: "Three berries for the Digifarm bag. Feed them during a farm visit. Counts toward favorite food.", base: 14, kind: "food", food: "berry", count: 3, icon: "berryPack", category: "food" },
-      { id: "medicine", name: "Restore Disk", desc: "Restores half of tamer and partner HP. Use on the Digifarm, not in battle.", base: 18, kind: "consumable", icon: "medicine", category: "care" },
-      { id: "vitamin", name: "Power Vitamin", desc: "A farm supplement that boosts happiness and bond, steering evolution. Use on the Digifarm.", base: 16, kind: "consumable", icon: "vitamin", category: "care" },
-      { id: "joyToy", name: "Training Ball", desc: "A bounce of joy for your partner. Use it on the Digifarm.", base: 16, kind: "consumable", icon: "joyToy", category: "care" },
-      { id: "eraser", name: "Care Reset", desc: "Clears one care mistake from this run. Use on the Digifarm.", base: 22, kind: "consumable", icon: "eraser", category: "care" },
-      { id: "atkBoost", name: "Power Chip", desc: "Attack +35% for 20 seconds into the next battle segment. Use on the Digifarm before you return.", base: 20, kind: "consumable", icon: "atkBoost", category: "care" },
-      { id: "dataChip", name: "Data Chip", desc: "A keepsake now: catching no longer needs one. Defeat enough of one kind of Digimon this run and you can try to catch that kind (press E near one).", base: 25, kind: "consumable", icon: "dataChip", category: "battle" },
-      { id: "digimental", name: "Digi-Egg of Courage", desc: "Unlocks official armor branches (Digimental) this run. Default gates stay the same.", base: 40, kind: "key", item: "digimental", icon: "digimental", category: "evo" },
-      { id: "crest", name: "Crest of Courage", desc: "Enables a warp evolution even without a boss. Default warp gates still work without it.", base: 45, kind: "key", item: "crest", icon: "crest", category: "evo" }
+      { id: "meat1", name: "Meat", desc: "One cut of meat for the farm bag. Jijimon only has three a visit.", base: 20, fixed: true, perVisit: 3, kind: "food", food: "meat", count: 1, icon: "meatPack", category: "food" },
+      { id: "sprintBoots", name: "Sprint Boots", desc: "Your own run speed: +6% a level, up to level 5 (+30%). Your partner always keeps a step ahead of you. Lasts the run.", base: 30, kind: "upgrade", max: 5, icon: "sprintBoots", category: "battle" },
+      { id: "ticket", name: "Training Ticket", desc: "A fresh training session at the farm, without beating 10 more wild Digimon for it.", base: 45, fixed: true, perVisit: 1, kind: "instant", icon: "ticket", category: "farm", pickOf: "ticket" },
+      { id: "gateKey", name: "Gate Key", desc: "Opens a farm gate right where you stand, once. Use it from the bag (I) out in the world.", base: 40, fixed: true, perVisit: 1, kind: "consumable", use: "world", icon: "gateKey", category: "farm", pickOf: "gateKey" },
+      { id: "lure", name: "Lure", desc: "Use it from the bag (I): a pack of the kind you're closest to catching comes running.", base: 55, fixed: true, perVisit: 1, kind: "consumable", use: "world", icon: "lure", category: "battle", pickOf: "lure" },
+      { id: "map", name: "Treasure Map", desc: "Use it from the bag (I): the three nearest unbroken black spires show on your minimap for two minutes.", base: 35, fixed: true, perVisit: 1, kind: "consumable", use: "world", icon: "map", category: "battle", pickOf: "map" },
+      { id: "eraser", name: "Care Reset", desc: "Clears one care mistake from this run. Use it from the bag at the farm.", base: 40, fixed: true, perVisit: 1, kind: "consumable", use: "farm", icon: "eraser", category: "care", pickOf: "eraser" },
+      { id: "crest", name: "Crest of Courage", desc: "Enables a warp digivolution even without a boss.", base: 160, fixed: true, perVisit: 1, kind: "key", item: "crest", icon: "crest", category: "evo", pickOf: "crest" }
     ]
   };
 
@@ -103,6 +105,66 @@
     toyJoy: 30
   };
 
+  /* 17z33: seed packets (pick the vegetable you want) and the Digimentals (each opens one armor
+   * digivolution; the tree's generic "digimental" condition is narrowed to the right one by
+   * applyDigimentals) join the catalogue */
+  var SEED_LIST = ["carrot", "cucumber", "tomato", "corn", "cabbage", "potato"];
+  SEED_LIST.forEach(function (c) {
+    D.SHOP.catalog.push({ id: "seeds_" + c, name: c.charAt(0).toUpperCase() + c.slice(1) + " Seeds", desc: "Two " + c + " seeds to plant at the farm. " + (c === "carrot" ? "Carrots: partner speed." : c === "cucumber" ? "Cucumbers: attack rate." : c === "tomato" ? "Tomatoes: damage." : c === "corn" ? "Corn: pickup range." : c === "cabbage" ? "Cabbage: defence." : "Potatoes: max health."), base: 25, fixed: true, perVisit: 1, kind: "seed", seed: "seed_" + c, count: 2, icon: "seed_" + c, category: "farm", pickOf: "seeds" });
+  });
+  var DIGIMENTALS = {
+    dm_courage:   { name: "Digimental of Courage", to: ["flamedramon"], from: "Veemon" },
+    dm_miracles:  { name: "Digimental of Miracles", to: ["magnamon"], from: "Veemon or Gold Guardromon" },
+    dm_light:     { name: "Digimental of Light", to: ["nefertimon"], from: "Gatomon" },
+    dm_knowledge: { name: "Digimental of Knowledge", to: ["digmon"], from: "Armadillomon" },
+    dm_love:      { name: "Digimental of Love", to: ["halsemon"], from: "Hawkmon" },
+    dm_hope:      { name: "Digimental of Hope", to: ["pegasusmon"], from: "Patamon" }
+  };
+  Object.keys(DIGIMENTALS).forEach(function (id) {
+    var d = DIGIMENTALS[id];
+    D.SHOP.catalog.push({ id: id, name: d.name, desc: "Opens one armor digivolution for the run: " + d.from + " into " + d.to.map(function (t) { return t.charAt(0).toUpperCase() + t.slice(1); }).join(" / ") + " (it still has to be ready for it).", base: 180, fixed: true, perVisit: 1, kind: "key", item: id, icon: "digimental", category: "evo", pickOf: "digimental" });
+  });
+  /* the tree's armor routes all ask for "digimental": give each the one that opens it */
+  function applyDigimentals(tree) {
+    var by = {}, k, f, i, b, list;
+    if (!tree || !tree.branches || tree._dmApplied) return tree;
+    for (k in DIGIMENTALS) DIGIMENTALS[k].to.forEach(function (t) { by[t] = k; });
+    for (f in tree.branches) { list = tree.branches[f] || []; for (i = 0; i < list.length; i++) { b = list[i]; if (b && b.conditions && b.conditions.item === "digimental" && by[b.to]) b.conditions.item = by[b.to]; } }
+    tree._dmApplied = true;
+    return tree;
+  }
+  if (typeof EVO_TREE !== "undefined") applyDigimentals(EVO_TREE);
+  if (D.EVO_TREE) applyDigimentals(D.EVO_TREE);
+
+  /* which visit this is: a farm visit, or one of Jijimon's rounds out in the world */
+  function shopKey(sim) {
+    if (!sim) return "none";
+    if (sim.farm && sim.farm.active) return "f" + Math.round((sim.farm.since || 0) * 10);
+    if (sim.merchant) return "m" + Math.round((sim.merchant.visit || 0) * 10);
+    return "none";
+  }
+  function h32(str) { var h = 2166136261, i; str = String(str); for (i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
+  /* what Jijimon has this visit: the shelf, then stockCount picks from the pool (one of each kind),
+   * seeded by the visit and the tamer, so everyone sees the same thing for the same visit */
+  function shopStock(key, who) {
+    var S = D.SHOP, out = (S.always || []).slice(), pool = (S.pool || []).slice(), n = S.stockCount || 4, k = 0, tot, r, i, p, opts, seed = h32(key + "|" + (who || ""));
+    function rnd() { seed = (Math.imul(seed ^ (seed >>> 15), 2246822519) + 0x9e3779b9) >>> 0; return seed / 4294967296; }
+    while (k < n && pool.length) {
+      tot = 0; for (i = 0; i < pool.length; i++) tot += pool[i].w;
+      r = rnd() * tot; for (i = 0; i < pool.length; i++) { r -= pool[i].w; if (r <= 0) break; }
+      p = pool.splice(Math.min(i, pool.length - 1), 1)[0];
+      opts = S.catalog.filter(function (c) { return c.pickOf === p.pick; });
+      if (opts.length) { out.push(opts[Math.floor(rnd() * opts.length) % opts.length].id); k++; }
+    }
+    return out;
+  }
+  /* how many of it you can still buy this visit (null: no limit) */
+  function shopLeft(item, visit, key) {
+    if (!item || !item.perVisit) return null;
+    var got = (visit && visit.key === key && visit.n && visit.n[item.id]) || 0;
+    return Math.max(0, item.perVisit - got);
+  }
+
   function shopItem(id) {
     var i, c = D.SHOP.catalog;
     for (i = 0; i < c.length; i++) if (c[i].id === id) return c[i];
@@ -112,6 +174,7 @@
   function shopPrice(id, timesBought) {
     var item = shopItem(id);
     if (!item) return 0;
+    if (item.fixed) return item.base;
     var n = Math.max(0, timesBought || 0);
     var grown = Math.round(item.base * Math.pow(D.SHOP.priceGrowth, n));
     return Math.max(item.base + n, grown);
@@ -221,6 +284,11 @@
   }
 
   D.shopItem = shopItem;
+  D.shopStock = shopStock;
+  D.shopKey = shopKey;
+  D.shopLeft = shopLeft;
+  D.applyDigimentals = applyDigimentals;
+  D.DIGIMENTALS = DIGIMENTALS;
   D.shopPrice = shopPrice;
   D.bitsForEnemy = bitsForEnemy;
   D.captureChance = captureChance;

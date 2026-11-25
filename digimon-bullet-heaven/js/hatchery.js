@@ -64,11 +64,35 @@
   function linesOf(tier) { return eggs().filter(function (e) { return tierOf(e.id) === tier; }); }
 
   function blank() { return { data: {}, egg: null, count: 0, raised: 0, used: 0 }; }
+  /* Three slots (17z33, Isaac): up to three Digimon raised at once, each with its own egg and its own bloodline,
+   * all fed from the one pool of data (you choose where it goes). H.slots[i] = { egg, blood }; H.sel is the slot
+   * on the stand. Every rule below works on H.egg and H.blood, which are the selected slot's (a mirror, loaded
+   * by clean and written back by syncSlot whenever a rule replaces either). A save from before the slots
+   * becomes slot 1. */
+  function freshBlood(lines) { return { gen: 0, traits: {}, tree: [], live: null, line: (lines || 0) + 1 }; }
+  function slotCount() { return (D.BLOODLINE && D.BLOODLINE.slots) || 3; }
   function clean(H) {
     H = (H && typeof H === "object") ? H : blank();
     H.data = H.data || {}; H.count = H.count || 0; H.raised = H.raised || 0; H.used = H.used || 0;
+    H.rookies = H.rookies || {};
+    if (!H.slots) { H.slots = [{ egg: H.egg || null, blood: H.blood && typeof H.blood === "object" ? H.blood : freshBlood(0) }]; H.sel = 0; }
+    while (H.slots.length < slotCount()) H.slots.push({ egg: null, blood: freshBlood(0) });
+    H.sel = Math.max(0, Math.min(H.slots.length - 1, H.sel | 0));
+    H.slots.forEach(function (s) { s.blood = s.blood && typeof s.blood === "object" ? s.blood : freshBlood(0); s.blood.traits = s.blood.traits || {}; s.blood.tree = s.blood.tree || []; s.blood.line = s.blood.line || 1; });
+    H.egg = H.slots[H.sel].egg; H.blood = H.slots[H.sel].blood;
     return H;
   }
+  /* write the selected slot back after a rule replaced H.egg or H.blood */
+  function syncSlot(H) { if (H.slots && H.slots[H.sel]) { H.slots[H.sel].egg = H.egg; H.slots[H.sel].blood = H.blood; } }
+  /* put slot i on the stand */
+  function select(H, i) {
+    if (!H.slots || !H.slots[i]) return false;
+    syncSlot(H);
+    H.sel = i; H.egg = H.slots[i].egg; H.blood = H.slots[i].blood;
+    return true;
+  }
+  /* run fn with slot i on the stand, then put the one that was there back */
+  function inSlot(H, i, fn) { var was = H.sel, out; select(H, i); out = fn(); select(H, was); return out; }
   function total(H) { var n = 0, k; for (k in H.data) n += H.data[k] || 0; return n; }
   function pickW(list, rng) { var s = 0, i, r; for (i = 0; i < list.length; i++) s += list[i].w; r = rng() * s; for (i = 0; i < list.length; i++) { r -= list[i].w; if (r <= 0) return list[i]; } return list[list.length - 1]; }
 
@@ -76,9 +100,13 @@
   function newEgg(H, rng) {
     rng = rng || Math.random;
     if (H.egg) return null;
-    var pool = TIERS.filter(function (t) { return linesOf(t.id).length > 0; }), t = pickW(pool, rng);
+    var pool = TIERS.filter(function (t) { return linesOf(t.id).length > 0; }), t;
+    /* an expedition brought back a map to a rare egg: this one is Rare or better (and the map is used up) */
+    if (H.eggLead) { pool = pool.filter(function (x) { return x.id === "rare" || x.id === "mythic"; }); H.eggLead = false; if (!pool.length) pool = TIERS.filter(function (x) { return linesOf(x.id).length > 0; }); }
+    t = pickW(pool, rng);
     H.count += 1;
     H.egg = { tier: t.id, stage: 0, form: null, line: null, route: [], prog: 0, n: H.count, fed: {}, now: {}, sky: {}, shell: Math.floor(rng() * 1e6) };
+    syncSlot(H);
     return H.egg;
   }
   function cost(H) {
@@ -121,6 +149,7 @@
     e.form = pick.to; e.route.push(pick.to); e.stage += 1; e.now = {}; e.sky = {};
     res = { ok: true, grew: true, from: from, to: pick.to, stage: e.stage, hatched: e.stage === 1, kind: pick.kind, unlocked: null };
     if (e.stage === 3) { H.raised += 1; res.unlocked = e.line; }
+    if (e.stage === 3) { H.rookies = H.rookies || {}; H.rookies[pick.to] = (H.rookies[pick.to] || 0) + 1; }   /* every Rookie raised here: Versus lets you bring it (vs-rookie.js) */
     return res;
   }
   /* feed it `amount` of one type of data under a given sky. Returns what happened. */
@@ -144,8 +173,121 @@
     if (!ready(H)) return null;
     sh = share(e.fed);
     for (k in sh) if (k !== "plain" && sh[k] > 0.05) bias[k] = Math.round(sh[k] * 100) / 100;
-    H.egg = null; H.used += 1;
-    return { form: e.form, line: e.line, route: e.route.slice(), stage: e.stage, level: CFG.level[e.stage - 1] || 1, bias: bias, tier: e.tier };
+    H.egg = null; H.used += 1; syncSlot(H);
+    /* it carries its bloodline: every trait the line has earned so far (data.js BLOODLINE) */
+    var BL = bloodOf(H);
+    BL.gen += 1;
+    BL.live = { gen: BL.gen, form: e.form, line: e.line, tier: e.tier, carried: copyTraits(BL.traits), at: Date.now() };
+    return { form: e.form, line: e.line, route: e.route.slice(), stage: e.stage, level: CFG.level[e.stage - 1] || 1, bias: bias, tier: e.tier, blood: { gen: BL.gen, traits: copyTraits(BL.traits) } };
+  }
+
+  /* ---------- Expeditions (17z33, Isaac) ----------
+   * A run is over and the Digimon on the stand wasn't in it: it went exploring and is back with what it found
+   * (data.js EXPEDITION). r: { seconds, used (it was taken into this run), duel }. Returns the report, or null.
+   * The report says what to add; the page side (expeditionEnd) pays the coins and the item. */
+  function expedition(H, r, rng) {
+    var X = D.EXPEDITION, slots = H.slots || [{ egg: H.egg, blood: bloodOf(H) }], team = [], i, s, e, m, best = 0, sum = 0, mins, mul, fam, type, out;
+    rng = rng || Math.random; r = r || {};
+    if (!X || r.used || r.duel || (r.seconds || 0) < X.minSec) return null;
+    /* everyone hatched on the stands goes (the one taken into the run is already gone from its slot) */
+    for (i = 0; i < slots.length; i++) {
+      s = slots[i]; e = s && s.egg;
+      if (!e || !(e.stage >= 1) || !e.form) continue;
+      m = (X.stageMul[e.stage - 1] || 1) * (1 + Math.min(X.genMax, X.genBonus * ((s.blood && s.blood.gen) || 0)));
+      team.push({ form: e.form, mul: m }); best = Math.max(best, m); sum += m;
+    }
+    if (!team.length) return null;
+    mins = Math.min(X.capMin, (r.seconds || 0) / 60);
+    mul = best * (1 + (X.team || 0) * (team.length - 1));
+    out = { form: team[0].form, forms: team.map(function (t) { return t.form; }), mins: Math.round(mins), data: {}, coins: Math.round(mins * X.coins * mul), item: rng() < Math.min(X.itemMax, mins * X.itemPer * mul), egg: rng() < Math.min(X.eggMax, mins * X.eggPer * mul) };
+    /* the data, each one's share of its own element */
+    for (i = 0; i < team.length; i++) {
+      fam = D.moveFamilyOf ? D.moveFamilyOf(team[i].form) : null; type = TYPES.indexOf(fam) >= 0 ? fam : "plain";
+      out.data[type] = (out.data[type] || 0) + Math.max(1, Math.round(mins * X.data * mul * team[i].mul / sum));
+    }
+    earn(H, out.data);
+    if (out.egg) H.eggLead = true;
+    H.exped = { n: ((H.exped && H.exped.n) || 0) + 1, last: { form: out.form, forms: out.forms, mins: out.mins, data: out.data, coins: out.coins, item: null, egg: out.egg, at: Date.now() } };
+    return out;
+  }
+
+  /* ---------- Bloodlines (17z33, Isaac) ----------
+   * One line, parent to child: the Digimon you raise here and take into a run is a generation. If it reaches
+   * Mega in that run (BLOODLINE.mega traits) or has a great run (BLOODLINE.great), the line earns that many
+   * trait levels, and every egg after carries them all. Which trait: mostly the stat its element favours,
+   * sometimes the one that goes with it, Power, Quick Study, Head Start or Lucky Scales; never past a trait's
+   * max, and the line holds `cap` levels in all. The family tree keeps every generation: what it was, how far it
+   * got, what it passed on. */
+  function bloodOf(H) { if (!H.blood) { H.blood = freshBlood(0); syncSlot(H); } H.blood.traits = H.blood.traits || {}; H.blood.tree = H.blood.tree || []; return H.blood; }
+  function copyTraits(t) { var o = {}, k; for (k in (t || {})) if (t[k] > 0) o[k] = t[k]; return o; }
+  function traitTotal(t) { var n = 0, k; for (k in (t || {})) n += t[k] || 0; return n; }
+  var FAV = { fire: "str", beast: "str", machine: "dex", wind: "agi", ice: "int", water: "int", dark: "int", holy: "int", nature: "vit", slime: "vit", bubble: "vit" };
+  var SECOND = { str: "agi", int: "dex", dex: "str", agi: "str", vit: "str" };
+  function pickTrait(BL, form, rng) {
+    var B = D.BLOODLINE, fam = D.moveFamilyOf ? D.moveFamilyOf(form) : null, fav = FAV[fam] || "str", W = B.weights, list = [], k;
+    var w = { power: W.power, learn: W.learn, skill: W.skill, shiny: W.shiny }; w[fav] = W.fav; w[SECOND[fav] || "dex"] = (w[SECOND[fav] || "dex"] || 0) + W.second;
+    for (k in w) if ((BL.traits[k] || 0) < B.max) list.push({ id: k, w: w[k] });
+    if (!list.length) return null;
+    return pickW(list, rng || Math.random).id;
+  }
+  /* a run with this line's Digimon has ended: did it earn the line anything? r: { mega, peak (stage name),
+     seconds, nights, story, mode }. Returns { gen, earned: [trait ids], why } or null if no Hatchery Digimon ran. */
+  function runEnded(H, r, rng) {
+    var i;
+    /* the generation that ran came from whichever slot it was raised in */
+    if (H.slots) for (i = 0; i < H.slots.length; i++) if (i !== H.sel && H.slots[i].blood && H.slots[i].blood.live) return inSlot(H, i, function () { return runEndedHere(H, r, rng); });
+    return runEndedHere(H, r, rng);
+  }
+  /* take `n` trait levels off the line, the biggest first */
+  function loseTraits(BL, n) {
+    var lost = [], k, best;
+    while (n-- > 0) {
+      best = null; for (k in BL.traits) if (BL.traits[k] > 0 && (!best || BL.traits[k] > BL.traits[best])) best = k;
+      if (!best) break;
+      BL.traits[best] -= 1; if (!BL.traits[best]) delete BL.traits[best]; lost.push(best);
+    }
+    return lost;
+  }
+  function runEndedHere(H, r, rng) {
+    var B = D.BLOODLINE, BL = bloodOf(H), live = BL.live, why = null, n = 0, got = [], t, i, st, lost = [], fate = null;
+    if (!live || !B) return null;
+    r = r || {};
+    /* it fell (Isaac): reaching Mega first is a valorous death and the line goes on; as an Ultimate or a Champion
+       the line loses traits; a Rookie or younger takes the whole line with it */
+    if (r.died && !r.mega) {
+      st = r.diedStage || r.peak;
+      if (B.lose[st]) { lost = loseTraits(BL, B.lose[st]); fate = "lost"; why = "fell as " + (st === "Ultimate" ? "an Ultimate" : "a " + st); }
+      else {
+        fate = "erased"; why = "fell young (" + (st || "Rookie") + ")";
+        var ended = { gen: live.gen, form: live.form, line: BL.line, traits: copyTraits(BL.traits), at: Date.now() }, lines = BL.line || 1, hist = (BL.ended || []).concat([ended]).slice(-5);
+        H.blood = freshBlood(lines); H.blood.ended = hist; syncSlot(H);
+        return { gen: live.gen, earned: [], lost: Object.keys(ended.traits), why: why, fate: fate, line: lines + 1 };
+      }
+      BL.tree.push({ gen: live.gen, form: live.form, line: live.line, tier: live.tier, peak: r.peakForm || r.peak || null, why: why, earned: [], lost: lost, fate: fate, carried: live.carried || {}, mode: r.mode || null, at: live.at });
+      if (BL.tree.length > 40) BL.tree.splice(0, BL.tree.length - 40);
+      BL.live = null;
+      return { gen: live.gen, earned: [], lost: lost, why: why, fate: fate };
+    }
+    if (r.died && r.mega) { why = "fell after reaching Mega: a valorous death"; n = B.mega; fate = "valorous"; }
+    else if (r.mega) { why = "reached Mega"; n = B.mega; }
+    else if (r.peak === "Ultimate") { why = "reached Ultimate"; n = B.great; }
+    else if ((r.nights || 0) >= B.nights) { why = "held " + r.nights + " nights"; n = B.great; }
+    else if (r.story) { why = "finished the story"; n = B.great; }
+    else if ((r.seconds || 0) >= B.seconds) { why = "lasted " + Math.floor(r.seconds / 60) + " minutes"; n = B.great; }
+    for (i = 0; i < n && traitTotal(BL.traits) < B.cap; i++) { t = pickTrait(BL, live.form, rng); if (!t) break; BL.traits[t] = (BL.traits[t] || 0) + 1; got.push(t); }
+    BL.tree.push({ gen: live.gen, form: live.form, line: live.line, tier: live.tier, peak: r.peakForm || r.peak || null, why: why, earned: got, fate: fate, carried: live.carried || {}, mode: r.mode || null, at: live.at });
+    if (BL.tree.length > 40) BL.tree.splice(0, BL.tree.length - 40);
+    BL.live = null;
+    return { gen: live.gen, earned: got, why: why, fate: fate, full: n > 0 && !got.length };
+  }
+  function traitText(k, lv) {
+    var B = D.BLOODLINE, nm = B.names[k] || k;
+    if (B.names[k] && ["str", "agi", "vit", "int", "dex", "luk"].indexOf(k) >= 0) return nm + " +" + lv * B.stat;
+    if (k === "power") return "Power +" + Math.round(lv * B.power * 100) + "%";
+    if (k === "learn") return "Quick Study +" + Math.round(lv * B.learn * 100) + "% XP";
+    if (k === "skill") return "Head Start +" + lv * B.skill + " skill point" + (lv * B.skill > 1 ? "s" : "");
+    if (k === "shiny") return "Lucky Scales x" + (1 + lv * B.shiny).toFixed(1) + " shiny";
+    return nm + " " + lv;
   }
   /* what a finished run pays: { fire: n, ..., plain: n } */
   function pay(killsBy, seconds) {
@@ -162,7 +304,8 @@
   function killWorth(e) { return e && e.big ? CFG.perBig : (e && e.boss ? CFG.perBoss : CFG.perKill); }
 
   var rules = { CFG: CFG, TIERS: TIERS, STAGES: STAGES, TYPES: TYPES, TYPE_NAME: TYPE_NAME, SKY: SKY, blank: blank, clean: clean, tierOf: tierOf, tierDef: tierDef, linesOf: linesOf, newEgg: newEgg, cost: cost,
-    options: options, feed: feed, ready: ready, use: use, pay: pay, earn: earn, killWorth: killWorth, total: total };
+    options: options, feed: feed, ready: ready, use: use, pay: pay, earn: earn, killWorth: killWorth, total: total,
+    runEnded: runEnded, pickTrait: pickTrait, traitText: traitText, bloodOf: bloodOf, expedition: expedition, select: select, syncSlot: syncSlot, loseTraits: loseTraits };
 
   /* ------------------------------ the page ------------------------------ */
   function $(id) { return document.getElementById(id); }
@@ -177,7 +320,13 @@
   function render() {
     var H = store(), e = H.egg, c = cost(H), grid = $("hatch-data"), h = "", i, t, n, T, max;
     if (!$("hatchery-screen")) return;
-    if (!e && D.profile && D.profile.exists && D.profile.exists()) { e = newEgg(H); keep(); say("A new egg. Nobody knows what is in it until it hatches."); c = cost(H); }
+    /* every empty slot gets a new egg */
+    if (D.profile && D.profile.exists && D.profile.exists()) {
+      var made = 0;
+      for (i = 0; i < H.slots.length; i++) if (!H.slots[i].egg) { inSlot(H, i, function () { newEgg(H); }); made++; }
+      if (made) { keep(); e = H.egg; c = cost(H); if (made === 1 && !H.slots.some(function (s, si) { return si !== H.sel && !s.egg; })) say("A new egg. Nobody knows what is in it until it hatches."); }
+    }
+    renderSlots(H);
     T = e ? tierDef(e.tier) : TIERS[0];
     $("hatch-name").textContent = !e ? "No egg" : (e.stage === 0 ? "Mystery egg" : spName(e.form));
     $("hatch-tag").innerHTML = !e ? "" : "<b style='color:" + T.col + "'>" + T.name + "</b>  ·  " + STAGES[e.stage] + (e.stage >= 1 && e.stage < 3 ? "  ·  raise it to Rookie to open its line" : "") + (e.stage >= 3 ? "  ·  line opened" : "");
@@ -193,8 +342,93 @@
     }
     grid.innerHTML = h;
     $("hatch-use").hidden = !ready(H);
-    if (ready(H)) $("hatch-use").textContent = "Pick " + spName(e.form) + " on the run setup screen to take it into ONE run. It will not come back.";
+    var xp = $("hatch-exped");
+    if (xp) {
+      var XL = H.exped && H.exped.last;
+      xp.hidden = !(e && e.stage >= 1) && !XL;
+      xp.innerHTML = (e && e.stage >= 1 ? "<b>Expeditions:</b> while you play a run without it, " + spName(e.form) + " goes exploring and brings back data, DigiCoins, sometimes an item or a map to a rare egg." : "") +
+        (XL ? "<br><small>Last time " + spName(XL.form) + " was out " + XL.mins + " min and found " + expText(XL) + "." + (H.eggLead ? " Your next egg will be Rare or better." : "") + "</small>" : "");
+    }
+    if (ready(H)) $("hatch-use").textContent = "Slot " + (H.sel + 1) + " is on the stand. Pick " + spName(e.form) + " on the run setup screen to take it into ONE run. It will not come back." + (traitTotal(bloodOf(H).traits) ? " It carries its bloodline's traits with it." : "");
+    renderFed(e, max);
+    renderBlood(H);
     if (noteT <= 0) $("hatch-foot").textContent = "Runs pay data: one for every enemy you defeat, of its element, and a little plain data for time survived. What you feed it, and the sky when you do, shape what it becomes.";
+  }
+  function expText(x) {
+    var bits = [], k;
+    for (k in (x.data || {})) bits.push("+" + x.data[k] + " " + (TYPE_NAME[k] || k) + " data");
+    if (x.coins) bits.push(x.coins + " DigiCoins");
+    if (x.item) bits.push(typeof x.item === "string" ? x.item : x.item.name);
+    if (x.egg) bits.push("a map to a rare egg");
+    return bits.length > 1 ? bits.slice(0, -1).join(", ") + " and " + bits[bits.length - 1] : (bits[0] || "nothing");
+  }
+  /* what it has been fed (Isaac): a bar split by data type, and the numbers, for all it has eaten and for what
+     it has eaten since it last grew (that's what steers the next digivolution). Names and numbers, not colour
+     alone. */
+  function fedRow(label, map, note) {
+    var tot = 0, k, h = "", list = [];
+    for (k in (map || {})) if (map[k] > 0) { tot += map[k]; list.push(k); }
+    list.sort(function (a, b) { return map[b] - map[a]; });
+    h += "<div class='fed-row'><div class='fed-head'><b>" + label + "</b><span>" + tot + " data" + (note ? " · " + note : "") + "</span></div>";
+    if (!tot) return h + "<p class='fed-none'>Nothing yet.</p></div>";
+    h += "<div class='fed-bar'>";
+    list.forEach(function (t) { h += "<i style='width:" + (100 * map[t] / tot).toFixed(1) + "%;background:" + col(t) + "' title='" + TYPE_NAME[t] + " " + map[t] + "'></i>"; });
+    h += "</div><div class='fed-list'>";
+    list.forEach(function (t) { h += "<span><i style='background:" + col(t) + "'></i>" + TYPE_NAME[t] + " <b>" + map[t] + "</b> <small>" + Math.round(100 * map[t] / tot) + "%</small></span>"; });
+    return h + "</div></div>";
+  }
+  function renderFed(e, max) {
+    var box = $("hatch-fed");
+    if (!box) return;
+    box.hidden = !e;
+    if (!e) return;
+    box.innerHTML = fedRow(e.stage === 0 ? "Fed so far" : "Since it last grew", e.now, e.stage === 0 ? "picks which egg it is" : (max ? "fully grown here" : "steers its next digivolution")) +
+      (e.stage > 0 ? fedRow("All it has eaten", e.fed, "goes with it into a run") : "");
+  }
+  /* the three slots: tap one to put it on the stand (feeding, the run setup, a duel and the bloodline all use
+     the one on the stand) */
+  function slotLabel(s) { var e = s.egg; return !e ? "Empty" : (e.stage === 0 ? "Mystery egg" : spName(e.form) + " · " + STAGES[e.stage]); }
+  function renderSlots(H) {
+    var box = $("hatch-slots"), h = "", i, s;
+    if (!box) return;
+    for (i = 0; i < H.slots.length; i++) {
+      s = H.slots[i];
+      h += "<button type='button' class='hatch-slot" + (i === H.sel ? " is-on" : "") + "' data-slot='" + i + "' title='" + slotLabel(s) + "'><small>Slot " + (i + 1) + (i === H.sel ? " · on the stand" : "") + "</small><b>" + slotLabel(s) + "</b><span>Line " + (s.blood.line || 1) + " · Gen " + (s.blood.gen + (s.egg ? 1 : 0)) + (traitTotal(s.blood.traits) ? " · " + traitTotal(s.blood.traits) + " traits" : "") + "</span></button>";
+    }
+    box.innerHTML = h;
+    Array.prototype.forEach.call(box.querySelectorAll("[data-slot]"), function (b) {
+      b.addEventListener("click", function () { var H2 = store(); select(H2, +b.getAttribute("data-slot")); keep(); if (D.uiSfx) D.uiSfx("ui"); render(); });
+    });
+  }
+  /* the line: its generation, its traits (words and numbers), and the family tree when opened */
+  var treeOpen = false;
+  function renderBlood(H) {
+    var box = $("hatch-blood"), BL = bloodOf(H), B = D.BLOODLINE, k, h = "", tr = BL.traits, any = false, i, g, sp;
+    if (!box || !B) return;
+    h += "<p class='hatch-sub'>Bloodline <span class='hub-chip'>Generation <b>" + (BL.gen + (H.egg ? 1 : 0)) + "</b></span> <span class='hub-chip'>Traits <b>" + traitTotal(tr) + "</b> / " + B.cap + "</span></p>";
+    h += "<div class='blood-traits'>";
+    for (k in B.names) if (tr[k] > 0) { any = true; h += "<span class='blood-trait'><b>" + traitText(k, tr[k]) + "</b><small>Lv " + tr[k] + "/" + B.max + "</small></span>"; }
+    if (BL.ended && BL.ended.length && !BL.gen) h += "<span class='blood-none'>Line " + ((BL.line || 2) - 1) + " ended when its " + spName(BL.ended[BL.ended.length - 1].form) + " fell young. This is a new line.</span> ";
+    if (!any) h += "<span class='blood-none'>No traits yet. Take this line's Digimon into a run: reach Ultimate, last " + Math.round(B.seconds / 60) + " minutes, hold " + B.nights + " nights in Night Siege or finish the story to pass one on. Reach Mega to pass on " + B.mega + ".</span>";
+    h += "</div><p class='blood-note'>" + (any ? "Every egg from here on carries all of these into its run. " : "") + "If it falls in its run: after reaching Mega, a valorous death and the line goes on; as an Ultimate the line loses " + B.lose.Ultimate + " trait level, as a Champion " + B.lose.Champion + "; as a Rookie or younger the whole line is erased.</p>";
+    h += "<button type='button' class='btn blood-tree-btn' id='btn-blood-tree'>" + (treeOpen ? "Hide the family tree" : "Family tree (" + BL.tree.length + ")") + "</button>";
+    if (treeOpen) {
+      h += "<ol class='blood-tree'>";
+      if (!BL.tree.length) h += "<li class='blood-none'>No generations yet: the first is the one you take into a run.</li>";
+      for (i = BL.tree.length - 1; i >= 0; i--) {
+        g = BL.tree[i]; sp = spName(g.form);
+        h += "<li class='" + (g.fate ? "is-" + g.fate : "") + "'><b>Gen " + g.gen + " · " + sp + (g.peak && g.peak !== g.form ? " → " + spName(g.peak) : "") + (g.fate === "valorous" ? " · valorous death" : (g.fate === "lost" ? " · fell" : "")) + "</b>" +
+          "<span>" + (g.fate === "lost" ? g.why + ": the line lost " + (g.lost && g.lost.length ? g.lost.map(function (t) { return B.names[t] || t; }).join(", ") : "nothing (it had no traits)") : (g.why ? g.why + ": passed on " + (g.earned.length ? g.earned.map(function (t) { return B.names[t] || t; }).join(", ") : "nothing (the line is full)") : "passed on nothing this time")) + "</span>" +
+          "<small>carried " + (traitTotal(g.carried) ? Object.keys(g.carried).map(function (t) { return traitText(t, g.carried[t]); }).join(", ") : "no traits") + "</small></li>";
+      }
+      h += "</ol>";
+    }
+    box.innerHTML = h;
+    var bt = $("btn-blood-tree");
+    if (bt) bt.addEventListener("click", function () {
+      treeOpen = !treeOpen; if (D.uiSfx) D.uiSfx("ui"); renderBlood(store());
+      var tl = box.querySelector(".blood-tree"); if (tl && tl.scrollIntoView) tl.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    });
   }
   function onClick(ev) {
     var b = ev.target.closest ? ev.target.closest("[data-feed]") : null, H, r, t, n, was;
@@ -254,7 +488,31 @@
     bank: function (killsBy, seconds) { var H = store(), got = pay(killsBy, seconds); if (!D.profile || !D.profile.exists || !D.profile.exists()) return got; earn(H, got); keep(); return got; },
     /* a run is starting with it: hand it over and clear the stand */
     take: function () { var H = store(), r = use(H); if (r) keep(); return r; },
-    killWorth: killWorth, typeName: function (t) { return TYPE_NAME[t] || t; }
+    killWorth: killWorth, typeName: function (t) { return TYPE_NAME[t] || t; },
+    /* the Rookies you've raised here (17z33, for Versus): every one recorded, and the one on the stand now if
+       it has got that far (eggs raised before this was kept count through that) */
+    /* a run is over (game.js endRun): the Digimon on the stand went exploring if it wasn't in it; pays the coins and
+       any item, and returns the report for the run-over screen */
+    expeditionEnd: function (r) {
+      var H = store(), out = expedition(H, r), it;
+      if (!out) return null;
+      if (out.coins && D.cosmetics && D.cosmetics.grantBits) D.cosmetics.grantBits(out.coins, "expedition");
+      if (out.item && D.items && D.items.pick && D.items.give) { it = D.items.pick("cons"); out.item = it ? D.items.give(it, "an expedition") : null; if (H.exped && H.exped.last) H.exped.last.item = out.item ? out.item.name : null; }
+      else out.item = null;
+      keep();
+      return out;
+    },
+    /* Duel (17z33): the Digimon on the stand as it is, for a duel. Nothing is spent or changed. null: nothing hatched */
+    duelSpec: function () { var H = store(), e = H.egg, BL = bloodOf(H); if (!e || !(e.stage >= 1) || !e.form) return null; return { form: e.form, level: CFG.level[e.stage - 1] || 1, blood: { gen: BL.gen + 1, traits: copyTraits(BL.traits) } }; },
+    /* a run is over: if it was this line's Digimon, did it earn the line a trait? (game.js endRun) */
+    runEnded: function (r) { var H = store(), got = runEnded(H, r); if (got) keep(); return got; },
+    traitText: traitText, expText: expText,
+    rookies: function () {
+      var H = store(), out = {}, k, r = (H.egg && H.egg.route) || [], i;
+      for (k in H.rookies) out[k] = 1;
+      if (H.egg && H.egg.stage >= 3) for (i = 0; i < r.length; i++) if (D.SPECIES && D.SPECIES[r[i]] && D.SPECIES[r[i]].stage === "Rookie") out[r[i]] = 1;
+      return Object.keys(out);
+    }
   };
   if (typeof document !== "undefined") { if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init); else init(); }
 })(typeof window !== "undefined" ? window : globalThis);

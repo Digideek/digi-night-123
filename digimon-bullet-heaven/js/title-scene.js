@@ -952,6 +952,8 @@
     /* the sky over the title screen right now ("day", "night", "rain", ...): the Hatchery reads it */
     phase: function () { return PHASES[phaseIdx] ? PHASES[phaseIdx].id : null; },
     restamp: function () { stampLabels(document); },
+    /* the egg grid (egg-grid.js) picked one: show it on the hill */
+    syncEgg: function () { if (mode === "egg") syncEggPick(true); },
     /* true while a locked egg is on show, so Start does nothing */
     blockStart: function () { return mode === "egg" && !!eggFrameFor(viewEgg || "agumon").locked; },
     setPhase: function (id) {

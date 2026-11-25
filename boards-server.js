@@ -16,6 +16,12 @@
  *   pvp      most PvP wins (all time, added up)
  *   ranked   best Ranked score (one life, no CPU partners)
  *   weekly   best score on this week's map
+ *   story    fastest Story finished (seconds, lower is better)          (17z33: a board for each mode)
+ *   siege    most nights held in Night Siege
+ *   versus   Versus matches won (all time)
+ *   (Duels are just for fun (Isaac): no board, only your own record, wins and losses, in `me`.)
+ * The first five only count Survival runs (Open World, One Life, Ranked, Weekly). Every best keeps what it was
+ * done with: the partner's form, and its Hatchery generation if it came from the Hatchery (tags).
  *
  * Faction seasons: each week a player may back one biome. Every run they
  * send in that week adds the land that biome had conquered by the end of it,
@@ -46,8 +52,12 @@ var BOARDS = {
   lords:  { field: "lords", low: false, label: "Most lords" },
   pvp:    { field: "pvpTotal", low: false, label: "PvP wins" },
   ranked: { field: "ranked", low: false, label: "Ranked" },
-  weekly: { field: "weekly", low: false, label: "Weekly map" }
+  weekly: { field: "weekly", low: false, label: "Weekly map" },
+  story:  { field: "storyTime", low: true, label: "Fastest story" },
+  siege:  { field: "nights", low: false, label: "Most nights held" },
+  versus: { field: "vsWins", low: false, label: "Versus wins" }
 };
+var SURVIVAL = ["open", "survival", "ranked", "weekly"];
 var db = null, accounts = null, lastSubmit = {};
 
 function load() {
@@ -71,7 +81,7 @@ function num(v, lo, hi) { v = +v; if (!isFinite(v)) return 0; return Math.max(lo
 function cleanRec(r) {
   if (!r || typeof r !== "object") return null;
   var out = {
-    mode: ["open", "survival", "ranked", "weekly"].indexOf(r.mode) >= 0 ? r.mode : "open",
+    mode: SURVIVAL.concat(["story", "siege", "versus", "duel"]).indexOf(r.mode) >= 0 ? r.mode : "open",
     week: typeof r.week === "string" ? r.week.slice(0, 10) : null,
     seed: num(r.seed, 0, 4294967295),
     time: num(r.time, 0, 12 * 3600),
@@ -83,7 +93,12 @@ function cleanRec(r) {
     megaAt: r.megaAt ? num(r.megaAt, 1, 12 * 3600) : null,
     respawns: num(r.respawns, 0, 999),
     faction: FACTIONS.indexOf(r.faction) >= 0 ? r.faction : null,
-    landBy: {}
+    landBy: {},
+    nights: num(r.nights, 0, 9999),
+    storyDone: !!r.storyDone,
+    vsWin: !!r.vsWin,
+    /* what it was done with: the partner's form, and its Hatchery generation (0: not from the Hatchery) */
+    tag: r.tag && typeof r.tag.form === "string" ? { form: r.tag.form.replace(/[^a-z0-9_]/g, "").slice(0, 40), gen: num(r.tag.gen, 0, 9999) } : null
   }, k;
   if (r.landBy && typeof r.landBy === "object") for (k in r.landBy) if (FACTIONS.indexOf(k) >= 0) out.landBy[k] = num(r.landBy[k], 0, 5000);
   /* what a run can plausibly reach in its time */
@@ -91,6 +106,10 @@ function cleanRec(r) {
   if (out.kills > 40 + mins * 120) return null;
   if (out.megaAt && out.megaAt > out.time + 5) return null;
   if (out.lords > 2 + mins / 6) return null;
+  if (out.nights > 1 + out.time / 150) return null;                         /* a Night Siege day is 182 s */
+  if (out.storyDone && out.time < 120) return null;
+  if (out.vsWin && out.mode === "versus" && out.time < 400) return null;     /* the race alone is 7 minutes */
+  if (out.mode === "duel" && out.time < 8) return null;
   out.score = modes.score({}, out);
   return out;
 }
@@ -98,6 +117,7 @@ function entry(key, name) {
   var d = load(), e = d.players[key];
   if (!e) e = d.players[key] = { name: name, level: 0, megaAt: null, time: 0, lords: 0, pvpTotal: 0, ranked: 0, weeks: {}, backs: {}, claimed: {}, runs: 0 };
   e.name = name;
+  e.storyTime = e.storyTime || null; e.nights = e.nights || 0; e.vsWins = e.vsWins || 0; e.duelWins = e.duelWins || 0; e.duelLosses = e.duelLosses || 0; e.tags = e.tags || {};
   e.weeks = e.weeks || {}; e.backs = e.backs || {}; e.claimed = e.claimed || {};
   return e;
 }
@@ -108,7 +128,7 @@ function top(id, week) {
     e = d.players[k];
     v = id === "weekly" ? (e.weeks[week] && e.weeks[week].weekly) : e[b.field];
     if (!v) continue;
-    out.push({ name: e.name, v: v, key: k });
+    out.push({ name: e.name, v: v, key: k, tag: (e.tags && e.tags[id]) || null });
   }
   out.sort(function (x, y) { return b.low ? x.v - y.v : y.v - x.v; });
   return out.slice(0, BOARD_N);
@@ -120,22 +140,37 @@ function season(week) {
   list.sort(function (x, y) { return y.pts - x.pts; });
   return list;
 }
-function strip(list) { return list.map(function (x) { return { name: x.name, v: x.v }; }); }
+function strip(list) { return list.map(function (x) { return { name: x.name, v: x.v, tag: x.tag || null }; }); }
 
 var HANDLERS = {
   submit: function (b, acc) {
     if (!acc) return [401, { reason: "signed-out" }];
     var now = Date.now(), r = cleanRec(b.rec), e, week = modes.weekOf(now), placed = {}, backed, k, add;
     if (!r) return [400, { reason: "That run could not be counted." }];
-    if (lastSubmit[acc.key] && now - lastSubmit[acc.key] < 20000) return [429, { reason: "Slow down." }];
-    lastSubmit[acc.key] = now;
+    /* a duel is short: its own, shorter wait, and it never touches the boards */
+    var lk = acc.key + (r.mode === "duel" ? "|duel" : "");
+    if (lastSubmit[lk] && now - lastSubmit[lk] < (r.mode === "duel" ? 5000 : 20000)) return [429, { reason: "Slow down." }];
+    lastSubmit[lk] = now;
+    if (r.mode === "duel") {
+      e = entry(acc.key, acc.name);
+      if (r.vsWin) e.duelWins += 1; else e.duelLosses += 1;
+      persist();
+      return [200, { ok: true, duel: { wins: e.duelWins, losses: e.duelLosses } }];
+    }
     e = entry(acc.key, acc.name);
     e.runs += 1;
-    if (r.level > e.level) { e.level = r.level; placed.level = 1; }
-    if (r.megaAt && better(BOARDS.mega, r.megaAt, e.megaAt)) { e.megaAt = r.megaAt; placed.mega = 1; }
-    if (r.time > e.time) { e.time = r.time; placed.time = 1; }
-    if (r.lords > e.lords) { e.lords = r.lords; placed.lords = 1; }
-    if (r.pvp) { e.pvpTotal += r.pvp; placed.pvp = 1; }
+    var surv = SURVIVAL.indexOf(r.mode) >= 0;
+    if (surv) {
+      if (r.level > e.level) { e.level = r.level; placed.level = 1; }
+      if (r.megaAt && better(BOARDS.mega, r.megaAt, e.megaAt)) { e.megaAt = r.megaAt; placed.mega = 1; }
+      if (r.time > e.time) { e.time = r.time; placed.time = 1; }
+      if (r.lords > e.lords) { e.lords = r.lords; placed.lords = 1; }
+      if (r.pvp) { e.pvpTotal += r.pvp; placed.pvp = 1; }
+    }
+    /* a board for each mode (17z33) */
+    if (r.mode === "story" && r.storyDone && better(BOARDS.story, r.time, e.storyTime)) { e.storyTime = r.time; placed.story = 1; }
+    if (r.mode === "siege" && r.nights > e.nights) { e.nights = r.nights; placed.siege = 1; }
+    if (r.mode === "versus" && r.vsWin) { e.vsWins += 1; placed.versus = 1; }
     if (r.mode === "ranked" && r.score > e.ranked) { e.ranked = r.score; placed.ranked = 1; }
     e.weeks[week] = e.weeks[week] || { weekly: 0 };
     if (r.mode === "weekly" && r.week === week && r.seed === modes.weekSeed(week) && r.score > e.weeks[week].weekly) { e.weeks[week].weekly = r.score; placed.weekly = 1; }
@@ -145,6 +180,7 @@ var HANDLERS = {
       add = (r.landBy[backed] || 0) + r.pvp * SEASON.pvp;
       if (add) { load().seasons[week] = load().seasons[week] || {}; load().seasons[week][backed] = (load().seasons[week][backed] || 0) + add; }
     }
+    for (k in placed) if (r.tag) e.tags[k] = r.tag;                          /* what the best (or the latest win) was done with */
     for (k in placed) placed[k] = placeOf(k, acc.key, week);
     persist();
     return [200, { ok: true, score: r.score, placed: placed, season: backed ? { faction: backed, added: add || 0 } : null }];
@@ -154,7 +190,8 @@ var HANDLERS = {
     for (id in BOARDS) boards[id] = { label: BOARDS[id].label, low: BOARDS[id].low, list: strip(top(id, week)) };
     if (acc) {
       e = load().players[acc.key];
-      me = { name: acc.name, bests: e ? { level: e.level, megaAt: e.megaAt, time: e.time, lords: e.lords, pvp: e.pvpTotal, ranked: e.ranked, weekly: (e.weeks[week] && e.weeks[week].weekly) || 0, runs: e.runs } : null,
+      me = { name: acc.name, bests: e ? { level: e.level, megaAt: e.megaAt, time: e.time, lords: e.lords, pvp: e.pvpTotal, ranked: e.ranked, weekly: (e.weeks[week] && e.weeks[week].weekly) || 0, runs: e.runs,
+        story: e.storyTime || null, nights: e.nights || 0, vsWins: e.vsWins || 0, duelWins: e.duelWins || 0, duelLosses: e.duelLosses || 0 } : null,
         backing: e ? e.backs[week] || null : null, places: {} };
       for (id in BOARDS) me.places[id] = placeOf(id, acc.key, week);
       me.claim = claimable(e, last);

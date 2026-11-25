@@ -25,8 +25,8 @@
   function setSeason(id) {
     if (!id || id === season) return false;
     season = id;
-    /* Re-bake lazily: chunks and tiles are rebuilt as they are drawn. */
-    dropAllChunks();
+    /* Re-bake lazily: chunks are redrawn a few a frame (staleAll), the old ones shown meanwhile. */
+    staleAll();
     tileCache = {};
     return true;
   }
@@ -133,10 +133,44 @@
     if (!id || had === id) return false;
     if (id === nat) { if (terr[k]) { delete terr[k]; terrN--; } }
     else { if (!terr[k]) terrN++; terr[k] = id; }
-    ownCache = {}; ownCount = 0; propCache = {}; propCount = 0;
-    for (j = -1; j <= 1; j++) for (i = -1; i <= 1; i++) dropChunk(chunkKey(cx + i, cy + j));
-    terrVer++; iceVer++;
+    forgetNear(cx, cy);
+    for (j = -1; j <= 1; j++) for (i = -1; i <= 1; i++) staleChunk(chunkKey(cx + i, cy + j));
+    terrVer++;
+    mapChanged(cx * TERR - TERR_PAD, cy * TERR - TERR_PAD, (cx + 1) * TERR + TERR_PAD, (cy + 1) * TERR + TERR_PAD);
     return true;
+  }
+  /* A cell changing hands only touches the tiles round it (its own, and the few tiles its ragged
+   * edge reaches past them). It used to wipe the whole map's remembered biomes and props and tell
+   * the pathfinding the whole map had changed (17z33), which made the host rework everything. */
+  var TERR_PAD = 6, mapLog = [];
+  /* What changed underfoot, for the pathfinding (mission-sim.js _navReady): every change bumps the map
+   * version and notes the tile box it touched, or null for "everything" (the ice level stepping with
+   * the season, a new map). The pathfinding then forgets just those tiles. (17z33: any border move or
+   * ice attack used to make it forget the whole map.) */
+  function mapChanged(x0, y0, x1, y1) {
+    iceVer++;
+    mapLog.push([iceVer, x0 == null ? null : [x0, y0, x1, y1]]);
+    if (mapLog.length > 600) mapLog.splice(0, 200);
+  }
+  /* the tile boxes changed since map version v, or null if the whole map must be worked out again */
+  function mapChanges(v) {
+    var out = [], i;
+    if (v >= iceVer) return out;
+    if (!mapLog.length || mapLog[0][0] > v + 1) return null;
+    for (i = 0; i < mapLog.length; i++) {
+      if (mapLog[i][0] <= v) continue;
+      if (!mapLog[i][1]) return null;
+      out.push(mapLog[i][1]);
+    }
+    return out;
+  }
+  function forgetNear(cx, cy) {
+    var tx, ty, k, x0 = cx * TERR - TERR_PAD, x1 = (cx + 1) * TERR + TERR_PAD, y0 = cy * TERR - TERR_PAD, y1 = (cy + 1) * TERR + TERR_PAD;
+    for (ty = y0; ty < y1; ty++) for (tx = x0; tx < x1; tx++) {
+      k = tkey(tx, ty);
+      if (ownCache[k] !== undefined) { delete ownCache[k]; ownCount--; }
+      if (propCache[k] !== undefined) { delete propCache[k]; propCount--; }
+    }
   }
   /* the cells that have changed hands, as one short string ("cx,cy,biome;..."), and back */
   function territoryString() {
@@ -501,7 +535,8 @@
           else if (frozenLook) {
             g = grassColor(x, y, tx, ty, variant);
             col = mixHex(g, iceColor(x, y, tx, ty, cov, variant), Math.min(1, cov * 1.2));
-            if (cov > 0.2 && cov < 0.55) col = mixHex(col, "#f4fbff", 0.45);   /* a frosted rim where it meets the bank */
+            if (cov > 0.2 && cov < 0.42) col = mixHex(col, "#4a6688", 0.6);   /* a darker rim where it meets the bank, so ice shows on snow */
+            else if (cov >= 0.42 && cov < 0.62) col = mixHex(col, "#f4fbff", 0.45);
           } else {
             g = grassColor(x, y, tx, ty, variant);
             col = mixHex(g, waterColor(x, y, tx, ty, cov), Math.min(1, cov * 1.15));
@@ -570,9 +605,16 @@
   function glRelease(ch) {
     var R = D.gl && D.gl.renderer;
     if (ch && ch.canvas && R && R.release) R.release(ch.canvas);
+    if (ch && ch.foam && R && R.release) { R.release(ch.foam.a); R.release(ch.foam.b); }
+    if (ch && ch.lava && R && R.release) ch.lava.forEach(function (c) { R.release(c); });
   }
   function dropChunk(key) { if (cache[key]) { glRelease(cache[key]); delete cache[key]; cacheN--; } }
-  function dropAllChunks() { var k; for (k in cache) glRelease(cache[k]); cache = {}; cacheN = 0; }
+  function dropAllChunks() { var k; for (k in cache) glRelease(cache[k]); cache = {}; cacheN = 0; if (typeof stats !== "undefined") stats.dropAll++; }
+  /* Out of date, but kept on screen until its turn to be redrawn (17z33): a border moving, ice
+   * coming or going, a season turning used to throw away every chunk it touched at once and bake
+   * them all again in that one frame (a whole screen of them when the ice stepped up) */
+  function staleChunk(key) { if (cache[key]) cache[key].stale = true; }
+  function staleAll() { var k; for (k in cache) cache[k].stale = true; if (typeof stats !== "undefined") stats.dropAll++; }
   function chunkKey(cx, cy) {
     return cx + "," + cy;
   }
@@ -656,6 +698,21 @@
     return null;
   }
 
+  function meadowAt(tx, ty) { return isMeadow(tx, ty, materialAt(tx, ty), distT(tx, ty)) && !propKindAt(tx, ty, materialAt(tx, ty), distT(tx, ty)); }
+  function meadowRows(props, tx, ty) {
+    var n = meadowAt(tx, ty - 1), so = meadowAt(tx, ty + 1), w = meadowAt(tx - 1, ty), e = meadowAt(tx + 1, ty);
+    var rows = [[0.34, 0, 731], [0.67, 4, 732], [1, -3, 733]], k, jx, h;
+    for (k = 0; k < 3; k++) {
+      h = hash2(tx, ty, seed + 740 + k);
+      if (k === 0 && !n && h < 0.6) continue;
+      if (k === 2 && !so && h < 0.35) continue;
+      jx = rows[k][1] + (hash2(tx, ty, seed + 750 + k) - 0.5) * 12;
+      if (!w && jx < 0 && h < 0.5) jx = -jx * 0.5 + 6;
+      if (!e && jx > 0 && h < 0.5) jx = -jx * 0.5 - 6;
+      props.push({ kind: "meadow" + ((hash2(tx, ty, seed + rows[k][2]) * 3) | 0), x: (tx + 0.5) * TILE + jx, y: (ty + rows[k][0]) * TILE + (hash2(tx, ty, seed + 760 + k) - 0.5) * 5, grass: true, tk: tx + "," + ty });
+    }
+  }
+
   function buildChunk(cx, cy) {
     var pad = faceH + 4;
     var w = CHUNK * TILE;
@@ -690,10 +747,10 @@
         }
         kind = propKindAt(tx, ty, mat, d);
         if (!kind && isMeadow(tx, ty, mat, d)) {
-          /* tall grass you wade through: three rows of blades a tile, so whoever stands in it is covered to the waist */
-          props.push({ kind: "meadow" + ((hash2(tx, ty, seed + 731) * 3) | 0), x: (tx + 0.5) * TILE, y: (ty + 0.34) * TILE, grass: true, tk: tx + "," + ty });
-          props.push({ kind: "meadow" + ((hash2(tx, ty, seed + 732) * 3) | 0), x: (tx + 0.5) * TILE + 4, y: (ty + 0.67) * TILE, grass: true, tk: tx + "," + ty });
-          props.push({ kind: "meadow" + ((hash2(tx, ty, seed + 733) * 3) | 0), x: (tx + 0.5) * TILE - 3, y: (ty + 1) * TILE, grass: true, tk: tx + "," + ty });
+          /* tall grass you wade through: three rows of blades a tile, so whoever stands in it is covered to the waist.
+             17z33: rows sit a little off the grid and the field's outer rows thin out, so a meadow has a ragged
+             edge instead of reading as a pasted rectangle */
+          meadowRows(props, tx, ty);
         } else if (shouldTallGrass(tx, ty, mat, d)) {
           props.push({
             tk: tx + "," + ty, tuft: true,
@@ -713,6 +770,7 @@
         }
       }
     }
+    finishGround(ctx, cx, cy);
     /* Pass 2: south faces of the row north of this chunk (iy = -1) and of rows 0..CHUNK-2.
        The last row's face is drawn by the chunk below. */
     for (iy = -1; iy < CHUNK - 1; iy++) {
@@ -731,13 +789,434 @@
         ctx.fillRect(px + SCALE, py + faceH - SCALE, TILE - SCALE * 2, SCALE * 2);
       }
     }
-    return { canvas: canvas, props: props, cx: cx, cy: cy, pad: pad };
+    /* 17z33: the strip below the ground (room for cliff faces that hang into the next chunk) was clear
+       where there are no faces. When the screen is drawn at a scale that blends neighbouring pixels (a
+       phone at 2x, rendered at 1.5x) the chunk's last row mixed with that clear strip and the dark
+       background showed through as a thin line along every chunk edge. The last row is copied in behind
+       whatever is there; the chunk below is drawn over this strip anyway. */
+    ctx.save();
+    ctx.globalCompositeOperation = "destination-over";
+    ctx.drawImage(canvas, 0, w - 1, w, 1, 0, w, w, 3);
+    ctx.restore();
+    var foam = lastFoam, lava = lastLava; lastFoam = null; lastLava = null;
+    return { canvas: canvas, props: props, cx: cx, cy: cy, pad: pad, foam: foam, lava: lava };
   }
 
+  /* 17z33: the ground's finishing pass, once per chunk, at art-pixel scale and in world coordinates (so
+   * nothing repeats tile to tile):
+   *   grass  broad light and shade patches, dithered in at their edges, and little three-blade tufts
+   *          (natural biomes) scattered by the tile's own hash
+   *   water  depth: shallow and clearer near the bank, darker the further out, smoothly across tiles
+   *   path   a few pebbles
+   * Cliffs, lava, ice and the digital biomes' patterns are left as they are. */
+  var BAYER = [0, 0.5, 0.75, 0.25], shoreCache = {}, lastFoam = null, lastLava = null;
+  function finishGround(ctx, cx, cy) {
+    if (!ctx.getImageData) return;
+    var N = CHUNK * 16, W = CHUNK * TILE, img, d, R = 3, M = CHUNK + R * 2, mats = [], depth = [], ix, iy, tx, ty, k, j, best, mt;
+    try { img = ctx.getImageData(0, 0, W, W); } catch (e) { return; }
+    d = img.data;
+    /* materials and water depth in tiles (how far to the nearest non-water tile, up to R) */
+    for (iy = 0; iy < M; iy++) for (ix = 0; ix < M; ix++) mats[iy * M + ix] = materialAt(cx * CHUNK + ix - R, cy * CHUNK + iy - R);
+    for (iy = 0; iy < M; iy++) for (ix = 0; ix < M; ix++) {
+      if (mats[iy * M + ix] !== MAT.WATER) { depth[iy * M + ix] = 0; continue; }
+      best = R + 1;
+      for (k = -R; k <= R; k++) for (j = -R; j <= R; j++) {
+        if (iy + k < 0 || iy + k >= M || ix + j < 0 || ix + j >= M) continue;
+        if (mats[(iy + k) * M + ix + j] !== MAT.WATER) best = Math.min(best, Math.max(Math.abs(k), Math.abs(j)));
+      }
+      depth[iy * M + ix] = best;
+    }
+    function dep(fx, fy) {          /* tile depth, smooth between tile centres */
+      var gx = fx - 0.5 + R, gy = fy - 0.5 + R, x0 = Math.floor(gx), y0 = Math.floor(gy), u = gx - x0, v = gy - y0;
+      function at(a, b) { a = Math.max(0, Math.min(M - 1, a)); b = Math.max(0, Math.min(M - 1, b)); return depth[b * M + a]; }
+      return (at(x0, y0) * (1 - u) + at(x0 + 1, y0) * u) * (1 - v) + (at(x0, y0 + 1) * (1 - u) + at(x0 + 1, y0 + 1) * u) * v;
+    }
+    var Bs = [], natural = [], tufts = [], meadowG = [], ti, ax, ay, wx, wy, n, sh, i, r, g, b2, lx, ly, f, tf, dp, bayer, h, tile;
+    for (iy = 0; iy < CHUNK; iy++) for (ix = 0; ix < CHUNK; ix++) {
+      tx = cx * CHUNK + ix; ty = cy * CHUNK + iy; ti = iy * CHUNK + ix;
+      Bs[ti] = biomeDef(tx, ty);
+      natural[ti] = !Bs[ti] || !!Bs[ti].seasonal;
+      tufts[ti] = [];
+      B = Bs[ti];
+      meadowG[ti] = mats[(iy + R) * M + ix + R] === MAT.GRASS && isMeadow(tx, ty, MAT.GRASS, distT(tx, ty));
+      if (natural[ti] && !meadowG[ti] && mats[(iy + R) * M + ix + R] === MAT.GRASS) {
+        h = hash2(tx, ty, seed + 911);
+        for (k = 0; k < (h > 0.55 ? 2 : (h > 0.18 ? 1 : 0)); k++) tufts[ti].push([2 + ((hash2(tx, ty, seed + 912 + k) * 11) | 0), 3 + ((hash2(tx, ty, seed + 915 + k) * 10) | 0), hash2(tx, ty, seed + 918 + k) > 0.5]);
+      }
+    }
+    /* grass tone noise on a coarse grid (every 4 art pixels), blended between: same look, a fraction of the cost */
+    var G = N / 4 + 1, grid = new Float32Array(G * G);
+    for (iy = 0; iy < G; iy++) for (ix = 0; ix < G; ix++) grid[iy * G + ix] = fbm((cx * N + ix * 4) / 46, (cy * N + iy * 4) / 46, seed + 501);
+    function noiseAt(px, py) {
+      var gx = px >> 2, gy = py >> 2, u = (px & 3) / 4, v = (py & 3) / 4, o = gy * G + gx;
+      return (grid[o] * (1 - u) + grid[o + 1] * u) * (1 - v) + (grid[o + G] * (1 - u) + grid[o + G + 1] * u) * v;
+    }
+    /* 17z33 smooth shores and path edges. Each tile's material is blurred a little (a Gaussian over the
+     * tile grid, worked out exactly per art pixel) and thresholded, so water and paths follow clean round
+     * curves instead of the tile staircase. Only the picture changes: what you can walk on is still the tile.
+     * Codes: 1 grass, 2 path, 3 water, 4 ice (left as drawn), 0 cliff top (left as drawn). Cliffs push the
+     * water back so a grass lip stays at the foot of a cliff. Along every shore: a dark ink line, then foam,
+     * so the edge reads by brightness alone (colour-blind players). */
+    /* biomes per tile (for the borders below, and so lava and water know which they are) */
+    var bM = [], mixB = new Uint8Array(M * M), lq = new Uint8Array(M * M);
+    for (k = 0; k < M * M; k++) bM[k] = biomeDef(cx * CHUNK + (k % M) - R, cy * CHUNK + ((k / M) | 0) - R);
+    var E = 3, PW = N + E * 2, code = new Uint8Array(PW * PW), dist = new Uint8Array(PW * PW), liqT = new Int16Array(PW * PW), vW = [], vA = [], vL = [], vP = [], fzM = [], WT = [], m0, q, fw, fa, fl, fp, thr, vn, o, oy, ox, c0, bw, bq;
+    for (k = 0; k < M * M; k++) {
+      m0 = mats[k];
+      /* Freezeland's lakes are always ice and drawn like water, so they get smooth shores too; only a lake
+         frozen over in winter (drawn as ice) is left as it is */
+      ix = cx * CHUNK + (k % M) - R; iy = cy * CHUNK + ((k / M) | 0) - R;
+      fzM[k] = m0 === MAT.WATER && isFrozenTile(ix, iy) && (bM[k] || {}).id !== "snow";
+      /* liquids: 1 water, 2 lava. Each pulls back from the other (and from cliffs), so where a lava field
+         meets a lake there is a strip of bank with an outline on both sides, never one straight seam */
+      lq[k] = m0 === MAT.WATER ? (bM[k] && bM[k].solidWater ? 2 : 1) : 0;
+      vW[k] = m0 === MAT.CLIFF || lq[k] === 2 ? -1 : (lq[k] === 1 && !fzM[k] ? 1 : 0);
+      vA[k] = m0 === MAT.CLIFF || lq[k] === 2 ? -1 : (lq[k] === 1 ? 1 : 0);
+      vL[k] = m0 === MAT.CLIFF || lq[k] === 1 ? -1 : (lq[k] === 2 ? 1 : 0);
+      vP[k] = m0 === MAT.CLIFF ? -1 : (m0 === MAT.PATH ? 1 : 0);
+    }
+    /* 17z33 biome borders: biomes are handed out per tile, which left a staircase where two meet. Grass and
+     * path pixels near a border take whichever biome covers more of the blurred neighbourhood (same blur
+     * as the shores), with a little dither at the line, so borders curve. Liquids take their colour from
+     * the tile they come from (liqT), so lava, ice and water never swap looks. */
+    for (iy = 2; iy < M - 2; iy++) for (ix = 2; ix < M - 2; ix++) {
+      q = iy * M + ix;
+      for (k = -2; k <= 2 && !mixB[q]; k++) for (j = -2; j <= 2; j++) if (bM[q + k * M + j] !== bM[q]) { mixB[q] = 1; break; }
+    }
+    /* the shore's wobble: value noise on a 4-pixel world grid, blended */
+    var VG = ((N + 8) >> 2) + 2, vgrid = new Float32Array(VG * VG);
+    for (iy = 0; iy < VG; iy++) for (ix = 0; ix < VG; ix++) vgrid[iy * VG + ix] = valueNoise((cx * N - 4 + ix * 4) / 9, (cy * N - 4 + iy * 4) / 9, seed + 611);
+    /* biome borders meander more slowly and further than shores, so a long straight border wanders */
+    var bgrid = new Float32Array(VG * VG), bgrid2 = new Float32Array(VG * VG);
+    for (iy = 0; iy < VG; iy++) for (ix = 0; ix < VG; ix++) {
+      bgrid[iy * VG + ix] = valueNoise((cx * N - 4 + ix * 4) / 30, (cy * N - 4 + iy * 4) / 30, seed + 617);
+      bgrid2[iy * VG + ix] = valueNoise((cx * N - 4 + ix * 4) / 30, (cy * N - 4 + iy * 4) / 30, seed + 619);
+    }
+    /* a tile whose eight neighbours are all the same material needs no blur: it is that material throughout */
+    var uni = new Uint8Array(M * M);
+    for (iy = 1; iy < M - 1; iy++) for (ix = 1; ix < M - 1; ix++) {
+      q = iy * M + ix; uni[q] = 1;
+      for (k = -1; k <= 1 && uni[q]; k++) for (j = -1; j <= 1; j++) if (mats[q + k * M + j] !== mats[q] || fzM[q + k * M + j] !== fzM[q] || lq[q + k * M + j] !== lq[q]) { uni[q] = 0; break; }
+    }
+    /* WT[l*3+k]: how much of a pixel at local coordinate l (0-15) falls on the tile k-1 tiles over, blurred */
+    function Phi(z) { var t = 1 / (1 + 0.3275911 * Math.abs(z) / 1.41421356), e = 1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-z * z / 2); return z < 0 ? (1 - e) / 2 : (1 + e) / 2; }
+    for (k = 0; k < 16; k++) for (j = -1; j <= 1; j++) WT[k * 3 + j + 1] = Phi((16 * (j + 1) - (k + 0.5)) / 6.6) - Phi((16 * j - (k + 0.5)) / 6.6);
+    for (ay = -E; ay < N + E; ay++) for (ax = -E; ax < N + E; ax++) {
+      iy = (ay + 16 * R) >> 4; ix = (ax + 16 * R) >> 4; q = iy * M + ix; m0 = mats[q]; o = (ay + E) * PW + ax + E;
+      if (m0 === MAT.CLIFF) { code[o] = 0; continue; }
+      if (fzM[q]) { code[o] = 4; continue; }
+      if (uni[q]) { code[o] = m0 === MAT.WATER ? 3 : (m0 === MAT.PATH ? 2 : 1); liqT[o] = q; continue; }
+      fw = 0; fa = 0; fl = 0; fp = 0; lx = (ax + 16 * R) & 15; ly = (ay + 16 * R) & 15;
+      for (k = -1; k <= 1; k++) for (j = -1; j <= 1; j++) {
+        oy = WT[ly * 3 + k + 1] * WT[lx * 3 + j + 1]; c0 = q + k * M + j;
+        if (iy + k < 0 || iy + k >= M || ix + j < 0 || ix + j >= M) c0 = q;
+        fw += vW[c0] * oy; fa += vA[c0] * oy; fl += vL[c0] * oy; fp += vP[c0] * oy;
+      }
+      ox = ax + 4; oy = ay + 4; c0 = (oy >> 2) * VG + (ox >> 2); vr = (ox & 3) / 4; cv = (oy & 3) / 4;
+      vn = (vgrid[c0] * (1 - vr) + vgrid[c0 + 1] * vr) * (1 - cv) + (vgrid[c0 + VG] * (1 - vr) + vgrid[c0 + VG + 1] * vr) * cv;
+      thr = 0.5 + (vn - 0.5) * 0.28;
+      c0 = 0;                                   /* which liquid this pixel is, if any */
+      if (lq[q] === 2) c0 = fl >= thr ? 2 : 0;
+      else if (lq[q] === 1) c0 = fa >= thr ? 1 : 0;
+      else c0 = fl >= thr ? 2 : (fw >= thr ? 1 : 0);
+      if (c0) {
+        code[o] = 3;
+        if (lq[q] === c0) liqT[o] = q;
+        else {                                  /* the neighbouring tile of that liquid that covers it most */
+          bw = -1; bq = q;
+          for (k = -1; k <= 1; k++) for (j = -1; j <= 1; j++) {
+            if (iy + k < 0 || iy + k >= M || ix + j < 0 || ix + j >= M || lq[q + k * M + j] !== c0) continue;
+            oy = WT[ly * 3 + k + 1] * WT[lx * 3 + j + 1];
+            if (oy > bw) { bw = oy; bq = q + k * M + j; }
+          }
+          liqT[o] = bq;
+        }
+      } else code[o] = fp >= thr ? 2 : 1;
+    }
+    /* how far each water pixel is from the bank (1-5, 5 = further): a two-sweep city-block distance */
+    for (o = 0; o < PW * PW; o++) { c0 = code[o]; dist[o] = (c0 === 3 || c0 === 4) ? 5 : 0; }
+    for (ay = 0; ay < PW; ay++) for (ax = 0; ax < PW; ax++) {
+      o = ay * PW + ax; if (!dist[o]) continue;
+      if (ax > 0 && dist[o - 1] + 1 < dist[o]) dist[o] = dist[o - 1] + 1;
+      if (ay > 0 && dist[o - PW] + 1 < dist[o]) dist[o] = dist[o - PW] + 1;
+    }
+    for (ay = PW - 1; ay >= 0; ay--) for (ax = PW - 1; ax >= 0; ax--) {
+      o = ay * PW + ax; if (!dist[o]) continue;
+      if (ax < PW - 1 && dist[o + 1] + 1 < dist[o]) dist[o] = dist[o + 1] + 1;
+      if (ay < PW - 1 && dist[o + PW] + 1 < dist[o]) dist[o] = dist[o + PW] + 1;
+    }
+    function lipAt(o) { return code[o - 1] === 1 || code[o + 1] === 1 || code[o - PW] === 1 || code[o + PW] === 1; }
+    /* which biome a grass or path pixel near a border shows: the biome at a point nudged up to 12 art pixels
+       by slow noise (so long straight borders meander), blurred like the shores, the pair decided by one
+       rule from both sides (ordered by id) with a touch of dither at the line */
+    var bbList = [], bbW = [];
+    function borderBiome(ax, ay, q, bayer) {
+      var ox = ax + 4, oy = ay + 4, g0 = (oy >> 2) * VG + (ox >> 2), u = (ox & 3) / 4, v = (oy & 3) / 4, gx, gy, tq, lx, ly, k, j, w, c0, list = bbList, ws = bbW, n2, b1 = -1, b2 = -1, i1 = 0, i2 = 0, A, Bb;
+      list.length = 0; ws.length = 0;
+      gx = ax + ((bgrid[g0] * (1 - u) + bgrid[g0 + 1] * u) * (1 - v) + (bgrid[g0 + VG] * (1 - u) + bgrid[g0 + VG + 1] * u) * v - 0.5) * 26 + 16 * R;
+      gy = ay + ((bgrid2[g0] * (1 - u) + bgrid2[g0 + 1] * u) * (1 - v) + (bgrid2[g0 + VG] * (1 - u) + bgrid2[g0 + VG + 1] * u) * v - 0.5) * 26 + 16 * R;
+      gx = Math.max(16, Math.min(16 * (M - 1) - 1, Math.floor(gx))); gy = Math.max(16, Math.min(16 * (M - 1) - 1, Math.floor(gy)));
+      tq = (gy >> 4) * M + (gx >> 4); lx = gx & 15; ly = gy & 15;
+      for (k = -1; k <= 1; k++) for (j = -1; j <= 1; j++) {
+        w = WT[ly * 3 + k + 1] * WT[lx * 3 + j + 1]; c0 = bM[tq + k * M + j];
+        n2 = list.indexOf(c0); if (n2 < 0) { list.push(c0); ws.push(w); } else ws[n2] += w;
+      }
+      for (k = 0; k < list.length; k++) {
+        if (ws[k] > b1) { b2 = b1; i2 = i1; b1 = ws[k]; i1 = k; }
+        else if (ws[k] > b2) { b2 = ws[k]; i2 = k; }
+      }
+      if (b2 < 0) return list[i1];
+      A = list[i1]; Bb = list[i2]; w = b1 - b2;          /* A leads by w (0 or more) */
+      /* seen from the first of the pair by id, so both sides agree on the dither */
+      if (((A && A.id) || "") < ((Bb && Bb.id) || "")) return w > (bayer - 0.375) * 0.12 ? A : Bb;
+      return -w > (bayer - 0.375) * 0.12 ? Bb : A;
+    }
+    var pB, ck, cc, masks = [], col, pc, dd, lip, own, cv, vr;
+    function rgbOf(c) { var A = parseColor(c); r = A[0]; g = A[1]; b2 = A[2]; }
+    for (ay = 0; ay < N; ay++) for (ax = 0; ax < N; ax++) {
+      ix = ax >> 4; iy = ay >> 4; ti = iy * CHUNK + ix; mt = mats[(iy + R) * M + ix + R];
+      wx = cx * N + ax; wy = cy * N + ay;
+      i = ((ay * SCALE) * W + ax * SCALE) * 4;
+      r = d[i]; g = d[i + 1]; b2 = d[i + 2];
+      o = (ay + E) * PW + ax + E; pc = code[o]; dd = dist[o];
+      bayer = BAYER[(ax & 1) + ((ay & 1) << 1)];
+      pB = Bs[ti];
+      if ((pc === 1 || pc === 2) && mixB[(iy + R) * M + ix + R]) pB = borderBiome(ax, ay, (iy + R) * M + ix + R, bayer);
+      else if (pc === 3 && dd > 1) {
+        pB = bM[liqT[o]];
+        /* two biomes' lakes meeting: the colour changes along the same meandering line, but water never takes
+           on lava's or Freezeland ice's look (those play differently) */
+        if (mixB[(iy + R) * M + ix + R] && pB && !pB.solidWater && pB.id !== "snow") {
+          c0 = borderBiome(ax, ay, (iy + R) * M + ix + R, bayer);
+          if (c0 && !c0.solidWater && c0.id !== "snow") pB = c0;
+        }
+      }
+      else if (pc === 0 && mt === MAT.CLIFF && mixB[(iy + R) * M + ix + R]) {
+        /* a plateau that crosses a border: its top changes biome along the same meandering line; the
+           outline and lit rims come from the tile's own edges, so they stay exactly where they were */
+        pB = borderBiome(ax, ay, (iy + R) * M + ix + R, bayer);
+        if (pB !== Bs[ti]) {
+          lx = ax & 15; ly = ay & 15; B = pB;
+          if (masks[ti] === undefined) masks[ti] = neighborMask(cx * CHUNK + ix, cy * CHUNK + iy, MAT.CLIFF);
+          vr = (hash2(cx * CHUNK + ix, cy * CHUNK + iy, seed + 40) * 6) | 0;
+          ck = (B ? B.id : "") + "|" + season + "|cliff"; cc = shoreCache[ck] || (shoreCache[ck] = {});
+          c0 = ((masks[ti] * 6 + vr) * 16 + ly) * 16 + lx;
+          if (!cc[c0]) { rgbOf(cliffTopColor(lx, ly, vr * 3, vr * 5, masks[ti])); cc[c0] = [r, g, b2]; }
+          col = cc[c0]; r = col[0]; g = col[1]; b2 = col[2];
+          for (j = 0; j < SCALE; j++) for (k = 0; k < SCALE; k++) { f = i + (j * W + k) * 4; d[f] = r; d[f + 1] = g; d[f + 2] = b2; }
+        }
+        continue;
+      }
+      if (pc === 1 || pc === 2 || pc === 3) {
+        lx = ax & 15; ly = ay & 15;
+        own = mt === MAT.GRASS ? 1 : (mt === MAT.PATH ? 2 : 3);
+        cv = 1;
+        if (mt !== MAT.GRASS) { if (masks[ti] === undefined) masks[ti] = neighborMask(cx * CHUNK + ix, cy * CHUNK + iy, mt); cv = coverage(lx, ly, masks[ti]); }
+        lip = pc === 2 && lipAt(o);
+        if (pc !== own || cv < 0.999 || (pc === 3 && dd <= 3) || lip || pB !== Bs[ti]) {
+          B = pB; vr = (hash2(cx * CHUNK + ix, cy * CHUNK + iy, seed + 40) * 6) | 0;
+          q = pc === 1 ? 0 : pc === 2 ? (lip ? 2 : 1) : (dd === 1 ? 3 : dd === 2 ? 4 : dd === 3 ? 5 : 6);
+          ck = (B ? B.id : "") + "|" + season; cc = shoreCache[ck] || (shoreCache[ck] = {});
+          c0 = ((vr * 16 + ly) * 16 + lx) * 8 + q;
+          if (cc[c0]) { col = cc[c0]; r = col[0]; g = col[1]; b2 = col[2]; }
+          else {
+          if (pc === 1) col = grassColor(lx, ly, vr * 3, vr * 5, vr);
+          else if (pc === 2) { col = pathColor(lx, ly, vr * 3, vr * 5); if (lip) col = mixHex(col, (B && B.lip) || "#3a2814", 0.55); }
+          else if (dd === 1) col = mixHex(grassColor(lx, ly, vr * 3, vr * 5, vr), EDGE_INK, 0.85);
+          else {
+            /* a two-pixel ink line, then a bright foam line: the shore reads by brightness alone */
+            col = waterColor(lx, ly, vr * 3, vr * 5, 1);
+            if (dd === 2) col = mixHex(col, EDGE_INK, 0.45);
+            else if (dd === 3) col = mixHex(col, (B && B.foam) || "#9af0ea", 0.5);
+          }
+          rgbOf(col); cc[c0] = [r, g, b2];
+          }
+        }
+      }
+      if (pc === 1) {
+        /* broad patches: lighter in the sun, a touch darker in the clover, dithered at the edge */
+        n = noiseAt(ax, ay);
+        sh = n > 0.6 ? Math.min(1, (n - 0.6) / 0.12) * 0.09 : (n < 0.4 ? -Math.min(1, (0.4 - n) / 0.12) * 0.1 : 0);
+        sh = Math.round(sh / 0.03 + (bayer - 0.375)) * 0.03;
+        if (meadowG[ti] && pB === Bs[ti]) sh -= 0.12 + (bayer < 0.5 ? 0.03 : 0);
+        if (sh > 0) { r += (255 - r) * sh * 0.6; g += (255 - g) * sh; b2 += (255 - b2) * sh * 0.3; }
+        else if (sh < 0) { r *= 1 + sh; g *= 1 + sh * 0.7; b2 *= 1 + sh * 0.9; }
+        /* tufts: a dark stem in the middle, two leaning blades, a lit tip */
+        tile = pB === Bs[ti] ? tufts[ti] : []; lx = ax & 15; ly = ay & 15;
+        for (k = 0; k < tile.length; k++) {
+          tf = tile[k];
+          if ((lx === tf[0] && (ly === tf[1] || ly === tf[1] + 1)) || (ly === tf[1] + 1 && (lx === tf[0] - 1 || lx === tf[0] + 1))) { r *= 0.72; g *= 0.78; b2 *= 0.72; }
+          else if (lx === tf[0] && ly === tf[1] - 1) { r += (255 - r) * 0.22; g += (255 - g) * 0.3; b2 += (255 - b2) * 0.1; }
+          else if (tf[2] && lx === tf[0] + 2 && ly === tf[1]) { r *= 0.8; g *= 0.85; b2 *= 0.8; }
+        }
+      } else if (pc === 3 && dd > 3 && !(pB && (pB.solidWater || pB.id === "snow"))) {
+        dp = Math.max(0, Math.min(1, (dep((ax + 0.5) / 16, (ay + 0.5) / 16) - 0.9) / 2.2));
+        dp = Math.round(dp * 6 + (bayer - 0.375)) / 6;
+        /* the shallows: lighter and a little greener; the deep: darker */
+        sh = (1 - dp) * 0.26;
+        r = r + (90 - r) * sh; g = g + (190 - g) * sh; b2 = b2 + (180 - b2) * sh;
+        r *= 1 - dp * 0.28; g *= 1 - dp * 0.22; b2 *= 1 - dp * 0.12;
+      } else if (pc === 2) {
+        /* a dirt path sits brighter than the grass, so it doesn't rely on brown vs green (colour-blind players) */
+        if ((!pB || pB.seasonal) && !lipAt(o)) { r += (236 - r) * 0.2; g += (212 - g) * 0.2; b2 += (160 - b2) * 0.2; }
+        h = hash2(wx >> 1, wy >> 1, seed + 931);
+        if (h > 0.985) { r += (255 - r) * 0.3; g += (255 - g) * 0.28; b2 += (255 - b2) * 0.22; }
+        else if (h < 0.012) { r *= 0.7; g *= 0.7; b2 *= 0.7; }
+      } else if (!(pc === 1 || pc === 2 || pc === 3)) continue;
+      for (j = 0; j < SCALE; j++) for (k = 0; k < SCALE; k++) {
+        f = i + (j * W + k) * 4;
+        d[f] = r; d[f + 1] = g; d[f + 2] = b2;
+      }
+    }
+    /* 17z33 the moving foam: the foam line (3 px out) and the band just past it (4 px), baked at art-pixel
+       size for open water (not lava, not ice); drawGround breathes them in and out so the shore ebbs */
+    lastFoam = null;
+    /* fbx/fby: the box round the foam, so drawGround only covers that much of the chunk (less overdraw) */
+    var fa0 = null, fb0 = null, fd, nF = 0, Bq, fbx0 = N, fby0 = N, fbx1 = -1, fby1 = -1, lbx0 = N, lby0 = N, lbx1 = -1, lby1 = -1;
+    for (ay = 0; ay < N; ay++) for (ax = 0; ax < N; ax++) {
+      o = (ay + E) * PW + ax + E;
+      if (code[o] !== 3 || (dist[o] !== 3 && dist[o] !== 4)) continue;
+      Bq = bM[liqT[o]];
+      if (Bq && (Bq.solidWater || Bq.id === "snow")) continue;
+      if (!fa0) { fa0 = new Uint8ClampedArray(N * N * 4); fb0 = new Uint8ClampedArray(N * N * 4); }
+      fd = dist[o] === 3 ? fa0 : fb0; k = (ay * N + ax) * 4;
+      fd[k] = 236; fd[k + 1] = 252; fd[k + 2] = 255; fd[k + 3] = 255; nF++;
+      if (ax < fbx0) fbx0 = ax; if (ax > fbx1) fbx1 = ax; if (ay < fby0) fby0 = ay; if (ay > fby1) fby1 = ay;
+    }
+    /* 17z33 lava crust: four frames of a dark crust with glowing cracks, the crust drifting a little further
+       each frame (world-space noise, so it runs on across chunks); drawGround blends from one frame to
+       the next so the surface slowly churns. Only inside the lava (past its outline). About a third of the
+       surface is crust, so lava stays the brightest thing around. */
+    lastLava = null;
+    var lv = null, nl = 0, lf, nz, cr;
+    for (ay = 0; ay < N; ay++) for (ax = 0; ax < N; ax++) {
+      o = (ay + E) * PW + ax + E;
+      if (code[o] !== 3 || dist[o] < 3) continue;
+      Bq = bM[liqT[o]];
+      if (!Bq || !Bq.solidWater) continue;
+      if (!lv) lv = [new Uint8ClampedArray(N * N * 4), new Uint8ClampedArray(N * N * 4), new Uint8ClampedArray(N * N * 4), new Uint8ClampedArray(N * N * 4)];
+      nl++; k = (ay * N + ax) * 4;
+      if (ax < lbx0) lbx0 = ax; if (ax > lbx1) lbx1 = ax; if (ay < lby0) lby0 = ay; if (ay > lby1) lby1 = ay;
+      for (lf = 0; lf < 4; lf++) {
+        nz = valueNoise((cx * N + ax + lf * 3.2) / 11, (cy * N + ay + lf * 1.4) / 11, seed + 1201) * 0.65 + valueNoise((cx * N + ax - lf * 2) / 4.5, (cy * N + ay + lf * 2.6) / 4.5, seed + 1203) * 0.35;
+        fd = lv[lf];
+        if (nz > 0.6) { cr = Math.min(1, (nz - 0.6) / 0.06); fd[k] = 52; fd[k + 1] = 16; fd[k + 2] = 6; fd[k + 3] = 150 + cr * 70; }
+        else if (nz > 0.565) { fd[k] = 255; fd[k + 1] = 214; fd[k + 2] = 110; fd[k + 3] = 120; }        /* the glowing crack round a plate */
+      }
+    }
+    if (nl && typeof document !== "undefined") {
+      lastLava = [];
+      for (lf = 0; lf < 4; lf++) {
+        lastLava[lf] = document.createElement("canvas"); lastLava[lf].width = lastLava[lf].height = N;
+        lastLava[lf].getContext("2d").putImageData(new ImageData(lv[lf], N, N), 0, 0);
+      }
+      lastLava.box = [lbx0, lby0, lbx1 - lbx0 + 1, lby1 - lby0 + 1];
+    }
+    if (nF && typeof document !== "undefined") {
+      lastFoam = { a: document.createElement("canvas"), b: document.createElement("canvas"), box: [fbx0, fby0, fbx1 - fbx0 + 1, fby1 - fby0 + 1] };
+      lastFoam.a.width = lastFoam.a.height = lastFoam.b.width = lastFoam.b.height = N;
+      lastFoam.a.getContext("2d").putImageData(new ImageData(fa0, N, N), 0, 0);
+      lastFoam.b.getContext("2d").putImageData(new ImageData(fb0, N, N), 0, 0);
+    }
+    scenery(d, W, code, PW, E, Bs, natural, meadowG, cx, cy);
+    ctx.putImageData(img, 0, 0);
+  }
+
+  /* 17z33 small scenery painted into the ground: reeds (with a cattail) on the bank of natural lakes, and
+   * clumps of little flowers in the grass (spring and summer most, none in winter). Pure decoration. */
+  var FLOWER_COL = [[250, 250, 240], [255, 222, 90], [255, 150, 190], [190, 170, 255]];
+  function scenery(d, W, code, PW, E, Bs, natural, meadowG, cx, cy) {
+    var ix, iy, ti, tx, ty, ax, ay, o, k, n, cand, pick, h, fl, col, px, py, fc, sm;
+    function put(x, y, r, g, b) {
+      if (x < 0 || y < 0 || x >= CHUNK * 16 || y >= CHUNK * 16) return;
+      var i0 = (y * SCALE * W + x * SCALE) * 4, j, q, f;
+      for (j = 0; j < SCALE; j++) for (q = 0; q < SCALE; q++) { f = i0 + (j * W + q) * 4; d[f] = r; d[f + 1] = g; d[f + 2] = b; }
+    }
+    function isGrass(x, y) { return x >= 0 && y >= 0 && x < CHUNK * 16 && y < CHUNK * 16 && code[(y + E) * PW + x + E] === 1; }
+    sm = season === "spring" ? 1 : season === "summer" ? 0.8 : season === "fall" ? 0.3 : 0;
+    function isTop(x, y) {          /* plateau top, at least 3 pixels from anything that isn't */
+      var k, j;
+      for (k = -3; k <= 3; k++) for (j = -3; j <= 3; j++) {
+        if (x + j < -E || y + k < -E || x + j >= CHUNK * 16 + E || y + k >= CHUNK * 16 + E) return false;
+        if (code[(y + k + E) * PW + x + j + E] !== 0) return false;
+      }
+      return true;
+    }
+    function shade(x, y, f, lift) {
+      if (x < 0 || y < 0 || x >= CHUNK * 16 || y >= CHUNK * 16) return;
+      var i0 = (y * SCALE * W + x * SCALE) * 4, r = d[i0], g = d[i0 + 1], b = d[i0 + 2];
+      if (lift) { r += (255 - r) * f; g += (255 - g) * f; b += (255 - b) * f * 0.5; } else { r *= f; g *= f; b *= f; }
+      put(x, y, r, g, b);
+    }
+    for (iy = 0; iy < CHUNK; iy++) for (ix = 0; ix < CHUNK; ix++) {
+      ti = iy * CHUNK + ix; tx = cx * CHUNK + ix; ty = cy * CHUNK + iy;
+      /* 17z33 plateau tops: a few tufts (natural biomes, not in winter) and pebbles, so a hill top isn't bare */
+      if (code[(iy * 16 + 8 + E) * PW + ix * 16 + 8 + E] === 0) {
+        for (k = 0; k < 3; k++) {
+          h = hash2(tx, ty, seed + 1001 + k);
+          px = ix * 16 + 2 + ((hash2(tx, ty, seed + 1011 + k) * 12) | 0); py = iy * 16 + 2 + ((hash2(tx, ty, seed + 1021 + k) * 12) | 0);
+          if (!isTop(px, py)) continue;
+          if (k < 2 && h < 0.55 && natural[ti] && season !== "winter") {
+            shade(px, py, 0.7); shade(px, py + 1, 0.7); shade(px - 1, py + 1, 0.76); shade(px + 1, py + 1, 0.76); shade(px, py - 1, 0.25, true);
+          } else if (k === 2 && h < 0.45) {
+            put(px, py, 168, 164, 156); put(px + 1, py, 140, 136, 130); put(px, py + 1, 60, 54, 50); put(px + 1, py + 1, 60, 54, 50);
+          }
+        }
+        continue;
+      }
+      if (!natural[ti] || meadowG[ti]) continue;
+      /* reeds: a grass pixel two to three pixels from open water, picked by the tile's hash */
+      h = hash2(tx, ty, seed + 961);
+      if (h < 0.55) {
+        cand = [];
+        for (ay = iy * 16 + 6; ay < iy * 16 + 16; ay++) for (ax = ix * 16 + 2; ax < ix * 16 + 14; ax++) {
+          o = (ay + E) * PW + ax + E;
+          if (code[o] !== 1) continue;
+          if (code[o + 3] === 3 || code[o - 3] === 3 || code[o + PW * 3] === 3 || code[o + PW * 2] === 3) cand.push(ax, ay);
+        }
+        if (cand.length) {
+          pick = ((hash2(tx, ty, seed + 962) * cand.length / 2) | 0) * 2; px = cand[pick]; py = cand[pick + 1];
+          if (isGrass(px - 1, py) && isGrass(px + 1, py)) {
+            /* three stems (dark), lit on the left, a brown cattail on the tallest */
+            for (k = 0; k < 6; k++) put(px, py - k, 40, 84, 40);
+            for (k = 0; k < 4; k++) put(px - 1, py - k - (k > 2 ? 1 : 0), 74, 128, 58);
+            for (k = 0; k < 5; k++) put(px + 1, py - k, 34, 70, 36);
+            put(px, py - 6, 106, 66, 34); put(px, py - 7, 120, 76, 40); put(px, py - 8, 60, 100, 48);
+          }
+        }
+      }
+      /* flower clumps where a slow noise says so */
+      if (!sm || (Bs[ti] && !Bs[ti].flowers)) continue;
+      n = valueNoise(tx * 0.21, ty * 0.21, seed + 971);
+      if (n < 0.74 || hash2(tx, ty, seed + 972) > sm) continue;
+      fc = FLOWER_COL[(valueNoise(tx * 0.08, ty * 0.08, seed + 973) * 4) | 0];
+      for (k = 0; k < 4; k++) {
+        px = ix * 16 + 2 + ((hash2(tx, ty, seed + 980 + k) * 12) | 0); py = iy * 16 + 2 + ((hash2(tx, ty, seed + 990 + k) * 12) | 0);
+        if (!isGrass(px, py) || !isGrass(px - 1, py) || !isGrass(px + 1, py) || !isGrass(px, py - 1) || !isGrass(px, py + 1)) continue;
+        /* a plus of petals round a yellow eye, a dark stem pixel under it */
+        put(px - 1, py, fc[0], fc[1], fc[2]); put(px + 1, py, fc[0], fc[1], fc[2]); put(px, py - 1, fc[0], fc[1], fc[2]);
+        put(px, py, fc === FLOWER_COL[1] ? 230 : 255, fc === FLOWER_COL[1] ? 140 : 214, 60);
+        put(px, py + 1, 36, 76, 34);
+      }
+    }
+  }
+
+  /* what the ground costs (17z33 perf work; the test harness and a perf readout read these) */
+  var stats = { builds: 0, buildMs: 0, dropAll: 0 };
+  function nowMs() { return (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now(); }
+  var REBAKE_PER_FRAME = 2, rebakeClock = -1, rebakeLeft = 0;
   function getChunk(cx, cy) {
-    var key = chunkKey(cx, cy);
-    if (cache[key]) { cache[key].used = useClock; return cache[key]; }
+    var key = chunkKey(cx, cy), old = cache[key];
+    if (old) {
+      old.used = useClock;
+      if (!old.stale) return old;
+      if (rebakeClock !== useClock) { rebakeClock = useClock; rebakeLeft = REBAKE_PER_FRAME; }
+      if (rebakeLeft <= 0) return old;                       /* its turn comes in a frame or two */
+      rebakeLeft--;
+    }
+    var t0 = nowMs();
     var ch = buildChunk(cx, cy);
+    stats.builds++; stats.buildMs += nowMs() - t0;
     remember(key, ch);
     return ch;
   }
@@ -761,9 +1240,34 @@
         dx = cx * CHUNK * TILE;
         dy = cy * CHUNK * TILE;
         ctx.drawImage(ch.canvas, Math.round(dx), Math.round(dy));
+        if (ch.foam || ch.lava) foamList.push(ch, dx, dy);
       }
     }
+    /* the shore ebbing: the foam line brightens as the outer band fades, then the band washes out again
+       (one slow wave for the whole map, so it never jumps at a chunk edge). Still with reduced effects. */
+    if (foamList.length) {
+      var t = (typeof performance !== "undefined" ? performance.now() : Date.now()) / 1000, w = Math.sin(t * 0.85), i, ga = ctx.globalAlpha;
+      var calm = !!D.reducedFx, aA = calm ? 0.18 : 0.1 + 0.24 * Math.max(0, -w), aB = calm ? 0 : 0.32 * Math.max(0, w) * Math.max(0, w);
+      /* lava: blend frame f into f+1 over three seconds (frame 0 held still with reduced effects) */
+      var lp = calm ? 0 : (t / 3) % 4, lf0 = Math.floor(lp), lfr = lp - lf0;
+      function part(cv, box, x, y) {   /* just the box that has anything in it, at x3 */
+        ctx.drawImage(cv, box[0], box[1], box[2], box[3], Math.round(x + box[0] * SCALE), Math.round(y + box[1] * SCALE), box[2] * SCALE, box[3] * SCALE);
+      }
+      for (i = 0; i < foamList.length; i += 3) {
+        ch = foamList[i];
+        if (ch.lava) {
+          ctx.globalAlpha = 1 - lfr; part(ch.lava[lf0], ch.lava.box, foamList[i + 1], foamList[i + 2]);
+          if (lfr > 0.01) { ctx.globalAlpha = lfr; part(ch.lava[(lf0 + 1) % 4], ch.lava.box, foamList[i + 1], foamList[i + 2]); }
+        }
+        if (!ch.foam) continue;
+        if (aA > 0.01) { ctx.globalAlpha = aA; part(ch.foam.a, ch.foam.box, foamList[i + 1], foamList[i + 2]); }
+        if (aB > 0.01) { ctx.globalAlpha = aB; part(ch.foam.b, ch.foam.box, foamList[i + 1], foamList[i + 2]); }
+      }
+      ctx.globalAlpha = ga;
+      foamList.length = 0;
+    }
   }
+  var foamList = [];
 
   /* Open water and lava tiles in view, for the moving ripples and bubbles (game.js
    * drawWaterFx). Listed once per chunk; a chunk is rebuilt when ice comes or goes.
@@ -872,6 +1376,18 @@
     }
     return best;
   }
+  /* 17z33: the unbroken spires within r, nearest first (the Treasure Map) */
+  function spiresNear(x, y, r, max) {
+    if (!ready || !TILE) return [];
+    var tx0 = Math.floor((x - r) / TILE), tx1 = Math.floor((x + r) / TILE), ty0 = Math.floor((y - r) / TILE), ty1 = Math.floor((y + r) / TILE), tx, ty, px, py, out = [];
+    for (ty = ty0; ty <= ty1; ty++) for (tx = tx0; tx <= tx1; tx++) {
+      if (propAt(tx, ty) !== "spire" || used[tx + "," + ty]) continue;
+      px = (tx + 0.5) * TILE; py = (ty + 0.9) * TILE;
+      out.push({ x: px, y: py, d: Math.sqrt((px - x) * (px - x) + (py - y) * (py - y)) });
+    }
+    out.sort(function (a, b) { return a.d - b.d; });
+    return out.slice(0, max || 3);
+  }
   /* ---- grass that burns (data.js GRASSFIRE) ----
    * Fire chars the grass tile by tile. A charred tile is remembered with the
    * battle time it grows back at; until then it is not grass (nothing to
@@ -953,7 +1469,7 @@
   function seasonIce() {
     var S = D.seasons, si, into;
     if (!S || !S.info) return 0;
-    si = S.info(clock); into = si.progress * (S.CFG ? S.CFG.lengthSec : 360);
+    si = S.info(clock); into = si.progress * (S.CFG ? S.CFG.lengthSec : 486);
     if (si.id === "winter") return Math.min(1, into / ICE.freezeSec);
     if (si.id === "spring" && si.index > 0) return Math.max(0, 1 - into / ICE.thawSec);
     return 0;
@@ -983,18 +1499,18 @@
   }
   function solidLiquidT(tx, ty) { var b = biomeDef(tx, ty); return !!(b && b.solidWater); }
   /* drop the baked look of the chunk holding this tile, so it is redrawn frozen or thawed */
-  function dirtyTile(tx, ty) { dropChunk(chunkKey(Math.floor(tx / CHUNK), Math.floor(ty / CHUNK))); }
+  function dirtyTile(tx, ty) { staleChunk(chunkKey(Math.floor(tx / CHUNK), Math.floor(ty / CHUNK))); }
   function iceTick() {
     var q = Math.floor(seasonIce() * 24), k, u, b, tx, ty;
     if (q !== iceQ) {
-      if (iceQ >= 0 || q > 0) { iceVer++; dropAllChunks(); }
+      if (iceQ >= 0 || q > 0) { mapChanged(); staleAll(); }
       iceQ = q; iceLevel = q / 24;
     }
     if (clock >= iceNext) {
       iceNext = 1e15;
       for (k in iced) {
         u = iced[k];
-        if (u <= clock) { delete iced[k]; icedN--; b = k.split(","); tx = +b[0]; ty = +b[1]; dirtyTile(tx, ty); iceVer++; }
+        if (u <= clock) { delete iced[k]; icedN--; b = k.split(","); tx = +b[0]; ty = +b[1]; dirtyTile(tx, ty); mapChanged(tx, ty, tx + 1, ty + 1); }
         else if (u < iceNext) iceNext = u;
       }
     }
@@ -1011,7 +1527,7 @@
       if (!iced[k] || iced[k] < until) { iced[k] = until; n++; dirtyTile(tx, ty); }
       if (until < iceNext) iceNext = until;
     }
-    if (n) iceVer++;
+    if (n) mapChanged(a, b, c + 1, d + 1);
     return n;
   }
   function freezeArea(x, y, r, until) {
@@ -1279,7 +1795,7 @@
     tileCache = {};
     matCache = {}; matCount = 0; bioCache = {}; bioCount = 0; lairCache = {};
     propCache = {}; propCount = 0; used = {}; burnt = {}; clock = 0;
-    terr = {}; terrN = 0; terrVer++; ownCache = {}; ownCount = 0;
+    terr = {}; terrN = 0; terrVer++; ownCache = {}; ownCount = 0; mapLog = [];
     iced = {}; icedN = 0; iceNext = 1e15; iceVer++; iceQ = -1; iceLevel = 0; thrCache = {}; thrCount = 0; felled = {}; soak = 0;
     ready = true;
   }
@@ -1312,7 +1828,9 @@
     territoryString: territoryString,
     applyTerritory: applyTerritory,
     territoryVersion: function () { return terrVer; },
+    mapChanges: mapChanges,
     mapVersion: function () { return iceVer; },
+    stats: function () { return stats; },
     biomeIdAt: biomeId,                                    /* by tile */
     biomeAt: function (x, y) { return ready && TILE ? biomeDef(Math.floor(x / TILE), Math.floor(y / TILE)) : null; },   /* by world position */
     isRaised: isRaised,
@@ -1327,6 +1845,7 @@
     burnState: burnState,
     burntInView: burntInView,
     usableNear: usableNear,
+    spiresNear: spiresNear,
     markUsed: markUsed,
     nestsNear: nestsNear,
     /* Nov 20: the living map */

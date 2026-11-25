@@ -41,7 +41,7 @@ let y1hp;
   ok(sim.enemies.filter(x => x.lord).length === 0, "it does not come back this run");
 })();
 (function () {
-  const a = mk(1440 + 50), b = mk(2880 + 50);
+  const YR = ((D.SEASONS_CFG && D.SEASONS_CFG.lengthSec) || 486) * 4, a = mk(YR + 50), b = mk(YR * 2 + 50);
   a.sim._updateLords(2, a.p); b.sim._updateLords(2, b.p);
   const e2 = a.sim.enemies.find(e => e.lord), e3 = b.sim.enemies.find(e => e.lord);
   ok(e2 && /Perfect/.test(D.ENEMIES[e2.type].stageDisplay), "Year 2: an Ultimate (" + D.ENEMIES[e2.type].name + ", " + Math.round(e2.maxHp) + " HP)");

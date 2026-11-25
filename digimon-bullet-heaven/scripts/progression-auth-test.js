@@ -48,7 +48,7 @@ function dataFixture() {
       yardW: 1320,
       yardH: 820
     },
-    DIGIBITS: { name: "DigiBits", winReward: 8, betPool: 6, minBetPayout: 1 }
+    DIGIBITS: { name: "DigiCoins", winReward: 8, betPool: 6, minBetPayout: 1 }
   };
 }
 
@@ -149,7 +149,7 @@ function main() {
   /* ---- Farm auto-return + care mistake + training ---- */
   const F = makeAuth();
   const fp = F.p;
-  fp.fullness = 0;
+  fp.fullness = 34;                       /* 17z33: it won't train under a third full; 34 - 8 for the track leaves it hungry */
   fp.happiness = 50;
   fp.careMistakes = 0;
   const ent = F.authority.act({ type: "farm.enter", id: "p0", scheduled: true });
@@ -170,12 +170,12 @@ function main() {
   const ret2 = F.authority.act({ type: "farm.return", id: "p0" });
   assert(ret2.ok && ret2.already, "farm.return idempotent after auto-return");
   assert(fp.careMistakes === 1, "no duplicate care mistake");
-  /* Full-lap geometry: 8s at constant speed covers lapsTarget 1.25 around perimeter. */
+  /* 17z33: the track is the Rockfall Run mini game (12 s), resolved on the authority */
   const G = makeAuth();
   G.data.FARM_CFG.stayCapSeconds = 20;
   G.authority.act({ type: "farm.enter", id: "p0" });
   G.authority.act({ type: "farm.trainStart", id: "p0", station: "track" });
-  G.authority.act({ type: "farm.tick", id: "p0", dt: 8, inp: { x: 0, y: 0 } });
+  G.authority.act({ type: "farm.tick", id: "p0", dt: 15, inp: { x: 0, y: 0 } });
   assert((G.p.trainStats.agility || 0) > 0, "track training resolved on authority");
   console.log("ok farm auto-return, care mistake, idempotent return, track training");
 
@@ -252,7 +252,7 @@ function main() {
   R.authority.act({ type: "brawl.ready", id: "p0" });
   guard = 0;
   while (!R.sim.brawlSim.match.winnerId && guard < 2000) { R.authority.step(); guard++; }
-  assert(R.authority.progression.account.digiBits === bitsAfter, "reload does not double-pay DigiBits");
+  assert(R.authority.progression.account.digiBits === bitsAfter, "reload does not double-pay DigiCoins");
   assert(R.authority.progression.account.legendaryDropped === dropAfter, "reload does not re-grant legendary set");
   console.log("ok brawl cap/revive/bets/sim winner, farm queue, payout idempotency");
 

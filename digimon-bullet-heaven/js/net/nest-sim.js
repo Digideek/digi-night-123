@@ -29,7 +29,7 @@
 
     /* how many a nest of this kind can hold now */
     MissionSim.prototype._nestCap = function (kind) {
-      var N = this._nestCfg(), S = this.data.SEASONS_CFG || {}, year = Math.floor(this.time / (((S.lengthSec || 360) * 4) || 1440));
+      var N = this._nestCfg(), S = this.data.SEASONS_CFG || {}, year = Math.floor(this.time / (((S.lengthSec || 486) * 4) || 1944));
       var base = N.cap[kind] || N.cap.herd;
       return Math.max(1, Math.round(Math.min(base + year * N.capPerYear, N.capMax) * Math.min(1.6, this.coopScale || 1)));
     };

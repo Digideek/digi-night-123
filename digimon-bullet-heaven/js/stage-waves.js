@@ -23,6 +23,7 @@
    * battle time: 0 = Baby I, 1 = In-Training, 2 = Rookie, 3 = Champion,
    * 4 = Ultimate, 5 = Mega; fractions blend two neighbours, so the next
    * stage trickles in near the end of a season before it takes over.
+   * (Minutes below are in 6-minute seasons; timeTier stretches them to the real season length.)
    *   Spring (0-6 min)    Baby and In-Training, Rookies trickle in at the very end
    *   Summer (6-12)       In-Training (some Babies), more and more Rookies, Champions near the end
    *   Fall (12-18)        Rookies, more and more Champions, Ultimates near the end
@@ -38,7 +39,8 @@
   /* Nov 15 (later): the opening was too quiet. More arrive from the start
    * (the first six minutes), tapering into the same late game as before. */
   /* Nov 16: 30% more of them throughout (and each is weaker: data.js PACING.stageHp). */
-  var FIELD = { rate0: 0.42, rate6: 0.68, ratePerMin: 0.039, rateMax: 1.95, cap0: 7, cap6: 10, capPerMin: 0.44, capMax: 34 };
+  /* 17z33: about 10% more everywhere (was 0.42 / 0.68 / 0.039 / 1.95, caps 7 / 10 / 0.44 / 34) */
+  var FIELD = { rate0: 0.46, rate6: 0.75, ratePerMin: 0.043, rateMax: 2.15, cap0: 7.7, cap6: 11, capPerMin: 0.48, capMax: 37 };
 
   /* the opening minutes are busier (data.js PACING): full strength until
    * openUntil, easing back to normal over openFade */
@@ -55,8 +57,10 @@
     k = sec <= P.openUntil ? 1 : Math.max(0, 1 - (sec - P.openUntil) / (P.openFade || 1));
     return 1 + (P.openHp - 1) * k;
   }
+  /* TIER_KEYS are written for 6-minute seasons; the clock is read in those units, so a stage still lasts
+     * one season when the seasons are longer (17z33: 486 s, so a key at 6 min now comes at about 8.1) */
   function timeTier(t) {
-    var m = Math.max(0, t || 0) / 60, i, a, b;
+    var len = (D.SEASONS_CFG && D.SEASONS_CFG.lengthSec) || 360, m = Math.max(0, t || 0) / 60 * (360 / len), i, a, b;
     for (i = 1; i < TIER_KEYS.length; i++) {
       a = TIER_KEYS[i - 1]; b = TIER_KEYS[i];
       if (m <= b[0]) return a[1] + (b[1] - a[1]) * (m - a[0]) / (b[0] - a[0]);

@@ -53,7 +53,8 @@ TAMERS = {
 # Digital ghosts: floating blobs of loose data. One shape, six colours.
 GHOSTS = (('byte', 'Byte', '#3ad8f0', 'Cyan'), ('glim', 'Glim', '#ff6ab8', 'Pink'), ('zap', 'Zap', '#9be83a', 'Lime'),
           ('ember', 'Ember', '#ff9a2a', 'Amber'), ('nyx', 'Nyx', '#9a6af0', 'Violet'), ('null', 'Null', '#e8ecf4', 'White'),
-          ('rune', 'Rune', '#ff5a4a', 'Red'), ('echo', 'Echo', '#4a8aff', 'Blue'))
+          ('rune', 'Rune', '#ff5a4a', 'Red'), ('echo', 'Echo', '#4a8aff', 'Blue'),
+          ('smoke', 'Smoke', '#22242c', 'Black'))                       # 17z33: the secret one (a tester's reward)
 # kind 'holo' = the hologram projections (holo_frame); pass --ghosts to draw the old blob ghosts instead
 for _id, _name, _col, _ in GHOSTS:
     TAMERS[_id] = dict(name=_name, kind=('ghost' if '--ghosts' in sys.argv else 'holo'), gid=_id, body=_col, skin='#010101', hair='#010102')
@@ -590,8 +591,11 @@ def frame(ch, view, anim, i):
         if '--holo2' in sys.argv:
             import holo2                                                    # Nov 16: each projection has its own outline
             return holo2.holo2_frame(ch, view, anim, i)
-        import holo3                                                        # Nov 20: the same outfits on a rigged eight-frame walk
-        return holo3.holo3_frame(ch, view, anim, i)
+        if '--holo3' in sys.argv:
+            import holo3                                                    # Nov 20: the same outfits on a rigged eight-frame walk
+            return holo3.holo3_frame(ch, view, anim, i)
+        import holo4                                                        # 17z33: no legs: mist from the waist down, a glide, twice the pixels
+        return holo4.holo4_frame(ch, view, anim, i)
     if ch.get('kind') == 'ghost': return ghost_frame(ch, view, anim, i)
     P = pose(anim, i); p = Pen()
     s, c, walk = P['s'], P['c'], P['walk']

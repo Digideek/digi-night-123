@@ -342,7 +342,19 @@
       g.arc(24, 24, 5, Math.PI * 1.6, Math.PI * 2.4, 1.2, "cyan", { flat: true, tone: 3 });
       g.path(function (c) { c.moveTo(16, 30); c.bezierCurveTo(9, 26, 10, 20, 13, 20.5); c.quadraticCurveTo(15, 21, 16, 23); c.quadraticCurveTo(17, 21, 19, 20.5); c.bezierCurveTo(22, 20, 23, 26, 16, 30); c.fill(); }, "rose");
       g.pxs([12, 22, 13, 22], "hl").pxs([18, 7, 19, 6], "hl");
-    }
+    },
+    /* 17z33: seeds, a pouch, a lunchbox, a tonic, an egg, a charm */
+    u_str: function (g) { g.ellipse(16, 18, 7, 9, "red"); g.ellipse(16, 18, 4, 6, "red", { soft: true }); g.line([16, 9, 16, 4], 1.4, "green"); g.path(function (c) { c.moveTo(16, 6); c.quadraticCurveTo(10, 5, 10, 1); c.quadraticCurveTo(15, 1, 16, 6); c.fill(); }, "leaf"); g.pxs([12, 14, 13, 13], "hl"); },
+    u_agi: function (g) { g.ellipse(16, 18, 7, 9, "sky"); g.ellipse(16, 18, 4, 6, "sky", { soft: true }); g.line([16, 9, 16, 4], 1.4, "green"); g.path(function (c) { c.moveTo(16, 6); c.quadraticCurveTo(10, 5, 10, 1); c.quadraticCurveTo(15, 1, 16, 6); c.fill(); }, "leaf"); g.pxs([12, 14, 13, 13], "hl"); },
+    u_vit: function (g) { g.ellipse(16, 18, 7, 9, "orange"); g.ellipse(16, 18, 4, 6, "orange", { soft: true }); g.line([16, 9, 16, 4], 1.4, "green"); g.path(function (c) { c.moveTo(16, 6); c.quadraticCurveTo(10, 5, 10, 1); c.quadraticCurveTo(15, 1, 16, 6); c.fill(); }, "leaf"); g.pxs([12, 14, 13, 13], "hl"); },
+    u_int: function (g) { g.ellipse(16, 18, 7, 9, "violet"); g.ellipse(16, 18, 4, 6, "violet", { soft: true }); g.line([16, 9, 16, 4], 1.4, "green"); g.path(function (c) { c.moveTo(16, 6); c.quadraticCurveTo(10, 5, 10, 1); c.quadraticCurveTo(15, 1, 16, 6); c.fill(); }, "leaf"); g.pxs([12, 14, 13, 13], "hl"); },
+    u_dex: function (g) { g.ellipse(16, 18, 7, 9, "teal"); g.ellipse(16, 18, 4, 6, "teal", { soft: true }); g.line([16, 9, 16, 4], 1.4, "green"); g.path(function (c) { c.moveTo(16, 6); c.quadraticCurveTo(10, 5, 10, 1); c.quadraticCurveTo(15, 1, 16, 6); c.fill(); }, "leaf"); g.pxs([12, 14, 13, 13], "hl"); },
+    u_luk: function (g) { g.ellipse(16, 18, 7, 9, "lime"); g.ellipse(16, 18, 4, 6, "lime", { soft: true }); g.line([16, 9, 16, 4], 1.4, "green"); g.path(function (c) { c.moveTo(16, 6); c.quadraticCurveTo(10, 5, 10, 1); c.quadraticCurveTo(15, 1, 16, 6); c.fill(); }, "leaf"); g.pxs([12, 14, 13, 13], "hl"); },
+    u_bits: function (g) { g.ellipse(16, 20, 10, 9, "leather"); g.rect(10, 9, 12, 4, "brown"); g.line([11, 11, 21, 11], 1, "gold", { flat: true }); g.circle(16, 21, 4, "gold"); g.px(15, 20, "hl"); g.pxs([10, 16, 11, 15], "hl"); },
+    u_lunch: function (g) { g.rrect(5, 11, 22, 16, 2, "red"); g.rect(5, 16, 22, 2, "white"); g.rrect(12, 6, 8, 6, 1.5, "steel"); g.ellipse(11, 22, 3, 2, "meat"); g.ellipse(20, 22, 3, 2, "leaf"); g.pxs([7, 13, 8, 13], "hl"); },
+    u_tonic: function (g) { g.rect(13, 3, 6, 5, "wood"); g.rrect(9, 8, 14, 21, 3, "glass"); g.rrect(10, 15, 12, 13, 2, "leaf"); g.path(function (c) { c.moveTo(16, 20); c.quadraticCurveTo(11, 19, 12, 14); c.quadraticCurveTo(16, 15, 16, 20); c.fill(); }, "lime"); g.pxs([11, 10, 11, 11, 11, 12], "hl"); },
+    u_egg: function (g) { g.ellipse(16, 17, 9, 12, "egg"); g.circle(12, 12, 2.2, "yellow").circle(20, 18, 2.6, "leaf").circle(13, 23, 2, "sky"); g.star(25, 6, 3, 0.8, 4, "yellow", { flat: true, tone: 4 }); g.pxs([10, 8, 11, 7], "hl"); },
+    u_shiny: function (g) { g.star(16, 16, 12, 5, 4, "yellow"); g.star(16, 16, 6, 2.5, 4, "white"); g.star(25, 6, 3, 0.8, 4, "pink", { flat: true, tone: 4 }); g.star(7, 25, 3, 0.8, 4, "cyan", { flat: true, tone: 4 }); }
   };
   function scrollArt(g) {
     g.rrect(8, 6, 16, 20, 1, "paper");
@@ -445,6 +457,14 @@
       g.line([11, 9, 12, 5], 0.9, "white", { flat: true }).line([18, 8, 19, 4], 0.9, "white", { flat: true });
       g.pxs([6, 20, 7, 21, 6, 21], "hl").px(9, 13, "hl").px(15, 11, "hl").px(20, 13, "hl");
     },
+    moveslot: function (g) {
+      g.rrect(3, 9, 12, 12, 2, "steel").rrect(17, 9, 12, 12, 2, "steel").rrect(3, 23, 12, 7, 2, "steel").rrect(17, 23, 12, 7, 2, "gold");
+      g.rect(5.5, 11.5, 7, 7, "red", { soft: true }).rect(19.5, 11.5, 7, 7, "sky", { soft: true }).rect(5.5, 24.5, 7, 4, "emerald", { soft: true });
+      g.rect(21.5, 24, 3, 5, "white").rect(20.5, 25, 5, 3, "white");
+      g.pxs([5, 11, 19, 11, 5, 24], "hl");
+      g.rect(14, 2, 4, 5, "gold").rect(13, 3, 6, 3, "gold");
+    },
+    kit: function (g) { g.rrect(6, 10, 20, 18, 3, "leather"); g.rect(6, 15, 20, 3, "brown"); g.rrect(11, 5, 10, 6, 2, "brown"); g.rect(14, 15, 4, 5, "gold"); g.pxs([8, 12, 9, 12], "hl"); },
     port: function (g) {
       g.rrect(5, 3, 22, 27, 6, "white");
       g.rrect(9, 7, 14, 11, 2, "iron").rect(10.5, 8.5, 11, 8, "emerald", { soft: true });
@@ -706,6 +726,16 @@
         if (b.tier >= 2) g.pxs([8, 11, 9, 10], "hl");
         paint(dst, g, { dim: !got, back: got && b.tier === 4 ? backFor("prismatic") : got && b.tier === 3 ? backFor("rare") : null,
           front: got && b.tier === 4 ? sparkles(4, "#c79bff") : got && b.tier === 3 ? sparkles(2, "#ffd23a") : null });
+      });
+    },
+    /* a medal with one of the motifs on it (17z33: the League's mode emblems). tier 1-4 as the badges. */
+    motif: function (cv, name, opt) {
+      opt = opt || {};
+      if (!mk || !cv || !MOT[name]) return;
+      cached("m|" + name + "|" + (opt.tier || 3) + "|" + cv.width, cv, function (dst) {
+        var g = new Grid();
+        medal(g, opt.tier || 3); MOT[name](g);
+        paint(dst, g, { back: (opt.tier || 3) >= 4 ? backFor("prismatic") : backFor("rare"), front: sparkles(2, opt.spark || "#ffd23a") });
       });
     },
     _ids: function () { return { item: Object.keys(ITEM), lab: Object.keys(LAB), cat: Object.keys(CAT), emblem: EMBLEM, motifs: Object.keys(MOT) }; }

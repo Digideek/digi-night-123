@@ -489,6 +489,9 @@
   })();
   TECHS = TECHS.filter(function (x) { return !!x; });
   D.MOVE_GROW = GROW;
+  /* (17z33, Isaac) a Mega's own shot is its ultimate (R), so it keeps its Ultimate's main move: at Mega that
+   * main move (anything in its primary line) hits this much harder, so reaching Mega is a real jump */
+  D.MEGA_PUNCH = 1.6;
   D.MOVE_TECHS = TECHS;
   D.MOVE_TECH_LOOK = TECH_LOOK;
 
@@ -1043,6 +1046,17 @@
   })();
   D.SIG_INFO = SIG_INFO;
   D.SIG_LOOK = SIG_LOOK;
+
+  /* 17z33 big moves wind up: a Mega's own beams, bursts, strikes and novas gather for a moment (0.3 s)
+   * before they go off, so you see them coming, and their hits are the only ordinary hits that make the
+   * fight hold still for an instant (hit-fx.js). The few moves that already gathered (Terra Force,
+   * Positron Laser...) keep their own wind-up and count as big too. Ordinary attacks stay instant. */
+  var BIG_KINDS = { beam: 1, burst: 1, strike: 1, nova: 1 };
+  Object.keys(SIG_INFO).forEach(function (id) {
+    var w = W[id];
+    if (w && SIG_INFO[id].tier >= 5 && BIG_KINDS[w.type] && !w.charge) w.charge = 0.3;
+  });
+  D.isBigMove = function (id) { var w = id && W[id]; return !!(w && w.charge); };
 
   var TYPE_FAMILY = [
     [/fire|flame|dragon|dinosaur|reptile|ceratopsian|dramon/i, "fire"],

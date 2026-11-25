@@ -30,30 +30,31 @@ ok(W.meteorBreath.drop === "fall" && W.stompQuake.drop === "rise", "drops fall o
 
 /* ---- the tree, stage by stage (Agumon line) ---- */
 function openIds(form, skills) { const t = SK.tree(D, form, skills), out = []; t.slots.special.forEach(e => { if (!SK.blocked(D, form, skills, e.id)) out.push(e.id); }); return out; }
+const PL = SK.RULES.prereqLevel, carry = Math.round(PL * 0.75);
 let sk = { bubbleBlow: 1 };
 let o = openIds("botamon", sk);
 ok(o.includes("fizzBubbles") && o.includes("fuzzPuff") && !o.includes("boilingBubbles"), "Botamon can learn Fizz Bubbles and Fuzz Puff, not Koromon's yet");
 ok(/Reach In-Training/.test(SK.blocked(D, "botamon", sk, "boilingBubbles")), "Koromon's moves say when they open");
-sk.fizzBubbles = 4; SK.learned(D, sk, "fizzBubbles"); sk.fuzzPuff = 2; SK.learned(D, sk, "fuzzPuff");
+sk.fizzBubbles = PL; SK.learned(D, sk, "fizzBubbles"); sk.fuzzPuff = 2; SK.learned(D, sk, "fuzzPuff");
 o = openIds("koromon", sk);
 ok(o.includes("boilingBubbles") && o.includes("bounceDrop"), "as Koromon: Boiling Bubbles and Bounce Drop open");
 ok(/Grows from Fizz Bubbles/.test(SK.sigNote(D, sk, "boilingBubbles")), "the card says what it grows from: " + SK.sigNote(D, sk, "boilingBubbles"));
 sk.boilingBubbles = (sk.boilingBubbles || 0) + 1; SK.learned(D, sk, "boilingBubbles");
-ok(!(sk.fizzBubbles > 0) && sk["!fizzBubbles"] === 2 && sk.boilingBubbles === 3, "learning it replaces Fizz Bubbles and keeps most of its level (Lv 4 -> Lv " + sk.boilingBubbles + ")");
+ok(!(sk.fizzBubbles > 0) && sk["!fizzBubbles"] === 2 && sk.boilingBubbles === carry, "learning it replaces Fizz Bubbles and keeps most of its level (Lv " + PL + " -> Lv " + sk.boilingBubbles + ")");
 ok(!SK.tree(D, "koromon", sk).slots.special.some(e => e.id === "fizzBubbles"), "and Fizz Bubbles leaves the tree");
 ok(sk.fuzzPuff === 2, "Fuzz Puff, a keeper, stays as it was");
-sk.boilingBubbles = 2;
-ok(/Needs Boiling Bubbles Lv 3/.test(SK.blocked(D, "agumon", sk, "flameGargle")), "Agumon's Flame Gargle needs Boiling Bubbles at Lv 3 first");
-sk.boilingBubbles = 3;
+sk.boilingBubbles = PL - 1;
+ok(new RegExp("Needs Boiling Bubbles Lv " + PL).test(SK.blocked(D, "agumon", sk, "flameGargle")), "Agumon's Flame Gargle needs Boiling Bubbles at Lv " + PL + " first (Isaac: a bigger move needs the one before it at 7)");
+sk.boilingBubbles = PL;
 o = openIds("agumon", sk);
 ok(o.includes("flameGargle") && o.includes("dashClaw") && o.includes("scorchMark") && o.includes("stompQuake"), "as Agumon: Flame Gargle, the Dash Claw / Scorch Mark choice and Stomp Quake open");
 ok(/Choice: locks Scorch Mark/.test(SK.sigNote(D, sk, "dashClaw")), "the choice says what it locks");
 sk.dashClaw = 1; SK.learned(D, sk, "dashClaw");
 ok(/Locked: you took Dash Claw/.test(SK.blocked(D, "agumon", sk, "scorchMark")), "taking Dash Claw locks Scorch Mark");
 ok(/Locked: you took Dash Claw/.test(SK.blocked(D, "greymon", sk, "wildfireField")), "and Scorch Mark's Champion move with it");
-ok(/Needs Dash Claw Lv 3/.test(SK.blocked(D, "greymon", sk, "hornCharge")), "Horn Charge, from Dash Claw, needs it at Lv 3");
-sk.dashClaw = 3; sk.hornCharge = 1; SK.learned(D, sk, "hornCharge");
-ok(!(sk.dashClaw > 0) && sk.hornCharge === 2 && /Locked: you took Horn Charge/.test(SK.blocked(D, "greymon", sk, "scorchMark")), "Dash Claw grows into Horn Charge, and the lock now names Horn Charge");
+ok(new RegExp("Needs Dash Claw Lv " + PL).test(SK.blocked(D, "greymon", sk, "hornCharge")), "Horn Charge, from Dash Claw, needs it at Lv " + PL);
+sk.dashClaw = PL; sk.hornCharge = 1; SK.learned(D, sk, "hornCharge");
+ok(!(sk.dashClaw > 0) && sk.hornCharge === carry && /Locked: you took Horn Charge/.test(SK.blocked(D, "greymon", sk, "scorchMark")), "Dash Claw grows into Horn Charge, and the lock now names Horn Charge");
 ok(SK.blocked(D, "greymon", sk, "tailSweep") === null && SK.blocked(D, "greymon", sk, "stompQuake") === null, "the keepers are always open");
 for (let i = 0; i < 200; i++) { const off = SK.offer(D, "greymon", sk, Math.random, 3); if (off.some(id => id === "scorchMark" || id === "wildfireField" || id === "fizzBubbles")) { ok(false, "a level-up card offered a locked or grown move"); break; } if (i === 199) ok(true, "200 level-up offers: never a locked or grown move"); }
 const act = SK.active(D, sk).map(a => a.id);
@@ -64,8 +65,8 @@ ok(G.sunMeteor.up === "hatchBarrage" && G.hatchBarrage.up === "meteorBreath" && 
   "Agumon's line grows on: Meteor Breath -> Hatch Barrage -> Sun Meteor; Horn Charge -> Trident Lunge -> Cyclone Drill");
 ok(/Locked: you took Horn Charge/.test(SK.blocked(D, "metalgreymon", sk, "napalmField")) && /Locked: you took Horn Charge/.test(SK.blocked(D, "wargreymon", sk, "infernoCarpet")),
   "the locked side stays locked all the way to Mega");
-ok(/Needs Horn Charge Lv 3/.test(SK.blocked(D, "metalgreymon", sk, "tridentLunge")) && SK.blocked(D, "metalgreymon", sk, "ironWingGust") === null && /Reach Mega/.test(SK.blocked(D, "metalgreymon", sk, "shieldBash")),
-  "MetalGreymon: Trident Lunge needs Horn Charge Lv 3, Iron Wing Gust is open, WarGreymon's moves wait for Mega");
+ok(new RegExp("Needs Horn Charge Lv " + PL).test(SK.blocked(D, "metalgreymon", sk, "tridentLunge")) && SK.blocked(D, "metalgreymon", sk, "ironWingGust") === null && /Reach Mega/.test(SK.blocked(D, "metalgreymon", sk, "shieldBash")),
+  "MetalGreymon: Trident Lunge needs Horn Charge Lv " + PL + ", Iron Wing Gust is open, WarGreymon's moves wait for Mega");
 ok(!G.hawkmonQuillStorm && (L.hawkmon.sigs || []).length === 12 && (L.wormmon.sigs || []).length === 16, "a line without an Ultimate or Mega stops there (Hawkmon's at Champion, Wormmon's at DinoBeemon)");
 ok(W.sunMeteor.levels[0].damage > W.hatchBarrage.levels[0].damage && W.hatchBarrage.levels[0].damage > W.meteorBreath.levels[0].damage, "each step of a growing move hits harder");
 
@@ -91,10 +92,10 @@ const sim = new mission.MissionSim({ seed: 7, hz: auth.TICK_HZ, data: D }); cons
 sim.phase = "playing"; sim.time = 60; sim.skillTree = true;
 A.join({ id: "local", kind: "host-client", hasTamer: true, form: "agumon", x: 0, y: 0, mx: 0, my: 0, hp: 50, maxHp: 50, tamerHp: 50, tamerMaxHp: 50, level: 5 });
 const p = sim.player("local");
-p.form = "agumon"; p.hatchLeft = 0; p.skills = { bubbleBlow: 1, boilingBubbles: 3 }; p.skillPoints = 3;
+p.form = "agumon"; p.hatchLeft = 0; p.skills = { bubbleBlow: 1, boilingBubbles: PL }; p.skillPoints = 3;
 p.skillOffer = ["flameGargle", "dashClaw", "scorchMark"];
 let res = A.act({ type: "skill.add", id: "local", skill: "flameGargle" });
-ok(res && res.ok && !(p.skills.boilingBubbles > 0) && p.skills.flameGargle === 2, "spent through the simulation, Flame Gargle replaces Boiling Bubbles (" + JSON.stringify(res && res.reason || "") + ")");
+ok(res && res.ok && !(p.skills.boilingBubbles > 0) && p.skills.flameGargle === carry, "spent through the simulation, Flame Gargle replaces Boiling Bubbles (" + JSON.stringify(res && res.reason || "") + ")");
 p.skillOffer = ["dashClaw", "scorchMark", "stompQuake"];
 res = A.act({ type: "skill.add", id: "local", skill: "scorchMark" });
 p.skillOffer = ["dashClaw", "stompQuake", "pw"];

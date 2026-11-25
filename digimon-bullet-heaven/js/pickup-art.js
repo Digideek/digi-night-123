@@ -1,6 +1,6 @@
 /* Pickup art (Nov 15): the things enemies drop.
  *
- * XP gem, DigiBits coin, meat, fish, berry and the seed packets are drawn by
+ * XP gem, DigiCoins coin, meat, fish, berry and the seed packets are drawn by
  * scripts/art/make_items.py (28x28, cel-shaded, tinted outline) and loaded
  * from assets/items/pickups/. On the field each drop gets a soft shadow, a
  * glow in its own colour, a gentle bob, and gems and coins twinkle; the coin
@@ -14,12 +14,15 @@
   if (!S || typeof document === "undefined") return;
 
   var CROPS = ["carrot", "cucumber", "tomato", "corn", "cabbage", "potato"];
-  var FILES = { meat: ["meat"], fish: ["fish"], berry: ["berry"], xp: ["xp_0", "xp_1"], bits: ["bits_0", "bits_1", "bits_2", "bits_3"] };
-  var GLOW = { meat: "#ff9a52", fish: "#5ab8ff", berry: "#ff6ac0", xp: "#4affd8", bits: "#ffd84a" };
+  var FILES = { meat: ["meat"], fish: ["fish"], berry: ["berry"], xp: ["xp_0", "xp_1"], bits: ["bits_0", "bits_1", "bits_2", "bits_3"], wood: ["wood"], evo: ["evo"] };
+  var GLOW = { meat: "#ff9a52", fish: "#5ab8ff", berry: "#ff6ac0", xp: "#4affd8", bits: "#ffd84a", wood: "#e0a060", evo: "#ffa040" };
   var CROP_GLOW = { carrot: "#f08a28", cucumber: "#5cb848", tomato: "#e83a30", corn: "#f4d040", cabbage: "#9ad860", potato: "#c8a060" };
   /* bag / shop / HUD icon names that should show the same picture */
-  var ICONS = { meat: "meat", meatPack: "meat", food: "meat", fish: "fish", fishPack: "fish", berry: "berry", berryPack: "berry", bits: "bits" };
+  var ICONS = { meat: "meat", meatPack: "meat", food: "meat", fish: "fish", fishPack: "fish", berry: "berry", berryPack: "berry", bits: "bits", wood: "wood" };
   var art = {}, glows = {}, i;
+  /* the rare foods spire chests hold (17z33) */
+  var RARE = { sweet_nut: "#ffcf5a", protein_steak: "#ff6a5a", golden_meat: "#ffd84a", digi_seed: "#3ad8a8", evo_fruit: "#c080ff", moldy_meat: "#9ab060" };
+  for (i in RARE) { FILES[i] = [i]; GLOW[i] = RARE[i]; ICONS[i] = i; ICONS[i + "Pack"] = i; }
   for (i = 0; i < CROPS.length; i++) { FILES["seed_" + CROPS[i]] = ["seed_" + CROPS[i]]; GLOW["seed_" + CROPS[i]] = CROP_GLOW[CROPS[i]]; }
 
   function load(kind) {

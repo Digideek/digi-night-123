@@ -48,7 +48,6 @@
         </div>
         <div class="hud-right">
           <div class="hud-buttons">
-            <button type="button" id="btn-shop" data-glyph-title="shop" data-glyph-label="Shop" title="Shop (Q)">Shop</button>
             <button type="button" id="btn-capture" data-glyph-title="capture" data-glyph-label="Capture" title="Catch (E)" hidden>Capture</button>
             <span class="hud-snd">
               <button type="button" id="btn-music" title="Music is on">♫</button>
@@ -61,9 +60,10 @@
           </div>
           <div class="chip chip-season" id="hud-season" data-season="spring"><b id="hud-season-year">Year 1</b> · <span id="hud-season-name">Spring</span><i id="hud-season-bar"></i></div>
           <div class="trust-box" id="hud-trust" hidden></div>
+          <div class="side-box" id="hud-side" hidden title="Your side in the turf war (Pause > Your side to change)"></div>
           <div class="chip chip-bits" id="hud-bits">0 Bits</div>
           <div class="chip" id="hud-timer">00:00</div>
-          <button type="button" class="chip chip-farm" id="hud-farm" hidden title="Go to the Digi Farm (G). Not with enemies close; the world goes on while you're there.">Farm [G]</button>
+          <button type="button" class="chip chip-farm" id="hud-farm" hidden title="The way to the nearest farm gate. Walk up to it and press E.">Farm gate</button>
           <button type="button" class="chip chip-pvp" id="hud-pvp" hidden title="PvP flag (V): when two tamers both have it up, their partners fight. Lowering it takes 10 seconds.">PvP off [V]</button>
           <div class="chip" id="hud-weather" hidden></div>
           <div class="chip" id="hud-level" hidden style="display:none">Lv 1</div>
@@ -78,12 +78,10 @@
         <div id="prompt-bar" hidden data-source="keyboard">
           <span data-glyph="move" data-glyph-label="Move"></span>
           <span data-glyph="aim" data-glyph-label="Aim"></span>
-          <span data-glyph="interact" data-glyph-label="Interact"></span>
+          <span data-glyph="interact" data-glyph-label="Interact / farm gate"></span>
           <span data-glyph="send" data-glyph-label="Send partner"></span>
-          <span data-glyph="feed" data-glyph-label="Feed"></span>
           <span data-glyph="burst" data-glyph-label="Warp"></span>
-          <span data-glyph="farm" data-glyph-label="Farm"></span>
-          <span data-glyph="skills" data-glyph-label="Skills"></span>
+          <span data-glyph="inv" data-glyph-label="Bag"></span>
           <span data-glyph="pause" data-glyph-label="Pause"></span>
         </div>
        </div>
@@ -102,14 +100,14 @@
       <div class="stats-head"><b id="skills-title">Skills</b><button type="button" id="skills-close" aria-label="Close">&times;</button></div>
       <div class="stats-points" id="skills-points">Skill points: 0</div>
       <div id="skills-rows"></div>
-      <div class="stats-foot">Each job level gives one skill point and three cards. Take a card to learn or raise that skill, or skip and put the point into something you already know. New skills only come from cards. A bigger move needs the form that knows it and the smaller move at Lv 3; only the biggest move of each kind fires. Signature moves all fire: some grow into a stronger move and replace the old one, and a Rookie choice locks the other side for the rest of the run.</div>
+      <div class="stats-foot">Each job level gives one skill point and three cards. Take a card to learn or raise that skill, or skip and put the point into something you already know. A bigger move needs the smaller one of its kind at Lv 7. Only equipped moves fire: 2 as a Baby or In-Training, 3 as a Rookie, 4 from Champion (+1 with the Lab's Move Slot). Swap them with Equip and Unequip.</div>
     </div>
     <div id="stats-panel" hidden>
       <div class="stats-head"><b id="stats-title">Tamer Lv 1</b><button type="button" id="stats-close" aria-label="Close">&times;</button></div>
       <div class="stats-xp"><i id="stats-xp-fill"></i></div>
       <div class="stats-points" id="stats-points">0 points to spend</div>
       <div id="stats-rows"></div>
-      <div class="stats-foot">Base level is your tamer: it gives status points. Job level is your Digimon: it gives moves, and bonus stats (the green +) each time it digivolves. A stat costs more the higher it is. Everything resets when the run ends. T to close.</div>
+      <div class="stats-foot">Base level is your tamer: it gives status points. Job level is your Digimon: it gives moves. The green + is free bonus: from levelling up, digivolving and farm training (every 10 Offense gives STR and DEX, Intelligence gives INT and LUK, Agility gives AGI, Bond gives VIT). A stat costs more the higher it is. Everything resets when the run ends. T to close.</div>
     </div>
     <div id="evo-offer" hidden>
       <div class="evo-offer-title" id="evo-offer-title">Ready to digivolve!</div>
@@ -172,7 +170,7 @@
             <p class="party-you" hidden><span id="party-you-name">You</span></p>
           </div>
           <div class="title-foot">
-            <span class="chip" id="title-digibits" data-digibits>DigiBits 0</span>
+            <span class="chip" id="title-digibits" data-digibits>DigiCoins 0</span>
             <span class="title-hint">Tap the egg</span>
           </div>
         </nav>
@@ -180,20 +178,31 @@
         <div class="starters" id="starter-row"></div>
         <div class="how-to" id="help-box" hidden>
           <button type="button" class="px-close" id="btn-help-close">Close</button>
+          <p><b>Four ways to play:</b> <b>Story</b> (solo or with friends): Jijimon gives you one goal at a time and teaches you the whole game; the rest of the world opens up as you go. <b>Survival</b>: everything on, with four sets of rules: Open World (your partner hatches again when it falls), One Life, Ranked (one life, no CPU partners) and the Weekly Map (the same world for everyone that week). <b>Night Siege</b>: grow by day; at night, waves come for the Digi-eggs in the nest till dawn. Wood drops only here: hold E to build a fence (3 wood and 10 DigiCoins). Some nights are special (swarm, flyers, a giant, raiders), and it never ends: how many nights can you hold? <b>Versus</b> (online): seven minutes to race a real player to Mega, each starting as a Rookie, then everyone fights in the arena, best of three. <b>Duel</b> (under Versus): your Hatchery Digimon, straight into the arena, nothing lost and nothing earned.</p>
+          <p><b>Two kinds of level:</b> your partner's <b>job level</b> (the Job Lv chip) gives a skill point each time: press K to learn a new move or make one stronger. Your own <b>base level</b> as the tamer (the Base Lv chip) gives stat points: press T to raise STR (claws and bites), INT (special moves), VIT (health and defence), AGI (speed and dodging), DEX (landing hits) or LUK (criticals and lucky digivolutions).</p>
+          <p><b>Equipped moves:</b> your partner can learn many moves but only uses the ones equipped: 2 as a Baby or In-Training, 3 as a Rookie, and 4 from Champion up. The Lab's Move Slot adds one more at every stage. Swap them any time in Skills (K): Equip and Unequip on each learned move, and with every slot full you pick which one to swap out. A move learned with every slot full waits there until you swap it in, and a bigger move of the same kind takes its smaller one's slot by itself. Every move goes to Lv 10, and a bigger move needs the one before it at Lv 7 (Nova Blast needs Pepper Breath at 7). The squares at the bottom right are your equipped moves: full colour when ready, grey with a clock-like sweep while recharging. Orbits never wait.</p>
+          <p><b>World events and spectating:</b> now and then a virus outbreak, a Dark Area surge or a rampaging Mega hits the map, with a warning first. Everyone is paid when it falls, whatever side they're on. Alone they're rare, but with friends in the run the first comes 5 to 10 minutes in and then one every 15 to 25 minutes, and each extra tamer who comes adds 20% to everyone's pay (up to 60%). Online, if you're down and waiting for a revive, you watch a friend who's still up: left / right switches between them and your own spot.</p>
+          <p><b>Zoom:</b> the mouse wheel (or a pinch on a phone) zooms in steps, and only stops where the pixel art comes out sharp: 100% and 200% on most screens (on a 150% Windows screen, 133% and 200%; on a phone or Retina screen, 100%, 150% and 200%). One more step out gives a wide view to see more, which is a little soft. Hold Ctrl to zoom at the farm.</p>
+          <p><b>Damage numbers:</b> every hit shows its own number. A gold CRIT! is a critical hit, an up arrow means the foe is weak to that move's element and takes extra, a down arrow means it resists, and MISS means it dodged. Your own partner's hurts show no numbers.</p>
+          <p><b>The League</b> (log in on the online server): a board for every mode: Survival (Weekly, Ranked, Level, Fastest Mega, longest Survival, Lords, PvP), Story (fastest finish), Night Siege (most nights) and Versus (matches won), with your Duel record beside them. Every entry shows the Digimon it was done with and its Hatchery generation. Back a biome in the faction season, and if it takes the most land that week, its backers are paid.</p>
+          <p><b>The turf wars (the heart of it):</b> the biomes are at war, and every border is a front line that really moves. Early in a run a little Digimon asks which side you're on; pick one (or later, from the pause menu) and help it take over. You can only be friends with one biome at a time: if you haven't picked, every biome you help warms to you, and the first one you win over all the way (to trusted) becomes your side while the rest go back to neutral. Switching sides drops the old one back to neutral too. Hunt its enemies at the front and take down rival biomes' lords: its Digimon come to trust you (they leave you be), then ally with you (they fight at your side). Your side's share of the land shows under the minimap; when it holds most of the land around the start, the war is yours. Or skip all that, head off in any direction and see how long you can survive.</p>
+          <p><b>World events:</b> once in a while (most runs have none, now and then two) something happens that everybody on the map can team up on, whatever side they're on: a virus outbreak with a Patient Zero to hunt down, a Dark Area rift that turns the land round it to Glitch until its Surge Lord falls, or a Mega on the rampage. You get a warning and a marker on the minimap; beat it in time and everyone is paid.</p>
           <p><b>Move</b> with WASD or arrow keys, a left stick / D-pad, or the floating stick on a phone.</p>
           <p><b>Attacks fire on their own.</b> After you pick a tamer and a Digitama, the run starts with an egg. It hatches after 8 seconds, and the enemies arrive right before it does. Then your Digimon fights on its own. Click (or tap) an enemy to send your partner after it. Collect teal XP gems and food; food goes in your bag and you feed your partner at the Digi Farm.</p>
-          <p><b>Care:</b> hunger mainly drains during battle, and only a faint trickle on the <b>Digifarm</b> (tunable, default 0.05×). It does not drain in a brawl, and an empty belly has no combat penalties. Feeding is farm-only. Leaving the farm hungry without having fed (a refused meal does not count against you) is a care mistake. Shop food, vitamins, medicine, toys, and evolution items go to your farm bag. In battle, defeated foes drop instant ground heals — walk over the green cross to recover.</p>
+          <p><b>Care:</b> hunger mainly drains during battle, and only a faint trickle on the <b>Digifarm</b> (tunable, default 0.05×). It does not drain in a brawl, and an empty belly has no combat penalties. Feeding is farm-only. Leaving the farm hungry without having fed (a refused meal does not count against you) is a care mistake. Shop food, vitamins, medicine, toys, and evolution items go to your farm bag. In battle, defeated foes drop instant ground heals — walk over the green cross to recover. Meals don't heal: vegetables from the garden each give a small lasting boost instead (speed, attack rate, damage, pickup range, defence or max health).</p>
           <p><b>Evolution</b> needs a level plus feeding, happiness, and health thresholds (shown in the HUD). Neglect can branch into Numemon; good care can still recover.</p>
           <p><b>High happiness</b> speeds up attacks and can add extra projectiles. Below 25% HP you enter <b>Desperation</b> — stronger, but you take more damage and drain joy.</p>
-          <p><b>Bits and shop:</b> defeated foes drop Bits. Jijimon opens a shop at intervals (or press Q / the Shop button while he is around). Prices of the same item go up each time you buy it in a run.</p>
+          <p><b>Bits and shop:</b> defeated foes drop Bits. Jijimon comes by now and then out in the world, and lives in the cottage at the farm: walk up to him and press E to shop. That's the only way in. Prices of the same item go up each time you buy it in a run.</p>
           <p><b>Capture:</b> KOs fill a charge on the HUD. A Data Chip only works on a weakened non-boss (25% HP or less) once that charge meets the target's stage (Baby 15, In-Training 25, Rookie and Mega 40, Champion 70, Armor 90, Ultimate 120). A try — success or fail — resets the charge to 0. Press C (gamepad X, or the Capture button) near a marked foe. Captures join as an ally and go to the DigiBank.</p>
-          <p><b>Survivor brawl:</b> after a level-up (every level by default, or every 3 — tunable), a short brawl can break out on the same top-down field for up to 6 fighters. CPU teammates are optional lone Digimon (0–5, default none) with no tamer. With fewer than two fighters the brawl is skipped (or a short solo bonus, if you turn that on). When two or more are in, survivors fight; if anyone is down, exactly one random downed fighter is revived; if everyone survived, no revive. Dead players (up to 5) bet on the winner. Odds show first. Wins and correct bets pay persistent DigiBits. It doesn't change your run's combat outcome.</p>
-          <p><b>Digifarm visits</b> are scheduled on battle time at 3, 6, and 10 minutes, then every 4 minutes after that (tunable, resets each run). A countdown and 15s / 5s warnings appear before each visit. You have a short stay cap (default 45s) before an auto-return. Feed, pet, and use the four training stations (punching bag, chalkboard, running track, and a cozy TV) to steer evolution and mood. Esc or Return leaves when you're ready. A brawl that comes due around a farm visit plays first, then the farm opens.</p>
-          <p><b>Battle clock:</b> counts up from 00:00. The seasons change every 6 minutes (Spring, Summer, Fall, Winter, then a new year), and every season that passes makes enemies tougher.</p>
-          <p><b>The Hatchery:</b> every enemy you defeat pays one piece of data of its element, and every minute survived pays a little plain data. On the title screen, feed that data to the egg in the Hatchery. It hatches, then digivolves as far as Champion. What it becomes depends on what you fed it and on the sky when you fed it, and is never certain. Raise one to Rookie and its egg line is yours to pick for any run: that is the only way to open a line. You can also take the Hatchery Digimon itself into one run in place of an egg; it starts at its stage, and it does not come back.</p>
+          <p><b>Survivor brawl:</b> after a level-up (every level by default, or every 3 — tunable), a short brawl can break out on the same top-down field for up to 6 fighters. CPU teammates are optional lone Digimon (0–5, default none) with no tamer. With fewer than two fighters the brawl is skipped (or a short solo bonus, if you turn that on). When two or more are in, survivors fight; if anyone is down, exactly one random downed fighter is revived; if everyone survived, no revive. Dead players (up to 5) bet on the winner. Odds show first. Wins and correct bets pay persistent DigiCoins. It doesn't change your run's combat outcome.</p>
+          <p><b>The Digifarm</b>: walk into a Digi-gate (north of the start, or beside any nest your side holds) and press E. Stay as long as you like: there's no time limit, but the world, and your friends, carry on without you. To leave, walk to the glowing WORLD gate at the bottom of the farm and press E. Status (T), Skills (K) and the bag (I) all work there. Feed, pet, and train. Three stations are short mini games: the punching bag (Power Strike: press E on the gold mark, Offense), the chalkboard (Pattern Recall: repeat the shapes, Intelligence) and the running track (Rockfall Run: your partner runs laps; switch lanes with E or A / D to dodge rocks and hurdles, Agility). The play station builds bond. The line under each sign says what a session gives right now, and the better you play (Okay, Good, Great, Perfect) the more you get. A brawl that comes due around a farm visit plays first, then the farm opens.</p>
+          <p><b>Battle clock:</b> counts up from 00:00. The seasons change about every 8 minutes (Spring, Summer, Fall, Winter, then a new year), and every season that passes makes enemies tougher.</p>
+          <p><b>The Hatchery:</b> every enemy you defeat pays one piece of data of its element, and every minute survived pays a little plain data. On the title screen, feed that data to an egg in the Hatchery. It hatches, then digivolves as far as Champion. What it becomes depends on what you fed it and on the sky when you fed it, and is never certain. Raise one to Rookie and its egg line is yours to pick for any run: that is the only way to open a line.</p>
+          <p><b>Hatchery slots and bloodlines:</b> there are three slots, each with its own egg and its own family, all fed from one pool of data (you choose where it goes). Take a slot's Digimon into a run in place of an egg: it starts at its stage, and a new egg of its bloodline waits when you come back. How it did decides the line's traits, which every later generation carries (extra stats, power, quicker learning, a head start on skills, a better shiny chance): reaching Mega earns 2, and a great run (an Ultimate, a long run, 6 nights held, or the story finished) earns 1. But if it falls, the line pays: as an Ultimate it loses 1 trait level, as a Champion or Armor 3, and as a Rookie or younger the whole bloodline is erased. A Mega that falls dies a hero and still earns. In Night Siege, losing every egg counts as a fall. The Duel mode takes it into the arena as it is, with nothing to lose.</p>
+          <p><b>Expeditions:</b> while you play, the hatched Digimon you left at home in the other slots go exploring as a team, and bring back data, coins, sometimes an item, and now and then a map to a rare egg. The longer the run, the more they find.</p>
           <p><b>E interacts:</b> one key for everything you walk up to. Jijimon's shop, a spire or a cache, a Digimon you can catch (it wears a yellow ring), a DNA partner. <b>F</b> feeds.</p>
           <p><b>R:</b> when the meter is full, your partner warp digivolves for a few seconds. A Mega has nothing to warp into, so R fires its <b>ultimate</b> instead: its signature move, once, across most of the screen. A Mega cannot use that move any other way.</p>
-          <p><b>Controls:</b> keyboard, controller and touch all work, and the on-screen hints switch to whatever you used last. <b>Keyboard:</b> WASD to move, click a Digimon to send your partner, E interact, F feed, R warp / ultimate, G farm, K skills, T status, V PvP flag, Esc pause. <b>Controller:</b> left stick moves, right stick aims and RT sends your partner, Y interact, X catch, LB feed, RB warp / ultimate, LT farm, View skills, R3 status, L3 PvP flag, Start pause; in the small windows (level-up cards, digivolve, feed, status) the D-pad picks, A chooses and B closes. At the farm LB / RB pick bag slots. Hold E / F (gamepad Y, or the on-screen Revive button) to revive: in a solo run you get one self-revive per round after a fatal hit; in a CPU or multi-player party, hold near a downed teammate when at least two members are still standing. Rescue closes when a brawl starts. Battle weather can shift on its own after the egg hatches — Eclipse packs the field, Meteor Shower is a richer fight. The name shows on the HUD when a front is active. <b>Touch:</b> put your thumb anywhere low on the left and a stick appears under it; tap a Digimon to send your partner; the round buttons on the right are Warp, Feed, Farm and (when something is in reach) Shop / Use / Catch / DNA; the ☰ button holds Skills, Status, Shop, the PvP flag, sound and your run's numbers. <b>PvP</b> only happens when you and the other tamer both raise the PvP flag (V, L3 or the ☰ menu); then your Digimon fights theirs by itself, just like a wild one. <b>Clicking</b> only ever picks a target or moves your Digimon: click (or tap) a Digimon to send yours after it, or open ground to call it there. WASD (or the stick) always walks your tamer, in a PvP fight too: the Digimon do the fighting.</p>
+          <p><b>Controls:</b> keyboard, controller and touch all work, and the on-screen hints switch to whatever you used last. <b>Keyboard:</b> WASD to move, click a Digimon to send your partner, E interact (and enter a farm gate), F feed (at the farm), R warp / ultimate, K skills, T status, I bag (read what you carry, throw things away), V PvP flag, Esc pause. <b>Controller:</b> left stick moves, right stick aims and RT sends your partner, Y interact, X catch, LB feed, RB warp / ultimate, LT farm, View skills, R3 status, L3 PvP flag, Start pause; in the small windows (level-up cards, digivolve, feed, status) the D-pad picks, A chooses and B closes. At the farm LB / RB pick bag slots. Hold E / F (gamepad Y, or the on-screen Revive button) to revive: in a solo run you get one self-revive per round after a fatal hit; in a CPU or multi-player party, hold near a downed teammate when at least two members are still standing. Rescue closes when a brawl starts. Battle weather can shift on its own after the egg hatches — Eclipse packs the field, Meteor Shower is a richer fight. The name shows on the HUD when a front is active. <b>Touch:</b> put your thumb anywhere low on the left and a stick appears under it; tap a Digimon to send your partner; the round buttons on the right are Warp and (when something is in reach) Farm / Shop / Use / Catch / DNA. The farm is a glowing Digi-gate in the middle of the start area, plus one at every nest your side has taken over: walk up to one to go in; the ☰ button holds Skills, Status, Shop, the PvP flag, sound and your run's numbers. <b>PvP</b> only happens when you and the other tamer both raise the PvP flag (V, L3 or the ☰ menu); then your Digimon fights theirs by itself, just like a wild one. <b>Clicking</b> only ever picks a target or moves your Digimon: click (or tap) a Digimon to send yours after it, or open ground to call it there. WASD (or the stick) always walks your tamer, in a PvP fight too: the Digimon do the fighting.</p>
         </div>
       </div>
     </div>
@@ -216,6 +225,7 @@
         <p class="sub">Every egg line, opened or not. Swipe or use the arrows. Tap the egg to say hello.</p>
         <div class="tamer-grid egg-grid" id="egg-row"></div>
         <div class="row center">
+          <button type="button" class="btn px-btn" id="btn-egg-all">See all eggs</button>
           <button type="button" class="btn px-btn px-primary" id="btn-egg-start" data-px="START" hidden>Start</button>
           <button type="button" class="btn px-btn px-primary" id="btn-egg-back" data-px="DONE">Done</button>
         </div>
@@ -308,7 +318,10 @@
         <div class="row center pause-actions">
           <button type="button" class="btn" id="btn-resume">Resume</button>
           <button type="button" class="btn ghost" id="btn-pause-log">Digivolution Log</button>
+          <button type="button" class="btn ghost" id="btn-side">Your side</button>
           <button type="button" class="btn ghost" id="btn-fx">Effects: Full</button>
+          <button type="button" class="btn ghost" id="btn-perf" title="Frame rate and what's using time (F3)">Performance: Off</button>
+          <button type="button" class="btn ghost" id="btn-gpu-help" style="display:none">Graphics help</button>
           <button type="button" class="btn ghost" id="btn-quit">Quit to Title</button>
         </div>
       </div>
@@ -356,7 +369,7 @@
           <canvas id="shop-jiji" class="shop-jiji pixelated" width="120" height="120" aria-hidden="true"></canvas>
           <div class="shop-head-text">
             <h2>JIJIMON'S SHOP</h2>
-            <p class="sub">Bits: <span id="shop-bits">0</span> · Prices rise after each buy of the same item. A / Enter / tap to buy, B or Esc to close.</p>
+            <p class="sub">Bits: <span id="shop-bits">0</span> · What he brings changes every visit. A / Enter / tap to buy, B or Esc to close.</p>
           </div>
         </div>
         <div class="shop-tabs" id="shop-tabs" role="tablist"></div>
@@ -420,14 +433,13 @@
           <div class="farm-title">DIGIFARM</div>
           <div id="farm-hunger-icon" class="farm-hunger-icon" hidden title="" aria-hidden="true">●</div>
         </div>
-        <div id="farm-stay">Auto-return 00:45</div>
         <div id="farm-mood"></div>
         <div id="farm-slots"></div>
         <div class="farm-actions">
           <button type="button" class="btn" id="btn-farm-pet" data-glyph="interact" data-glyph-label="Pet / Use">Pet / Use</button>
-          <button type="button" class="btn ghost" id="btn-farm-train">Train</button>
-          <button type="button" class="btn ghost" id="btn-farm-shop" data-glyph="shop" data-glyph-label="Stall">Stall</button>
-          <button type="button" class="btn" id="btn-farm-return" data-glyph="back" data-glyph-label="Return">Return to battle</button>
+          <button type="button" class="btn ghost" id="btn-farm-bag" data-glyph="inv" data-glyph-label="Bag">Bag</button>
+          <button type="button" class="btn ghost" id="btn-farm-skills" data-glyph="skills" data-glyph-label="Skills">Skills</button>
+          <button type="button" class="btn ghost" id="btn-farm-status" data-glyph="stats" data-glyph-label="Status">Status</button>
         </div>
       </div>
     </div>
@@ -436,7 +448,7 @@
       <div class="lab">
         <button type="button" class="btn hub-mini lab-back" id="btn-lab-back" data-px="BACK"></button>
         <h2 class="lab-head" data-px="THE LAB"></h2>
-        <p class="lab-sub">Spend DigiBits on small boosts that stay with you in every run. <span class="hub-chip">DigiBits <b id="lab-bits">0</b></span></p>
+        <p class="lab-sub">Spend DigiCoins on small boosts that stay with you in every run. <span class="hub-chip">DigiCoins <b id="lab-bits">0</b></span></p>
         <div class="lab-grid" id="lab-grid"></div>
         <p class="lab-foot" id="lab-foot"></p>
       </div>
@@ -448,15 +460,19 @@
         <h2 class="lab-head hatch-head" data-px="THE HATCHERY"></h2>
         <div class="hatch-body">
           <div class="hatch-stand">
+            <div class="hatch-slots" id="hatch-slots"></div>
             <canvas id="hatch-art" width="340" height="260"></canvas>
             <b id="hatch-name">Mystery egg</b>
             <span id="hatch-tag"></span>
             <div class="hatch-bar"><i id="hatch-bar"></i><em id="hatch-bar-text"></em></div>
+            <div class="hatch-fed" id="hatch-fed" hidden></div>
             <p class="hatch-use" id="hatch-use" hidden></p>
+            <p class="hatch-exped" id="hatch-exped" hidden></p>
           </div>
           <div class="hatch-side">
             <p class="hatch-sub">Your data <span class="hub-chip">Total <b id="hatch-total">0</b></span></p>
             <div class="hatch-data" id="hatch-data"></div>
+            <div class="hatch-blood" id="hatch-blood"></div>
           </div>
         </div>
         <p class="lab-foot" id="hatch-foot"></p>
@@ -466,8 +482,8 @@
     <div id="cosmetics-screen" class="screen">
       <div class="panel" id="cosmetics-panel">
         <h2>CABINET</h2>
-        <p class="sub" id="cosmetics-bits" data-digibits>DigiBits 0</p>
-        <p class="sub">Spend DigiBits on titles, Digivice frames, and farm backdrops. They stay equipped across runs. A few pieces aren't for sale — they only turn up after a mysterious brawl.</p>
+        <p class="sub" id="cosmetics-bits" data-digibits>DigiCoins 0</p>
+        <p class="sub">Spend DigiCoins on titles, Digivice frames, and farm backdrops. They stay equipped across runs. A few pieces aren't for sale — they only turn up after a mysterious brawl.</p>
         <p class="sub" id="cosmetics-account">Playing as a local guest. Cloud accounts are not connected.</p>
         <div id="cosmetics-grid" class="cosmetics-grid"></div>
         <div class="row center">
@@ -549,20 +565,29 @@
   <script src="js/net/transport.js"></script>
   <script src="js/net/rival-sim.js"></script>
   <script src="js/net/virus-sim.js"></script>
+  <script src="js/net/story-sim.js"></script>
+  <script src="js/net/siege-sim.js"></script>
+  <script src="js/net/versus-sim.js"></script>
+  <script src="js/net/spire-sim.js"></script>
   <script src="js/net/pvp-sim.js"></script>
   <script src="js/net/faction-sim.js"></script>
   <script src="js/net/nest-sim.js"></script>
   <script src="js/net/war-sim.js"></script>
   <script src="js/net/nemesis-sim.js"></script>
   <script src="js/net/modes-sim.js"></script>
+  <script src="js/net/event-sim.js"></script>
   <script src="js/net/mission-sim.js"></script>
   <script src="js/net/brawl-sim.js"></script>
+  <script src="js/net/minigames.js"></script>
   <script src="js/net/progression.js"></script>
   <script src="js/net/authority.js"></script>
   <script src="js/net/client.js"></script>
   <script src="js/gl/renderer.js"></script>
   <script src="js/sprites.js"></script>
   <script src="js/attack-fx.js"></script>
+  <script src="js/sig-fx.js"></script>
+  <script src="js/sig-fx-draw.js"></script>
+  <script src="js/sig-icons.js"></script>
   <script src="js/hit-fx.js"></script>
   <script src="js/icon-art.js"></script>
   <script src="js/lab.js"></script>
@@ -583,12 +608,23 @@
   <script src="js/move-icons.js"></script>
   <script src="js/farm.js"></script>
   <script src="js/evo-log.js"></script>
+  <script src="js/vs-rookie.js"></script>
   <script src="js/title-scene.js"></script>
   <script src="js/net/online.js"></script>
+  <script src="js/perf-hud.js"></script>
+  <script src="js/gpu-help.js"></script>
+  <script src="js/turf.js"></script>
+  <script src="js/world-events.js"></script>
+  <script src="js/modes-ui.js"></script>
+  <script src="js/chat-ui.js"></script>
+  <script src="js/farm-gates.js"></script>
+  <script src="js/inventory-ui.js"></script>
+  <script src="js/farm-train.js"></script>
   <script src="js/game.js"></script>
   <script src="js/badges.js"></script>
   <script src="js/profile.js"></script>
   <script src="js/online-ui.js"></script>
+  <script src="js/egg-grid.js"></script>
   <!-- Championship item sprites disabled per Isaac (Nov 13): <script src="js/item-art.js"></script> -->
 </body>
 </html>

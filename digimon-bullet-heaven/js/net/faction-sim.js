@@ -16,9 +16,11 @@
  *   Digimon near you rally to you (cap `rallyCap`), follow you about and go for
  *   anything hostile to you that comes near.
  *
- * Several biomes can trust you at once (they still fight each other), and you
- * can switch sides: kill one side's Digimon and its trust drains away until
- * it is hostile again. Rivals, infected Digimon, field Megas and spire bosses
+ * One biome at a time (17z33): only your side (turf.js; Pause > Your side) earns
+ * your trust, and with no side yet the first biome you help becomes it. Picking
+ * another side drops the old one to neutral (progression.js "side.pick"); a free
+ * agent ("just survive") makes no friends at all. Kill your own side's Digimon
+ * and its trust drains away until it is hostile again. Rivals, infected Digimon, field Megas and spire bosses
  * belong to no biome: they are always hostile.
  */
 (function (root) {
@@ -78,9 +80,11 @@
       c = w.cellOf(e.x, e.y); R = F.frontCells;
       for (cy = c.cy - R; cy <= c.cy + R; cy++) for (cx = c.cx - R; cx <= c.cx + R; cx++) {
         b = w.cellOwner(cx, cy);
-        if (b && b !== fac) seen[b] = 1;
+        if (b && b !== fac) seen[b] = (seen[b] || 0) + 1;
       }
-      for (b in seen) this._trustEarn(p, b, F.killGain * big * share * this._trustStageW(e));
+      /* the biome holding most of the ground round the kill goes first: with no side picked, when two
+       * are won over by the same kill, that one is the one that becomes your side */
+      Object.keys(seen).sort(function (x, y) { return seen[y] - seen[x] || (x < y ? -1 : 1); }).forEach(function (k) { this._trustEarn(p, k, F.killGain * big * share * this._trustStageW(e)); }, this);
     };
     /* how much a kill of this one is worth, by stage (data.js FACTIONS.stageWeight) */
     MissionSim.prototype._trustStageW = function (e) {
@@ -92,6 +96,11 @@
     MissionSim.prototype._trustEarn = function (p, fac, amt) {
       var F = this._facCfg(), now = this._trustOf(p, fac), win, room;
       if (!(amt > 0)) return;
+      /* one friend at a time (17z33): only your side earns your trust. A free agent ("just survive")
+       * makes no friends. With no side picked, every biome you help warms to you, and the first
+       * one you win over all the way (to trusted) becomes your side; the rest go back to neutral. */
+      if (p.free) return;
+      if (p.side && p.side !== fac) return;
       if (F.topKeep != null) amt *= 1 - (1 - F.topKeep) * Math.min(1, now / F.max);
       if (F.perMinute) {
         p.trustWin = p.trustWin || {};
@@ -103,6 +112,12 @@
         win.got += amt;
       }
       this._trustAdd(p, fac, amt);
+      if (!p.side && this._trustOf(p, fac) >= F.trusted) {
+        var k;
+        p.side = fac;
+        for (k in p.trust) if (k !== fac && p.trust[k] > 0) { p.trust[k] = 0; if (p.allied) delete p.allied[k]; this.emit({ type: "trust", id: p.id, fac: k, level: "neutral", value: 0 }); }
+        this.emit({ type: "side.auto", id: p.id, side: fac });
+      }
     };
     /* a hit that landed: a little trust lost, more from a biome that trusted you (rate-limited) */
     MissionSim.prototype._trustHit = function (p, e) {

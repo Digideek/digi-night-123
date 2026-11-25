@@ -1570,3 +1570,667 @@ so real devices are much faster in absolute terms; what matters is the ratio.
 - `scripts/pickup-test.js` (new): a drop pulled in by the partner goes straight to the tamer and never
   swings back; a tamer running at 260 px/s is caught in 0.4 s; a nearby drop drifts ~40 px a second;
   far ones stay put; with two tamers it goes straight to the nearer one.
+
+## 2026-11-17z33 (cont.) — The snow-border lag, measured and fixed at the root
+- Reported again: next to the snow biome as it grew, the host's resolution dropped, it lagged badly
+  and the friend lost sight of the host; asked whether it had really been recreated, and why a good
+  PC would lag on a pixel game.
+- Recreated for real (`scripts/perf-snow-browser.js`): the real server, two Chrome players, the host
+  on a snow border out of the start area, snow made strong so it wins the war there by itself, the
+  host walking about, 40 s, both screens measured. On 17z32 it reproduces: snow took 38-46 cells on
+  the host's map and 0 on the friend's, both screens fell to the lowest resolution.
+- Why only the host: the host's browser runs the whole world for everyone, on one CPU thread, between
+  its own frames; a graphics card doesn't help with that. What hit it when a border moved near you:
+  - every border move wiped the whole map's remembered biomes and props and told the pathfinding the
+    whole map had changed, so every enemy's paths and every solid tile were worked out again; the
+    same for every ice attack, and the whole ground was thrown away and baked again in one frame
+    each time the season's ice stepped up (24 times a season) -> now (world.js mapChanged /
+    mapChanges, mission-sim.js _navForget) only the tiles a change touched are forgotten, and only
+    paths crossing them; the whole map only on a new map or an ice step
+  - ground chunks were rebuilt all at once in the frame they changed -> now marked stale, kept on
+    screen, and rebuilt two a frame (a season change: 24 chunks in one frame before, 2 a frame over
+    12 frames now)
+  - every Digimon was tested against every other for crowding, three times a tick -> bucketed on a
+    grid, same pairs
+  - after every ground chunk sent to the graphics card the renderer asked it for errors, which makes
+    the CPU wait for the card to finish everything queued: one stall per chunk -> at most once a
+    second (unless 600+ textures are loaded)
+  - when the host fell behind it ran up to six world steps back to back before drawing again (eight
+    solo) -> at most two between frames online, three solo; a slow moment runs the world a touch
+    slow instead of freezing the screen
+- Same 40 s test, host, before -> after: world simulation 7.8 s -> 5.6 s of CPU, longest single step
+  77-109 ms -> 52 ms, ground chunks built 162 -> 30 (633 ms -> 133 ms), worst frame's JavaScript
+  196-282 ms -> 100 ms (a cloud VM drawing without a graphics card; a gaming PC is several times
+  faster on all of it). Both screens hold the same map; each sees the other.
+- Not done: moving the host's world simulation into a background thread. Measured, it was not the
+  cause (bursts were), and it would rebuild how the host and the online code share the world.
+
+## 2026-11-17z33 (cont.) — Performance readout, one-pass screen washes, far Digimon rest
+- Asked for all three, with "don't cut corners, don't lower the quality, don't let it mismatch
+  when my friend is somewhere else".
+- **Performance readout** (`js/perf-hud.js`, F3 or Pause > Performance, remembered in settings): a
+  small box, bottom left, refreshed twice a second: FPS; frame time and worst; the game's own work a
+  frame; the world simulation per step, worst and steps a second (where it runs: host or solo);
+  ground redrawn a second; Digimon in the world and near players; drawing resolution; the graphics
+  chip (with a warning when the browser is drawing without the graphics card); host / guest / solo.
+  Off, it costs nothing. Lines turn amber when something is slow.
+- **Screen washes in one pass**: the season's grade and dusk / dawn / night were up to four
+  full-screen fills a frame; flat washes stacked with normal blending come to one wash exactly
+  (`seasons.js` tintStack). The vignette's warm light and dark edge were two full-screen gradient
+  textures; layered once into one texture they're drawn in one pass (`sprites.js`, WebGL only; the
+  low-detail 2D path is unchanged; the desperation pulse stays its own layer). Pixel-compared through
+  the game's own renderer: largest difference 2/255 (rounding), no pixel off by more than 2. Rain's
+  overcast is left as its own pass on purpose: snowflakes and petals are drawn between it and the
+  washes, so merging it would change how they look.
+- **Far Digimon rest** (`data.js` SIM_LOD, `mission-sim.js` _updateEnemies): a plain wild Digimon
+  more than 2600 px (about twice any screen) from every tamer, partner, ally, CPU teammate, rival and
+  nemesis is updated one tick in four with the time it missed, so it ends where it would have been
+  (3 px apart after 624 px of walking in the test); pairs of resting ones aren't pushed apart until
+  their own tick. War soldiers, nemeses, rivals, the infected, lords and Digimon fighting each other
+  are always updated every tick, wherever they are. A friend anywhere counts like you: in a
+  two-player check with the two of you 18,000 px apart, all 63 Digimon near either of you were
+  updated every tick. Honest note: the world already lets herds nobody is near go, so few Digimon
+  are ever this far from everyone; it is a safety net for big maps and later features more than a
+  big win today.
+- `scripts/lod-test.js` (new): near ones every tick; far ones 1 in 4; same ground covered; a friend
+  6000 px from you keeps their Digimon on every tick; soldiers, infected, nemeses, lords never slowed;
+  300 far Digimon: 45,000 -> 11,250 updates in 150 ticks.
+
+## 2026-11-17z33 (cont.) — Use the graphics card
+- Asked: make the game use the graphics card by itself, and explain when it can't.
+- `gl/renderer.js`: the WebGL context now asks for `powerPreference: "high-performance"` (a laptop with
+  two graphics chips gets the gaming one, not the built-in one), and no longer keeps
+  `preserveDrawingBuffer` (nothing reads the screen back; on some cards it cost a whole-screen copy a
+  frame). Checked: the game draws as before.
+- A page can't turn the browser's hardware acceleration back on; that's the browser's setting. So
+  `js/gpu-help.js`: when the game finds it's drawing without the graphics card (the chip's name, and
+  now also the browser refusing a context with `failIfMajorPerformanceCaveat`), a pop-up says so once
+  a visit, at the title or hub (never mid-fight), with the steps for the browser it's in (Chrome,
+  Edge, Brave, Opera, Firefox; Safari note), the settings address with a Copy button, "Still slow
+  after that?" (update the graphics driver; Windows Settings > System > Display > Graphics > set the
+  browser to High performance on laptops; F3 shows the chip in use) and the other browsers' steps.
+  "Don't show again" is remembered on that computer. Pause > Graphics help opens it any time (the
+  button only shows when there's no graphics card in use). It sits above the first-time tour (which
+  covered it on a brand-new profile, caught in testing) and below the sign-in screen.
+
+## 2026-11-17z33 (cont.) — The turf war is the point (if you want it)
+- Asked: make the biome wars the angle of the whole game: pick a side and help it dominate; say so in
+  the tutorial, have a Digimon pop up and suggest picking a faction (optional, never mandatory), and
+  "or you can go in any direction and see how long you can survive".
+- Tutorial (`tour.js`): Jijimon's welcome now has "The heart of it: turf wars" and "Pick a side...
+  or don't"; the setup tour's last card says a little Digimon will ask which side you're on. How to
+  Play opens with a paragraph on the turf wars.
+- `js/turf.js` (new):
+  - 22 s into a run Tokomon pops up from the bottom: the biomes holding land round the start (a disc
+    of 12 cells, ~4,600 px), each with its share (an underdog is marked under 10%), "Just survive"
+    and "Later". Number keys pick. It goes by itself after 40 s; Pause > Your side asks again any
+    time and you can switch sides.
+  - your side's share shows under the minimap (YOUR SIDE, the share, a bar to the 50% mark); the
+    messenger calls out 30% / 40% / 45% (when above where you started) and warns if your side is
+    nearly wiped out.
+  - at 50% of that land the war is yours: a victory card ("Ember Crags rules the land!", the
+    share, how long it took, a comeback line for an underdog), the run goes on.
+  - Badges, new Turf War group: Pledged (pick a side), Kingmaker (win), Warlord (5 wins), Against All
+    Odds (secret: win for a side that started under 10%). The run's rank pay adds "Turf war won"
+    (200) and "...for the underdog" (150) (data.js RANK.pay turfWar / turfUnderdog).
+  - Each player picks their own side online; every screen reads the same territory.
+  - Numbers measured over 40 maps: the disc holds ~441 cells and ~6 biomes, the biggest ~26%, the
+    smallest a few percent, so a big side has to roughly double its land and an underdog has a
+    long climb. All in TURF (turf.js) to tune.
+- Checked in the browser: asked at 22 s with six sides; picking the 2% Ember Crags earned Pledged;
+  as it took land the 32 / 41 / 46% calls came and at 51% the victory card, Kingmaker and Against
+  All Odds; Just survive leaves you a free agent and the messenger stays quiet; Pause > Your side
+  brings him back; key 2 picked Sludge Marsh. No errors.
+
+## 2026-11-17z33 (cont.) — One friendly biome at a time; rare world events
+- One side only (faction-sim.js _trustEarn, progression.js "side.pick"): only your side's
+  Digimon can come to trust or ally with you. If you haven't picked, nothing is handed to you:
+  every biome you help warms to you, and the first one you win over all the way (to trusted)
+  becomes your side; the others drop back to neutral and Tokomon says who won you over. Never
+  win one over and you stay sideless. (When one kill wins over two at once, the one holding more
+  ground round it goes first.) Picking another side, from Tokomon or Pause > Your side,
+  drops the old one (allies too) back to neutral. "Just survive" makes you a free agent: nobody
+  warms to you. Online, each player has their own side; a guest's pick goes to the host as an
+  intent. scripts/one-side-test.js.
+- World events (net/event-sim.js on the host, js/world-events.js on every screen). Rolled once a
+  run: about 55% of runs have none, 35% one, 10% two, between 8 and 50 minutes in, at least 10
+  minutes apart (WORLD_EVENTS in data.js). Each gets a 25 s warning card on every screen with
+  which way and how far, then a chip at the top (direction, distance, time left, health) and a
+  minimap marker.
+  - Virus outbreak: a Patient Zero (infected Champion, Ultimate after 20 min) with two carriers.
+    Ignore it for 5 min and it slips away, infecting the Digimon round it.
+  - Dark Area surge: a rift turns the land round it to Glitch, a ring at a time (up to 9×9 areas;
+    never the cradle round the start), and a Surge Lord (a Dark Area Ultimate, Mega after 30 min)
+    comes out. Beat it and every area goes back to whoever held it; run out of time and the
+    Glitch keeps it.
+  - Rampaging Mega: beat it in 6 min or it moves on.
+  - Health grows 60% per extra tamer. When it falls, every tamer in the run is paid whatever
+    their side: 60% of a level's XP plus bits (more later on); half for anyone who never came near.
+  - Badges: Answered the Call, Patient Zero, Rift Sealer, Mega Breaker, Old Hand (3).
+    Dev console on the host: DBH.wevForce("outbreak" | "surge" | "rampage").
+- Tested: scripts/world-events-test.js (odds over 4000 runs, each event won and lost, pay for
+  two players on different sides, land handed back). In two browsers a forced surge showed
+  the same warning, chip and Glitch land on both screens, and both players got paid and badges.
+
+## 2026-11-17z33 (cont.) — Every signature move looks like itself (move revamp, pass 1)
+- Before: the 364 signature moves were drawn by seven generic drawers with the line's colours and a
+  shape, 50 different looks in all (every burst was the same ring of blocks).
+- Now each move has a recipe (js/sig-fx.js): what it's made of (37 motifs: bubbles, petals,
+  feathers, snowflakes, rocks, notes, hearts, skulls, swords, gems, fish, missiles...), its colours,
+  how its kind plays out (75 forms: a burst can bloom, crack the ground, spin into a vortex, ring out
+  as sound, go up in a ring of flame; a beam can be a ray, a drill, a helix, a rake of claws, a horn
+  charge, a bolt, a bite; a strike can be a meteor, a rain, a dive, a pillar, a bomb, a geyser,
+  spikes, vines, a sword out of the ground; traps are coals, buds, runes, pits, crystals, charms,
+  eyes, spore clouds...), how a shot flies (sways, corkscrews, flutters, hops, comet tails), its
+  trail, its hit and its wind-up. Chosen from the move's name and description, then a resolver
+  makes all 364 different (no two share kind + form + motif + trail; in a line, two of the same kind
+  never share a form). A move that grew from another is drawn bigger with more layers.
+- Drawn by js/sig-fx-draw.js (only canvas calls the WebGL renderer supports); attack-fx.js hands it
+  the signature moves' events and shots, everything else is as before. Cosmetic only, same on
+  every screen. Measured in the browser: the effects cost the same per frame as before.
+- moves-gallery.html: every line's signature moves side by side, looping (click one to replay,
+  slow motion button). scripts/sig-fx-test.js.
+
+## 2026-11-17z33 (cont.) — Move looks hand-tuned; a long two-player playtest
+- sig-fx.js HAND: 188 of the 364 moves hand-picked (motif / colours / form / trail / impact) where the
+  automatic pass got it wrong (Kyubimon's moves are blue foxfire, Zudomon's Flail Storm a whirling
+  hammer not lightning, Gargomon's shells are missiles, Garurumon's are fangs and frost...). The hand
+  picks go into the resolver first, so everything stays different (scripts/sig-fx-test.js).
+- Playtest (host + guest, two browsers, about 3 min): sides, real digivolving on both, both Megas with
+  full signature sets, a snow war, a Dark Area surge start to finish, PvP, a long stretch. No errors,
+  same map / clock / positions on both, nothing rejected; the new move effects cost the same per
+  frame as the old ones (A/B in the same run).
+- Fixed from it: a world event's clock stopped while anyone's partner was back in its egg
+  (mission-sim.js now runs _updateWev outside the "spawns open" check).
+- WHATS_NEW.md: what changed in 17z33 and what to try.
+
+## 2026-11-17z33 (cont.) — Pick your egg from a grid
+- A friend new to Digimon couldn't tell what the egg picker was. js/egg-grid.js: every egg at once,
+  five across (three on a phone), scrolling. An opened egg shows the egg and the baby it hatches
+  into, its name, its element and range ("Fire · up close") and two of its signature moves; an unopened one is a silhouette
+  ("???", with how to open it). Hover (or tap once on a touch screen) for a card with how it plays in one
+  line ("Fire. Fights up close: drops attacks from above and knocks back crowds.", worked out from its
+  signature moves; what it turns into is left to the pictures), its signature moves, and every digivolution path you've reached with that egg, drawn as a row of
+  Digimon (from the save's discoveries.edges). Click (tap again) to take it; arrows / Enter / Esc work.
+- Opens from the run setup (the egg picture, its name, or "See all eggs"), the online lobby (tap
+  the egg's name) and the Your Digi Eggs screen ("See all eggs"). The arrows still work as before.
+- Still pictures (anything drawn with t = 0 and not moving: the egg grid, its path chips, the
+  digivolution log, hub portraits) now use each Digimon's most typical idle frame, worked out once
+  per species (sprites.js stillFrame: the frame most like all the others), so a blink or a twitch is
+  never the one frozen. Hovered cards still animate. Relemon's sprite has its eyes shut in every
+  frame (that's the art), so it still looks that way.
+
+## 2026-11-17z33 (cont.) — Detailed move emblems
+- js/sig-icons.js: every move's emblem on the level-up cards and in the skill tree is painted at
+  128 x 128 from its own look (sig-fx.js recipe): an enamel badge in its colours with a bevelled rim,
+  its form drawn behind (the path a shot flies, petals of a bloom, cracks of a quake, a vortex, a
+  ray / drill / helix / claw rake / jaws, a meteor tail, rain, a pillar, a geyser, vines, a trap's
+  coals / puddle / rune / web / pit / paw prints, a saw or wheel, a chain of sparks, notes, fish...),
+  the motif shaded smoothly from its depth with a light from the top left and a dark outline (one,
+  or three in a fan / falling, by how it plays), its trail as small accents, a gold pip per growth.
+  All 364 signature emblems differ; other moves get the same treatment from their attack look;
+  stat skills keep their pictures. move-icons.js paint() shows them smooth (the old pixel ones crisp),
+  and the card icons are a little bigger (64 px on level-up cards, 56 px in the skill tree).
+- Look-alikes: moves of the same element and motif (16 boulder moves, 14 flames...) only differed by
+  their faint backdrop. Each one in such a group now gets its own badge shape (rounded square,
+  circle, shield, diamond, hexagon, octagon), a tint nudge (lighter / darker, a little round the
+  colour wheel, never far enough to read as another element) and its own treatment of the motif
+  (plain, glowing, cracked, split in two, ringed, a pair). sig-icons.js variantOf.
+
+## 2026-11-17z33 (cont.) — Four modes and the main menu
+- data.js MODES: each mode has a group; MODES.main is the menu's four (story, survival, siege, versus).
+  Survival holds open / survival ("One Life") / ranked / weekly. SIEGE and VERSUS hold the numbers.
+- net/modes-sim.js _updateModeRules (called after _updateSpawns) runs the mode's own update;
+  _oneLife includes siege. _runRecord adds nights, story, vs.
+- net/story-sim.js: 11 goals (STEPS), "all" (every tamer) or "party" (a total, per player for kills).
+  Gates noRival / noVirus / noEvents until the goal that opens each; story.step / state / clear / done.
+- net/siege-sim.js: nights off the day clock (startAt 0.6 to endAt 0.965), rings of attackers round
+  each standing tamer (e.siege, allowed into the Baby zone), stage pools by night, boss every 3rd,
+  dawn pay; siege.warn / night / boss / dawn / state.
+- net/versus-sim.js: homes at +-spread, caches and mini bosses (a sleeping pack) in the middle, then
+  the showdown: arena, clears wild Digimon, wraps _pvpFoes / _pvpKo / _respawn for Versus; rounds,
+  countdown, roundSec, best of toWin; vs.* events; runOver at the end.
+- rival-sim.js honours noRival. Lobby (online-ui.js): the four modes plus Survival's rules; Versus
+  can't start alone. Guests take the host's mode (game.js run.mode from online.hostMode()).
+- js/modes-ui.js: the top chip, Jijimon's card (with his sprite), toasts, the 3-2-1 countdown, game
+  over lines and title. turf.js holds Tokomon back in Story until the side goal.
+- hub.js / hub.css: four mode tiles with their own little scenes, a smaller row (Hatchery, Eggs,
+  Discoveries, Online), setup shows only the chosen mode (Survival: its rules). tour.js points at the
+  four modes. scripts/modes-test.js.
+- Follow-up: the Online tile is gone. Hub small row is three wide (Hatchery, Eggs, Discoveries) so it
+  doesn't line up under the mode cards; "Join a friend" chip in #hub-top; setup's strip has JUST PLAY
+  and INVITE FRIENDS (hosts a room in the chosen mode, btn-online-host); the party card's Online pick
+  is gone. tour.js points at the join chip.
+- Follow-up: setup strip summary removed (setup-sum now only holds a blocking warning); hub.js paintGear
+  draws a socket per loadout slot (items.slots(): 1-2 crests, the second locked till the Lab Port;
+  charm; one-run item or scroll) with icon-art emblems. game.js pushes your own name tag (profile
+  name, lobby colour online). online-ui.js lobby cards drop the projection colour.
+- Follow-up: holograms without legs. scripts/art/holo4.py (make_tamers.py uses it; --holo3 for the
+  old walk): holo3's outfits drawn at 1.5x through a scaling ImageDraw (60 x 84 frames), a 1-px ink,
+  rim light, two-step shade, seam shadows, eye glints, fine scanlines; below the waist a tapering
+  column dissolved by ordered dither and row slips, a faint beam and the ring. "walk" frames are a
+  glide (float, arms held back). sprites.js: shown 1:1 in the world (0.72 in key-less menu calls),
+  a slow hover, drawHoloMist (motes drifting down from the waist, streaming behind when moving) and
+  drawHoloTrail (afterimages of the upper body); no footsteps.
+- Secret reward projection "smoke" (Black): holo4.py STYLE smoke (dark fill, silver-grey outline,
+  broad shoulders, cap, a pixel cigarette drawn over the lit figure, TIPS per frame); sprites.js
+  TAMER_IDS secret + faint glow, SMOKE_TIPS, drawSmoke (ember, a drag every 7 s with a flare, an
+  exhaled puff, a wisp), getTamerList hides secret ones until unlockTamer(id) (localStorage
+  dbh_secret_<id>). The unlock code on the projection picker is still to be chosen.
+- Chat: net/online.js sendChat / chatPost (host stamps name and colour, cleans, caps at 140, 5 per
+  6 s), "chat" and "chatlog" (last 20 to a newcomer); js/chat-ui.js: lobby box under the players,
+  in-run line at the bottom left (Enter / Esc, fading lines, touch button); input.js releaseKeys so the
+  tamer stops while typing.
+- Secret unlock: chat-ui.js slash codes (lobby only, never sent; FNV-1a hash of the lowercased line
+  in CODES, so the words aren't in the source) -> sprites.unlockTamer("smoke"), menu.setTamer, and
+  online-ui picked() so the room sees it.
+- Care: data.js CARE (hungryAt, starveAt, starve speed/damage/joy, rest, boss/level/faint/fav joy,
+  fullRefuse, softer hit losses), FOOD rebalanced, favouriteFood / isFavourite. mission-sim.js
+  _updateCare (starving flag into stats, rest, flags in the snapshot), joy on boss kills, level ups,
+  faints. progression.js: full refusal, favourite bonus. rarity-sim.js: sulky refusal only over 45%.
+  game.js: food bubble over hungry partners, ♥ in the feed menu, refusal and favourite floats.
+  scripts/care-test.js; lifecycle test moved to the new refusal rule.
+- Shinies: SHINY.evoBoost 0.025 / hatchBoost 0.05; progression.js rolls on the hatch too and stores
+  p.shinyBoost (max HP at the form change; damage, mon speed, cooldown in the stats); toast and pause
+  tag. sprites.js shinyMapFor "dark" Digimon get their dark body recoloured. shiny-test updated.
+- Shiny moment: game.js shinyMoment (DOM #shiny-moment, CSS animations, 3.2 s = SHINY.guardSec),
+  local pause when solo, "shiny.guard" intent (progression.js, once per new shiny: mon + tamer invuln;
+  whitelisted for guests in online.js). shiny-test covers the guard.
+- Farm gates: js/farm-gates.js (home gate north of the start, one by each nest whose cell your side
+  holds; drawn by depth, E / Y / Act within FARM_GATES.reach). game.js enterGate / gateHint, the Farm
+  chip points to the nearest gate (and a minimap mark), F out in the world only tells you to go to
+  the farm, touch Feed/Farm buttons gone (Act says Farm at a gate). progression.js field.feed is off
+  unless FARM_CFG.fieldFeed. CARE.fullnessDecayPerSec 0.2. Story, tour, help, prompt bar updated.
+- Farm training economy: data.js CARE.fill (fav 33 / normal 25 / dislike 17), dislikeJoy, bagMax 10,
+  dislikedFood / isDisliked / foodFill; FARM_CFG trainMinFull 33, gateBonus 0.1 (max +100%), fresh
+  {max 3, start 3, killsPer 10, tired [0.7, 0.45, 0.25]}, station costs 25 (play 10). progression.js
+  _eat by taste, trainStart food gate, _finishTrain fresh / tired / gate multipliers. mission-sim.js
+  _bagFull (food left on the ground), _gateCount -> p.farmGates (every 2 s), kills -> trainFresh, fields
+  in the record (FARM_KEYS carries trainFresh / trainTired back from a friend's farm). game.js /
+  farm.js: F silent in the world, ☹ in the feed menu, fill shown, bag x/10, farm panel line, training
+  floats. care-test extended; progression-auth-test feeds it to 34 before training.
+- Spire gamble: js/net/spire-sim.js (installed like the modes): _spireRoll (TERRAIN.spire.roll), _spireBreak
+  (swarm / pack spawned with e.spireGroup; big queued behind a spire.rumble, spawned by _updateSpires with
+  spdMul), _spireKill -> _spireClear (chest_<tier> orb, spire.cleared), _openChest on pickup (Bits from
+  TERRAIN.spire.chests, chest.open). progression.js prop.use calls it. game.js toasts by tier, rumble shake,
+  drawChest. Enemy speed honours e.spdMul. scripts/spire-test.js.
+- Chest contents: TERRAIN.spire.chests[tier] {bits, data, loot weights} + dataTypes. _openChest rolls a rare
+  food into p.bag (_chestLoot) and a data element; chest.open carries food / dataType / data, and game.js
+  adds the data to run.dataBy (banked by hatchery.bank at run end). Six rare foods in data.js FOOD (rare:
+  true; D.RARE_FOODS): foodFill / isFavourite / isDisliked / dietOf / _foodCount skip taste and the bag cap.
+  progression.js _rareEat: trainBoost (used by _finishTrain), statUp (trainStats), evoFruit (_luckyRoute
+  chance, kept if no rare route), mistakes. trainBoost / evoFruit in the snapshot and FARM_KEYS. Icons in
+  make_items.py (pickup-art.js). Feed menu / farm row / bag row show them (gold star). spire-test extended.
+- Garden rework: veg lose hpHeal (DIET.hpHealBonus gone; progression _eat and farm.js local feed don't heal).
+  Each veg has stat / per / desc; data.js vegBoosts(foodCounts) (capped at VEG_MAX 10 meals each) is applied
+  in mission-sim _stats: monSpeedMul, cooldownMul, damageMul, magnetMul, allyGuard, allyMaxHp (the existing
+  allyMaxHp path rescales maxHp). Field food has desc text. farming-test covers it.
+- The bag: js/inventory-ui.js (I key, D.hud.act("inv"), touch-ui Bag button, prompt-bar glyph, input hint
+  "inv"). Groups via FOOD / isSeed / SHOP.catalog for names and descriptions; discard through
+  progression "bag.discard" (in INTENTS and online ACTS). The bag-row cap is a button that opens it.
+- Farm mini games: js/net/minigames.js (DOM-free; create / tick (sub-stepped) / input / score / summary /
+  gradeOf / preview). progression.js trainStart makes activity.mg for bag / board / track; _tickFarmActivity
+  ticks it (dodge: the stick steers the partner, _tickFarmYard leaves the tamer still); trainInput feeds it
+  and settles at once when it's done; _finishTrain uses preview() for the gain and emits grade, before /
+  after, detail and the breakdown (base, repeat, fresh / tired, gateMul, boost, nextGreat). makeQuiz, the
+  bag beat and the track laps on the authority are gone. js/farm-train.js: panel (#train-game), result card
+  (#train-result), signLine() under the station signs in farm.js. scripts/minigames-test.js.
+- Next for the farm (talked about): a tighter layout, rest / bed, visitors, a request board, an
+  evolution peek.
+- Rockfall Run on the track: minigames.js kind "lanes" (LANES cfg): arc-length table of the track ellipse
+  (trackPoint / trackLen / lanesPos), two lanes at +/-11 px, rocks (warn 0.75 s) and hurdles spawned ahead,
+  never closing both lanes (clearGap), stumble on a hit; E or a direction tap switches lane. progression puts
+  the partner at lanesPos each tick; farm.js camera follows it (scale 0.9, raised). farm-train.js drawWorld:
+  start gate, quarter-lap posts, rocks with growing shadows, hurdles, dust; compact panel with an oval map.
+- Farm look: FARM_CFG stations (board 235,390 / bag 470,390 / bond 975,380), garden y 530, shed 590,196.
+  farm.js ensureScene: plaza pad (kind "plaza"), trainYard / playYard rects (geo.yards), straight 44 px paths,
+  beds by the door, lamps / benches / crates / barrels / planters. farm-art.js: dithered grass with tufts and
+  straight mow stripes, cobble paths with kerb (cob palette), ringed flagstone plaza, timber-edged yards
+  (sand raked), raised timber-framed garden beds on straw; new props lamp, bench, crates, barrel, planter.
+  CSS: the farm panel as a slim grid bar (wide screens).
+- Checked: trainStats (offense / intelligence / agility) have no combat effect anywhere; they only feed
+  evo-stat-gates.js caps (strength: maxInt 48 / maxAgi 80; wisdom: maxOff 40, off <= 2x int; speed: maxOff 48;
+  balance: ratios) and rarity extras; bondTrain feeds bond (T2 minBond 70). farm-train.js DOES text on the
+  result card and the mini game panel. Open question for Isaac: give training a real combat effect?
+- Training into stats: ro-stats.js FARM {per 10, map offense->str+dex, intelligence->int+luk, agility->agi,
+  bond->vit} and farmBonus(); mission-sim _attrParts (level / evo / farm) and _jobBonus = their sum; snapshot
+  attrParts + moveMul [partner %, tamer %, track %, boots]. data.js SPEEDS {trackPer 0.005, trackMax 0.6,
+  boots {per 0.06, max 5}}; _stats: monSpeedMul x track, speedMul x boots (the partner's existing
+  max(tamer x 1.04 / 1.08) keeps it ahead). Shop: sprintBoots, kind "upgrade" (max) in shop.js / progression
+  shop.buy / game.js labels; icon in sprites.js. Status window: game.js tickStats two columns (stats-cols),
+  detail sheet with lit lines and +1 previews. farm-train.js DOES + the stat-points line on the card.
+  scripts/train-stats-test.js.
+- Farm exit: FARM_CFG.noTimeLimit (progression farm.tick no longer auto-returns) and exitGate {y 784, reach 66};
+  farm.js exitPoint / nearExit: interact there -> end("ready"); drawn with farm-gates.js draw (opt sign
+  "WORLD", hint; the plate fits its word). btn-farm-return removed (btn-farm-status instead); Esc at the farm
+  closes Status / Skills / bag, else a toast. Track and garden signs moved clear of the gate.
+- Tidy-up: catchHudText returns "" with nothing under way (chip hidden); btn-shop hidden while unusable;
+  .evo-strip:empty hidden; CSS body:has(#farm-screen.is-on) hides hud-pvp / hud-kills / hud-capture / btn-shop /
+  prompt-bar / burst-chip / btn-pause; index.html: farm-stay and btn-farm-train removed (btn-farm-bag), Skills
+  off the prompt bar; farm.js: btn-farm-pet is the context button (label from what's near), farm-mood without
+  joy / fullness / meals, the Garden plate removed.
+- Shop only via Jijimon + E: removed btn-shop, input "shop" (Q), hud.act("shop"), btn-farm-shop (now
+  btn-farm-skills), touch-ui Shop. openShop is reached from interactNow (merchantInRange) and farm interact
+  (the cottage).
+- One-run items: gear.uses (array) everywhere (mission-sim _gearClean max useSlotsMax 4, _gear includes uses
+  (fx xp, crop, shiny), _gearStart loops them (attr -> p.itemAttr -> _attrParts.item, bits, belly));
+  items.js eq.uses + useSlots() (ITEMS.useSlots 3 + Lab "kit"), equip pushes the oldest out, endRun spends all;
+  drops: ITEMS.drop.field / elite / chest (items.onEvent on kill and chest.open). 11 new cons in data.js with
+  icon-art; hub.js paintGear 7 sockets (CSS 7 columns). items-test and lab-test updated.
+- Shop rework: shop.js SHOP.always / pool / stockCount, catalogue with fixed prices and perVisit, seed packets and
+  six Digimentals (applyDigimentals narrows the tree's "digimental" armor condition per route; called from
+  Progression's constructor), shopKey (farm.since / merchant.visit), shopStock (seeded per visit and tamer),
+  shopLeft. progression shop.buy: in stock and per-visit limits (p.shopVisit, in the snapshot and FARM_KEYS),
+  ticket (trainFresh +1), seeds; bag.use (gateKey / map spent, lure spawns a pack of the best catch kind).
+  world.js spiresNear; game.js useTool (gate key -> startFarm, map -> minimap marks for 120 s), renderShop
+  from the stock with the shelf / this-visit sections; inventory Use button (canUse). Icons in sprites.js.
+  DigiBits renamed DigiCoins everywhere players see it. scripts/shop-test.js.
+- Pickups: PACING.magnetRadius 50 (was 125), driftReach / driftSpeed gone; mission-sim _updateOrbs: only the
+  tamer's circle (the partner's position for a tamerless partner) pulls a drop in or eats it; nothing drifts;
+  once pulled in it flies to that tamer. moveMul[4] = magnetMul %; game.js drawMagnetRing (shown while a drop
+  is within 2.6x of it) and a Pickup range line in the Status sheet. pickup-test rewritten.
+- Landscape (PokeTide-style pass, step 1): world.js finishGround(ctx, cx, cy) runs once per chunk after Pass 1,
+  on art pixels in world coordinates via getImageData: grass tone patches (fbm on a 4-pixel grid, blended,
+  Bayer-dithered steps; darker under meadows), tufts (natural biomes, per-tile hash), water depth (tiles to the
+  nearest bank, up to 3, bilinear; lighter teal shallows, darker deep; skips frozen, solidWater, edge pixels),
+  path pebbles. About +2.7 ms per chunk build. meadowRows/meadowAt: rows jittered and thinned at the field's
+  edge. game.js drawWaterFx: ripples on about a third of tiles, a short fading line drifting with the current;
+  glints rarer. Shadows already existed (sprites.shadow, terrainArt.SPREAD).
+  Step 2 (done, below).
+- Landscape step 2: finishGround now repaints shores and path edges from a per-pixel material code: each
+  tile's material blurred exactly (Gaussian, sigma 6.6 art px, via erf weights WT over the 3x3 tiles) and
+  thresholded at 0.5 +- value-noise wobble (4-px world grid). Codes 1 grass / 2 path / 3 water (incl. lava and
+  Freezeland ice) / 4 seasonal ice (left as drawn) / 0 cliff (cliffs count -1, keeping a grass lip). Tiles
+  whose 3x3 neighbourhood is one material skip the blur (uni). Shore distance by a two-sweep city-block
+  transform (capped at 4): 1 ink (0.85), 2 ink 0.45 over water, 3 foam 0.5, depth shading only past 3.
+  Colours come from grassColor / pathColor / waterColor with the tile cache's tx,ty (variant*3, variant*5),
+  memoised per biome+season in shoreCache. Paths lightened 20% in natural biomes (colour-blind contrast), lip
+  0.55. rasterTile frozenLook: dark blue-grey rim. scenery(): reeds on banks, flower clumps (season-scaled).
+  game.js: wind sway on grass/tuft props (whole pixels); removed the duplicate drawDecor call (every prop was
+  drawn twice). Cost measured over 150 chunks: about +3.5 ms per chunk build in total for the finishing pass.
+  Colour-blind check: /tmp/cvd.py (Machado matrices) over screenshots of all eight biomes.
+  Next: done in step 3 (below) for lighting and borders.
+- Landscape step 3: game.js BIOME_MOOD {wash, vig} per biome; tickMood samples biomeAt over a 5x3 grid
+  across the screen (premultiplied, so a half-forest screen gets half the green) and eases at 0.8/s;
+  moodWash joins the season grade in drawDayNight's single tintStack pass; drawBiomeShade (on top of the plain sprites.drawVignette) is one stretched
+  radial sprite tinted per colour step (cached, max 40), skipped with reducedFx. world.js finishGround:
+  bM (biome per tile in the margin grid), lq (liquid kind: 1 water, 2 lava; each counts -1 to the other so
+  they never touch), liqT (the tile a liquid pixel takes its colour from), mixB (another biome within 2
+  tiles), borderBiome: the biome at a point warped up to 13 art px by slow noise (bgrid/bgrid2, period 30),
+  blurred with the shore weights, the top two decided from the first by id (so both sides agree) with a
+  small Bayer dither. Applied to grass, paths, cliff tops (colour from cliffTopColor with the tile's own
+  mask, so outlines stay) and water colour (never into or out of solidWater or snow). Cost: about +3 ms per
+  chunk where borders run through the chunk, nothing elsewhere.
+  Next: done in step 4 (below).
+- Landscape step 4: shore distance capped at 5 (bands 3 and 4 exact); finishGround bakes two N x N (art
+  pixel) foam masks per chunk with open-water shore (not lava / Freezeland ice) into ch.foam {a, b}
+  (released with the chunk); drawGround draws them scaled x3 after the chunks, one global wave
+  (sin(t*0.85)): band a 0.1-0.34, band b 0 to 0.32 (squared), still at 0.18 / 0 with reducedFx.
+  sprites.drawProp(ctx, kind, x, y, sway): two slices (bottom 40% on an art-pixel row fixed, crown moved).
+  game.js: SWAY_TREE {tree, snowtree}, crown from the grass wind wave (phase -0.6, x2.2 / x0.6), off with
+  reducedFx; autumn leaves (maybeLeaf from each tree drawn, 0.4% a frame, max 40; drawLeaves after the
+  actors, dark edge under each). world.js scenery: plateau tops (centre pixel code 0): tufts in natural
+  biomes outside winter, pebbles anywhere, only where all pixels within 3 are plateau.
+  Next ideas: done in step 5 (below).
+- Landscape step 5: game.js drawBiomeMotes (after drawLeaves): 26 spawn tries a second at random points
+  in view, kept by biomeAt: snow -> flakes (with a shadow pixel), forest (plains 30%) at night (dayInfo
+  dark > 0.3, not winter) -> fireflies (glowSprite, additive), volcano / swamp -> a random inner liquid tile
+  from waterInView: lava -> embers rising, swamp water -> bubbles that pop into a ring. Max 90, off with
+  reducedFx, frozen when not playing. world.js finishGround bakes ch.lava: four art-pixel frames of crust
+  (value noise, shifted per frame, crust alpha 150-220, crack band alpha 120) inside lava past its outline;
+  drawGround cross-fades frame f to f+1 every 3 s (frame 0 with reducedFx); released with the chunk.
+- Landscape perf check: per-frame CPU (headless, 120 frames, forest and volcano): drawGround 0.2-0.34 ms,
+  drawWaterFx 0.05-0.24, drawLeaves ~0, drawBiomeMotes 0.02-0.3, drawSeasonFx 0.12-0.27; motes/leaves 0 with
+  reducedFx. Foam and lava overlays now carry a box (ch.foam.box, ch.lava.box, art pixels) and drawGround
+  draws only that sub-rectangle (part()), cutting overdraw on chunks with a little shore.
+- Holograms: sprites.js holoPool (cached radial sprite per glow colour, two stretched quads, additive,
+  0.34 day / 0.14 faint tamers, x dark again after the wash), holoScan (four phases of the frame's own
+  shape with every 4th row white, kept on sheet.__scan; frame chosen by t*7, frame 0 with reducedFx; drawn
+  additive 0.2 / 0.08), drawHoloMist: ten pixels rising ~60 px from the mist and fading (off with
+  reducedFx). drawTamer stores S.lit {sheet, transform, colour}; litTamers(ctx, dark, t) redraws each
+  projection drawn this frame additively (0.55 x dark, 0.25 for faint ones) plus its pool, called from
+  game.js drawDayNight right after the wash with applyWorldCamera (worldShake keeps the frame's shake).
+  Decided against: shading on the figure, water reflections, a hit glitch.
+- Longer clock (Isaac: "everything a little longer", 35%): day-clock.js DAY_SECONDS 243 (was 180),
+  seasons.js CFG.lengthSec 486 (was 360), two days a season kept. Fallbacks updated (profile, badges,
+  nest-sim, spire-sim, mission-sim, world.js, siege-sim). stage-waves timeTier reads the clock in 6-minute-
+  season units (x 360 / lengthSec), so one Digimon stage per season holds; FIELD spawn ramp (per minute)
+  untouched. Badge fastc uses the season length. Tests now read DAY.lengthSec / CFG.lengthSec instead of
+  180 / 360 / 1440 (badges, lord, terrain, night-storm, modes, seasons).
+- Then (Isaac): seasons.js CFG.step x1.1 (hp .22, atk .11, spd .022, spawn .11, cap .088; xp .08 kept);
+  stage-waves FIELD x~1.1 (rate0 .46, rate6 .75, perMin .043, max 2.15; cap0 7.7, cap6 11, perMin .48, max 37).
+- Test pass (17z33): browser smoke scripts kept in /tmp only (smoke-modes, smoke-fight, engage, online2 via
+  host-game.js on :8800, farmui, hub, soak, cycle, phone). Fixes: turf.js waits on D.levelWindowOpen (game.js)
+  and steps aside if the picker opens over it; badges fastu/fastm use seasonLen() x2 / x3; MEGA_SPAWN
+  firstAt 1458, rareUntil 5832, rareEvery 486; badges-test times in season units.
+  Open questions for Isaac: Tokomon's side question in Versus and Night Siege (only Story holds it back);
+  on phones the joystick overlaps the Mood panel and the HUD still shows key hints ([K], [T]).
+- Isaac "fix all 3": modes-ui NO_TURF {versus, siege} in holdTurf. world.js buildChunk: the last ground row
+  copied (destination-over) into 3 rows of the face strip below, so LINEAR sampling at render scale 1.5
+  (phone DPR 2: canvas 1266x585) no longer blends it with transparency (the dark line at every chunk edge).
+  input.js sets body.kb-ui for a keyboard; style.css hides #joystick under kb-ui / pad-ui without touch-ui.
+  New scripts/turf-hold-test.js (holdTurf per mode + the chunk strip fix). 70 test files.
+- Moves (Isaac): moves.js gives SIG_INFO tier 5 beam/burst/strike/nova moves without a charge charge 0.3 and
+  D.isBigMove(id) = has a charge (46). mission-sim hit events carry w (the move). hit-fx: hitstop only for
+  bigMove && frac >= 0.2, or tough && (frac >= 0.35 or crit && frac >= 0.2), tough/boss kills, hurt >= 10%
+  (CFG.stop.big 0.05); ordinary kills and crits no longer hold. game.js passes bigMove / tough (enemy maxHp from
+  damage / f vs run.maxHp * 1.5). attack-fx: maybeMark on boom/burst/slam/erupt/zap (big, tier >= 4 or r >= 50)
+  and big hits, one per spot; MARK_SHAPE per family baked at art px (x3), 5 s, max 24 (8 low), drawn in
+  drawGround; light() list from flashes, shots (fire/holy/machine/ice) and young marks, drawLights(ctx, dark)
+  from drawDayNight after litTamers. Tests: hit-feel-test rewritten for the new holds; new move-feel-test.
+- Night Siege, Primary Village (Isaac): data.js SIEGE.nest {eggs 5, ring 40, offset 110, eggR 13, hp 300, aggro 420,
+  release 520, biteMul 1}. siege-sim.js _siegeNest (below players[0] at the start), _siegeAct (in _updateEnemies'
+  bite chain for e.siege: null = chase as usual when a tamer/partner/ally is within aggro, held with release;
+  else the nearest live egg, idle and biting when in reach), _siegeBite (contactCd, siege.egg / siege.eggLost /
+  siege.nestLost + runOver reason "nest"); waves and the boss spawn round the nest; dawn mends live eggs;
+  siege.state / siege.dawn carry eggs. Snapshot nest {x, y, eggs [[x, y, hp, max]]}: authority.js copies it,
+  online.js packs it as pv (ns is the wild nests!). game.js drawNestBed (ground), drawNestEgg (y-sorted,
+  real egg art, cracks, bar, shell pieces), drawNestArrow (screen edge, dusk and night), minimap "nest" mark.
+  modes-ui: eggs in the chip, toasts, "THE EGGS ARE GONE", siegeState(). Tests: siege-nest-test (new),
+  modes-test co-op wave now round the nest.
+  Not done: Elecmon (not in the game; would need new art of an existing character). Next: different nights,
+  then talk through building.
+- Primary Village extras (Isaac): SIEGE.nest kinds (8 Babies, egg art egg_<kind>), hatchAfter 3, helpers 3,
+  helperHpPerNight 0.6, hpPerNight 0.3, repairCost 60 + repairPerNight 20 x nights, repairReach 130, raidFrom 2,
+  raidChance 0.2. siege-sim: eggs carry age and k; _siegeHatch at dawn (addCpu with siegeKid, fallen ones
+  cleared, siege.hatch, fresh egg); _siegeRepair + "siege.repair" intent (progression INTENTS, online ACTS);
+  e.raider skips the aggro check. Snapshot: eggs [x, y, hp, max, k], nest.cost, nest.night; enemies raider (online
+  flag bit 128). game.js: nestEggFrame, nestRepairInRange / tryNestRepair (E, after the shop), drawNestLabel,
+  drawRaiderMark. modes-ui: hatch / repair messages, raider note on the night card. modes-test's boss check now
+  runs with unbreakable eggs. Watch in playtests: egg health against raiders on later nights.
+- Wood and fences (Isaac): data.js SIEGE.fence {spots 12, rx 124, ry 92, hp 220, hpPerNight 0.3, wood 3, coins 10,
+  reach 60, hold 0.8, woodChance 0.15, woodRaider 0.35, woodBoss 6}. siege-sim: nest.fences [{x, y, hp, max, built}]
+  on an ellipse, nest.wood {id: n} (no cap); ringAt / _siegeFenceFor (attacker outside, target inside, piece standing
+  in its stretch) / _siegeAtFence (bite {fence: i}) / _siegeFenceBite (siege.fenceDown) / _siegeBlock (mission-sim
+  move: an attacker can't step through a standing piece; players are never blocked) / _siegeBuild ("siege.build"
+  intent {i}: day, reach, wood, coins; siege.build event) / _siegeWoodDrop (_dropLoot, only with a siege nest) /
+  _siegeGetWood (_updateOrbs kind "wood"). _siegeAct now gets the chase target (ax, ay). Dawn mends standing pieces.
+  Snapshot nest.fences [x, y, hp, max, built], nest.wood; siege.state wood + fences. online.js: ACTS + host copies
+  intent.i; guest act returns pending for siege.repair / siege.build (was a false "rejected" float). Art: make_items.py
+  wood(). game.js: fenceSpotInRange / startFenceBuild / tickFenceBuild (hold E or pad Y via interactHeld; touch:
+  tap and stand still) / drawFence (pegs, posts + rails, lean, stumps) / drawHoldRing / drawFenceLabel; touch act
+  "Build" and "Fix egg". modes-ui: wood + fence in the chip, build / fenceDown toasts. Test: siege-fence-test (new).
+  _spawnOrb's cap (180) now drops the furthest XP orb, else the furthest non-wood one (was index 0, any kind).
+- Special nights, endless (Isaac: no winning, it goes until you die): data.js SIEGE.nights {from 2, every 2, order
+  swarm / flyer / giant / raider, swarm {count 2.2, countPerLap 0.4, hp 0.55, spd 1.3, back 1}, giant {hp 1.6,
+  hpPerLap 0.4, scale 2, guards 0.5, at 0.15}, raider {chance 0.85}} and SIEGE.endless {hp 0.15, dmg 0.06, more 0.5,
+  max 24} past stages.length. siege-sim: nightKind / _siegeKind (kind + lap), _siegeType(night, flyers) (crossOf 2),
+  _siegeWave applies the kind (e.swarm, e.spdMul; e.over for flyers: _siegeFenceFor / _siegeBlock skip it; raider
+  chance; rng only drawn when the chance is above 0), _siegeToughen (endless), _siegeGiant (boss, e.giant scale,
+  radius x scale, siege.giant; replaces the ordinary boss). siege.warn / night / state carry kind. Snapshot and
+  online e[19]: giant. game.js: giant drawn x scale with "GIANT" over a wider bar. modes-ui: NIGHT_KIND names,
+  tags and lines on the warn and night cards, the big text, "tonight: TAG" in the chip, siege.giant toast.
+  Test: siege-nights-test (new). Balance flag: siege bosses inherit the open world's time-based boss health
+  (452k on night 6 against ~740 for an attacker); worth watching in playtests. Next: maybe more to build (a tower,
+  spikes), an end screen with nights / hatched / fences, then Isaac's playtest.
+- Night Siege, nothing else (Isaac): _updateSiege sets noRival, noVirus, noEvents (outbreak, surge, rampage) and
+  the new noWar; war-sim _updateWar (borders and skirmishes) and nemesis-sim's land-taking skip on noWar. Seasons
+  (and winter ice) still turn. siege-nights-test checks 90 s of a siege night: no virus, rival, wev.* or war.flip,
+  while Survival flips borders in the same time.
+- Night Siege's shorter day (Isaac: 25% quicker, about 3 minutes): data.js SIEGE.dayLen 182. seasons.js useMode(mode)
+  sets DAY.lengthSec and dayClock.DAY_SECONDS (siege: dayLen, else the clock's 243); called by modes-sim
+  _updateModeRules each tick and by game.js at run start and in updatePlaying (guests too). rarity.js /
+  net/rarity-sim.js read CLOCK.DAY_SECONDS live. Season length unchanged (486 s). Siege tests and modes-test use
+  SG.dayLen; siege-nights-test checks both lengths.
+- Versus, race to Mega (Isaac): data.js VERSUS race 420, bossAt [105, 210, 315], start [agumon, gabumon, veemon],
+  meter 100, evoLv {Rookie 4, Champion 7, Armor 7, Ultimate 10}, meterKill 1 / Elite 3 / Boss 8, cacheMeter 6 x
+  cacheMeterVal 5 ("evo" orbs, art make_items.py evo()), bossMeter [60, 60, 80], leadBy 25, leadMul 0.75.
+  versus-sim: sharedXp false (bug: co-op XP sharing ran in Versus); _vsStage / _vsNeedLv / _vsProgress /
+  _vsLeader / _vsMeterAdd (race only, below Mega, capped; middle cut for the leader; vs.meter event) / _vsBossHit
+  (mission-sim hurtEnemy, damage after crit and element, capped at the hp left) / _vsKill (_killEnemy; boss pool
+  split by e.vsDmg, vs.bossDown) / _vsRookie (a real Rookie with a next form, else start[0]) / _vsEvo (progression
+  tickPlaying in Versus: hatch straight into p.vsRookie, then the standard route when meter + level; vs.evo).
+  vs.state players carry meter / need / top. Join rec vsRookie (host: game.js; guests: online.js from prof.vr).
+  js/vs-rookie.js (new): list (start + Rookies in evo-log forms whose standard line reaches Mega), get / set
+  (localStorage dbh_vs_rookie; sends the profile card), step. evo-log noteForm; the Hatchery notes forms it grows
+  (stage 2+). Lobby (online-ui): YOUR ROOKIE in place of the egg in Versus, Rookie sprites on the stand and cards.
+  modes-ui: meter bar + words in the chip, vs.evo / vs.bossDown, new start card. game.js: "+N DIGIVOLVE" float.
+  Test: versus-evo-test (new). Not done: in Versus a partner only takes its line's standard route (no special or
+  dark routes). Measured: a partner standing still at home gets about 85 kills and Lv 8-9 in 7 minutes (so not
+  Champion from kills alone); moving players do much more. Playtest the pace. Next (Isaac): Ragnarok-style damage
+  numbers on every hit.
+- Versus follow-ups (Isaac): Hatchery-only Rookies: hatchery.js keeps H.rookies (the form at stage 3) and exports
+  rookies() (plus the current egg's route if it has reached Rookie); vs-rookie.js lists start + those (evo-log
+  noteForm removed again). Gang up: versus-sim _vsPower (stage, level, hp) / _vsAim each showdown tick with 3+
+  players (your click, kept as p.vsPick through a wrapped _setPvpFocus, else the strongest standing; quiet
+  _setPvpFocus(pid, foe, true) so no focus event spam); picks cleared each round; vs.state players carry aim /
+  pick. modes-ui vsAim() + "after X (your pick / strongest)" in the chip, showdown card text for 3+; game.js
+  drawVsAim (ring + TARGET / YOUR TARGET). Tests: versus-evo-test (Hatchery list, three-way aim), hatchery-test
+  (rookies kept). Checked online with three players. Mega stays at Lv 10 until Isaac has played it.
+- Damage numbers (Isaac): hit-fx.js: no merging (CFG.merge gone; CFG.fan 0.12 fans same-instant hits on one
+  enemy left/right and up); numbers 140 / low 48; glyphs ^ v C R I T (weak ^, resist v, crit "!" + small CRIT);
+  hurt() no longer makes a number (flash and hold only); the hurt colour gone. game.js: hurt wince only for your
+  own partner (e.id); no number for a PvP hit on your own partner (e.pvp). pvp-sim _pvpHit emits a hit event
+  {pvp, damage, by} at the partner. mission-sim: the puddle zap emits hit events. online.js: 32 hits a snapshot
+  (was 10), x/y rounded, pvp passed and mapped with wid(). hit-feel-test updated (own numbers, 100 fast hits,
+  arrows, no partner number); versus-evo-test checks the PvP hit event.
+- MISS (Isaac): hit-fx.js miss(e) (glyphs M, S; kind "miss"; drifts, fans out at one spot) replaces game.js's plain
+  addFloat for fx k "miss" (mission-sim _roll emits one for every miss). hit-feel-test: five misses, five MISS; 20
+  forced misses in the sim, 20 events.
+- Siege end screen: siege-sim tally() (hatched, rebuilt, lost, built, broken, wood, bosses, giants) in sg.tally,
+  sent with siege.state and siege.nestLost; modes-ui gameoverLines adds the rows. siege-fence-test checks it.
+  Versus target: drawVsAim redrawn bolder (ground ring + turning brackets, arrow, boxed label); sameId() fixes
+  the host being "local" in vs.state but "h" in a guest's run.others (the marker never drew for guests).
+- Siege boss health, measured (Isaac: leave it high for now, measure first). scripts-free bench, /tmp/bx/ttk.js:
+  a partner levelled the usual way (first skill offered, stats spread) against the night's boss, 60 s:
+    night 3 boss (3.4k hp early in the night, ~27-37k later): Agumon Lv8 avg hit 12 (max 22), 15 dps: ~3.7 min.
+      Greymon Lv14 avg hit 28 (max 49), 23 dps: ~2.5 min. The night lasts 66 s.
+    night 6 giant (364k-579k): Greymon Lv16 avg hit 49, 31 dps: ~3.3 hours. MetalGreymon Lv24 40 dps: ~2.5 hours.
+    night 9 boss (703k): MetalGreymon Lv26 44 dps: ~4.4 hours. night 12 giant (3M): WarGreymon Lv36 35 dps: ~24 h.
+  Cause: siege bosses take the open world's boss health, which grows with run time (bosses.hpScalePer per
+  `every` seconds) and x6 for a stage boss, on top of the siege endless climb. Awaiting Isaac's call.
+- Damage progression checked (Isaac: "why isn't attack progressing?"). It does: the earlier bench never spent skill
+  points (sim.skillTree was off in the harness) or status points, and took the first card. scripts/siege-boss-bench.js
+  (new, not a test) builds a partner the way a player would (each stage in turn, skill points into its own main move,
+  status points into INT/DEX). Focused build: night 3 Agumon job/base 12: 42 a hit (max 79), 117 DPS; night 6
+  Greymon 18: 142 (max 320), 265 DPS; night 9 Greymon 24: 265, 583 DPS; night 12 MetalGreymon 30: 273 (max 638),
+  6.8 hits/s, 1,854 DPS; night 18 WarGreymon 40: 2,973 DPS. Points left unspent or spread thin leave a partner
+  hitting for single digits. Siege bosses still unchanged; proposal for Isaac: about 6,000 x 1.3 a night from
+  night 3 (giant x1.6), ~50 s for a built partner.
+- Siege bosses (Isaac): data.js SIEGE.boss {hp 6000, from 3, perNight 1.3, perPlayer 0.6}; siege-sim _siegeBossHp
+  sets the night boss's and the giant's health outright (giant x nights.giant.hp + hpPerLap a lap; endless toughen
+  still raises their damage). Dawn: bosses stay (siege.dawn stay [types]); modes-ui dawn card names them.
+  Mega punch: moves.js D.MEGA_PUNCH 1.6; mission-sim _megaPunch (form at stage 5 and the move in its moveChain
+  primary line, cached) in _fireFrom. Bench after: n3 51 s, n6 giant 80 s, n9 50 s, n12 giant 55 s, n18 giant 122 s;
+  WarGreymon max 860, 4,023 DPS. Tests: siege-nights-test (boss hp, giant, stays past dawn, two tamers),
+  move-feel-test (Mega punch).
+- Siege co-op scaling (Isaac): data.js SIEGE.perPlayer {more 0.4, hp 0.2} (was a flat +1 attacker a tamer);
+  _siegeWave: wave size, the wave's top (max / endless max) and the live cap x (1 + more x extra tamers); each
+  ordinary attacker's health x (1 + hp x extra). Bosses keep boss.perPlayer 0.6. siege-nights-test: three tamers
+  1.8x as many (16 vs 9) and 1.40x the health.
+- Bloodlines (Isaac; no pairing, one Hatchery Digimon at a time): data.js BLOODLINE {mega 2, great 1, seconds 1200,
+  nights 6, max 5, cap 16, stat 2, power 0.04, learn 0.06, skill 1, shiny 0.5, names, weights}. hatchery.js: H.blood
+  {gen, traits, tree (last 40), live}; use() starts a generation (spec.blood {gen, traits}); runEnded(r) awards
+  traits (pickTrait: element's favoured stat 40, its partner stat 15, power 15, learn / skill / shiny 10; max and
+  cap) and adds the tree entry; traitText; the page's Bloodline box and Family tree (css/hub.css .blood-*).
+  game.js: endRun calls D.hatchery.runEnded with mega / peak / seconds / nights / story (modes-ui state(run)); the
+  line goes on the run-over screen (go-memory); the hatchery apply block sets p.blood (sim._bloodClean) and the
+  Head Start points. mission-sim: _blood / _bloodAttr (attrParts.blood, in _jobBonus) / _bloodXp (both XP paths)
+  / Power in _stats; progression: Lucky Scales in the shiny roll; status window line "from its bloodline".
+  Test: bloodline-test (new). Next on Isaac's list: Expeditions, per-mode leaderboards, a straight Duel mode with
+  Hatchery Digimon (no levelling, no losses).
+- Duel (Isaac): data.js MODES list "duel" (group versus, online), VERSUS.duel {fallback agumon, fallbackLevel 8}.
+  versus-sim: _isVs() (versus or duel) for the showdown rules; a duel skips the race (vs.start duel: 1, then
+  _vsShowdownStart at once); _duelClean (a hatched form up to Champion, level, bloodline) on join rec.duel;
+  _duelSetup in progression tickPlaying (quiet _applyForm kind "duel": no scene, no shiny roll; level, evoCount,
+  bloodline, _duelSpend skill points, full health; duel.ready); _duelSpend (main move, melee, then autoPick; the
+  boss bench uses it too). modes-sim runs duel through _updateVersus. hatchery.js duelSpec() (the stand's Digimon,
+  not spent); profile card hd; online.js addGuest duel; game.js host join duel, no CPUs, and endRun pays nothing for
+  a duel (no rank, memory or data). online-ui: KIND Race / Duel under Versus, the duel picker (no arrows),
+  cards, fightMode() for "needs someone". modes-ui: duel card, duel.ready fallback toast, chip, end screen.
+  Test: duel-test (new). Next on Isaac's list: Expeditions, per-mode leaderboards.
+- Leaderboards per mode (Isaac): boards-server.js boards story (storyTime, low), siege (nights), versus (vsWins),
+  duel (duelWins); the five Survival boards only take Survival-group runs; cleanRec takes nights / storyDone /
+  vsWin / tag {form, gen} with plausibility checks; e.tags[board] keeps what each best (or latest win) was done
+  with; me.bests has the new ones. js/boards.js: tabs Story / Night Siege / Versus / Duel, a line on what each
+  counts, the tag under each name (form, "Hatchery Gen N"). game.js endRun: rec.nights / storyDone / vsWin (from
+  modes-ui state, so guests too) and rec.tag; submits for every mode when it counts. css/hub.css .league-tag /
+  .league-about. Test: boards-mode-test (new, drives boards-server.js). Next on Isaac's list: Expeditions.
+- Expeditions (Isaac): data.js EXPEDITION {minSec 60, capMin 30, data 4, coins 3, stageMul [0.5, 0.75, 1, 1.4],
+  genBonus 0.05, genMax 0.5, itemPer 0.03, itemMax 0.5, eggPer 0.012, eggMax 0.3}. hatchery.js expedition(H, r)
+  (the stand's hatched Digimon, not used, not a duel: data of its element into H.data, coins, item and egg rolls,
+  H.exped.last), eggLead makes newEgg pick Rare or Mythic once; page: expeditionEnd (pays coins via
+  cosmetics.grantBits, an item via items.pick("cons") + give), expText, the #hatch-exped note. game.js endRun:
+  the report on the run-over screen (go-data). Test: expedition-test (new). Isaac's list from this round is done
+  (Bloodlines, Duel, per-mode boards, Expeditions).
+- Hatchery slots + death (Isaac): BLOODLINE.slots 3, lose {Ultimate 1, Champion 3, Armor 3}; EXPEDITION.team 0.15.
+  hatchery.js: H.slots [{egg, blood}], H.sel; clean() migrates and mirrors the selected slot into H.egg / H.blood;
+  syncSlot after any rule that replaces them; select / inSlot; freshBlood (line numbers); runEnded finds the slot
+  whose line is live and applies the death rules (r.died, r.diedStage; Mega first = valorous; loseTraits takes the
+  biggest first; erased lines start fresh, the old one kept in blood.ended); expedition takes the whole team. Page:
+  slot cards (#hatch-slots), every empty slot gets an egg, the bloodline note on falls, tree marks. game.js: run.hatchStage
+  / hatchMega from snapshots, run.hatchFell on the first respawn, run.overReason from runOver; endRun passes died /
+  diedStage (partner or party reason, or a fall) and shows erased / lost lines. Tests: bloodline-test (slots, death
+  rules, judged in its own slot), expedition-test (team).
+- Night Siege nest loss = a fall for a Hatchery Digimon (game.js fellNow includes runOver reason "nest"). Hatchery
+  feeding readout: hatchery.js renderFed / fedRow (#hatch-fed: e.now "since it last grew", e.fed "all it has
+  eaten"; bar + named list with amounts and %), css .fed-*; the stand panel scrolls when tall.
+- Duels just for fun (Isaac): boards-server.js drops the duel board; a duel submit (won or lost, 5 s apart, its own
+  limit) only adds to e.duelWins / duelLosses and answers { duel: { wins, losses } }; me.bests has both. boards.js:
+  the Duel tab shows the record (css .league-record); placedText says it. game.js sends every finished duel.
+  boards-mode-test updated.
+- League glow-up (Isaac: "pretty… in your face… a lot going on"): boards.js open()/paint() rewritten as a
+  full-screen .lg overlay: #lg-sky canvas (one rAF loop: twinkling stars + the podium sprites, stopped on close via
+  stopAnim), CSS beams, shimmer title, MODE map (colour, motif icon, group) for emblem tabs drawn by the new
+  D.iconArt.motif(cv, name, {tier, spark}); podium (2/1/3) with tag.form sprites from D.sprites.getSheet; HOW map
+  for the YOU banner; Duel ring (conic-gradient); faction tug bar (FAC_COL, named pieces >= 12%). Old .league-*
+  CSS removed from hub.css, replaced by .lg-*; .lg.is-still when D.reducedFx.
+- Story teaches everything (Isaac): story-sim.js STEPS 11 -> 18: new stats (attr sum up), train (p.trainCount, set where
+  progression emits farm.train), weak (party, per 3, p.weakHits: hurtEnemy when hitEv.m > 0 for a player's hit), warp
+  (p.burstUses on a successful burst intent); the old farm step became train. who "talk" lessons (hatchery, blood,
+  modes, league; sec 15-18, timed from st.t0, no story.clear, no XP, no story.state). story.step carries sec;
+  modes-ui shows "Lesson n of 18" for sec ms; the goal chip is clickable (.is-click) to show Jijimon's words again.
+  modes-test covers the new goals and lessons.
+- Tutorial refresh: tour.js HUB (modes with endless Siege and Duel, Hatchery slots/bloodlines/expeditions, League
+  boards), SETUP (rules, setup-gear, btn-setup-invite, "Two kinds of level": job K / base T), How to Play in
+  index.html (Four ways to play, Two kinds of level, Damage numbers, League, Hatchery slots and bloodlines,
+  Expeditions). The HUD says "Base Lv", so the text does too.
+- Equipped moves (Isaac): skill-tree.js EQUIP { byStage [2,2,3,4,4,4], focus 1.75 }, slotCount(stage, extra),
+  fixEquip(data, skills, prev {list, known, n}, n) -> { list, known, n, left } (successor keeps a grown/replaced
+  move's place; new moves go in if there's room; free slots fill when n grows; hand-removed stay off),
+  applyEquip(list, ids, id, drop, off, n) (host and guest preview). RULES.prereqLevel 3 -> 7, legacyPerLevel
+  0.015 -> 0.03. autoPick(data, form, skills, slots): fill empty slots, then raise the prerequisite holding a bigger
+  move back, then new moves only as successors. mission-sim _syncMoves filters by p.equip (p.equipKnown,
+  p.equipN; emits skill.full), equipSlots(p) (Lab moveslot +1, capped by max), weapon.cdMax, snapshot wc/equip/
+  equipN; online FAST wc in P; progression intent skill.equip {skill, drop, off}; online ACTS + guest preview.
+  Guest previews for skill.add / stat.add / skill.equip now read G.slow (the fast record has no skills).
+  game.js: equipMove / equipStrip / swap mode in the skills window, skill.full toast, tickMoveBar (#move-bar,
+  conic sweep from --cd). LAB moveslot (1500, max 1, unit "move"), icon-art LAB.moveslot. New
+  scripts/equip-test.js; signature/form-moves/kit/lab tests updated. Bench after: n3 83 dps, n6 293, n9 725,
+  n12 1678, n18 3154.
+- Sharp zoom (Isaac): input.js camera.stops / camera.sharp from zoomStops(k) (k = min(devicePixelRatio, 2); sharp
+  zooms are n / k in [0.75, maxZoom 2], plus minZoom 0.7 as a soft wide view if none below 0.95); setPixelDensity
+  (game.js resize), stepZoom (one wheel notch, trackpad deltas add up to 50), pinch snaps on release, reset picks
+  the sharp stop nearest 100%; emits "zoom" -> game.js toast. Props/tamer are 1 world unit per art pixel, the
+  ground 3 (sprites.js SCALE); Digimon use per-species scales (officialScale: 0.16 to 6, median 0.82), so they
+  can't all be exact. PERF.q < 1 (performance mode) draws below screen resolution, and then nothing is exact.
+- Multiplayer (Isaac picked spectating + shared world events). Events already existed (event-sim.js); new
+  WORLD_EVENTS.together { players 2, first [300,600], every [900,1500], crew 0.2, crewMax 0.6 }: _wevTogether keeps
+  a timer while 2+ tamers are in (_wevTogAt; after an event, from _wevLastEnd), unshifting onto _wevSched; the
+  rare roll still applies if sooner. Crew = tamers in ev.came; xp/bits x (1 + crew bonus); wev.end carries crew.
+  Spectating is client-only (the host broadcasts all enemies): game.js spec {id, on, ax}, tickSpectate (downed +
+  online), specList (others up), specStep (left/right edges of inp.x, the bar's arrows), camera follows specFocus,
+  #spec-bar. Parked for later (Isaac): donating data to a Digimon while spectating, to buff a teammate's partner
+  or a wild one against rivals; guard against griefing (once per death, a cap, enemy boosts only where there
+  are real sides).
+

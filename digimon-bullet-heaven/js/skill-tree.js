@@ -4,11 +4,16 @@
  * the tree of the Digimon's line:
  *
  *   Moves     level 1 to 10. A bigger move needs the form that knows it and
- *             the smaller move of the same kind at Lv 3 first, the way a
+ *             the smaller move of the same kind at Lv 7 first (17z33; it was 3), the way a
  *             Ragnarok skill needs its prerequisite. An aura needs any shot
  *             at Lv 5; an orbit needs an aura at Lv 3.
  *   Passives  the old Power Up / Quick Claws / Vital Boost / Speed Up /
  *             Magnet cards, now masteries with ten levels each.
+ *
+ * Equipped moves (17z33, Isaac): only so many learned moves can be in use at once: 2 for a Baby or an
+ * In-Training, 3 for a Rookie, 4 from Champion up, and the Lab's Move Slot adds one at every stage.
+ * The player swaps them any time in the skills window (K). A bigger move needs the smaller one of its
+ * kind at Lv 7 (it was 3). See EQUIP and fixEquip below.
  *
  * Only the biggest learned move of each kind (shot, claw, aura, orbit)
  * fires; the smaller ones it grew out of each add a little damage to it per
@@ -25,7 +30,7 @@
   /* in these kinds every learned move fires; nothing replaces anything */
   var MULTI = { special: 1, tech: 1 };
   var STAGE_NAME = ["Baby", "In-Training", "Rookie", "Champion", "Ultimate", "Mega"];
-  var RULES = { prereqLevel: 3, auraNeedsShot: 5, orbitNeedsAura: 3, betweenSteps: 0.07, legacyPerLevel: 0.015 };
+  var RULES = { prereqLevel: 7, auraNeedsShot: 5, orbitNeedsAura: 3, betweenSteps: 0.07, legacyPerLevel: 0.03 };
   /* per level */
   var PASSIVES = [
     { id: "pw", name: "Power Mastery", per: 0.04, text: "+4% damage with every move", icon: "damage" },
@@ -35,6 +40,10 @@
     { id: "mg", name: "Data Magnet", per: 0.08, text: "+8% pickup range", icon: "magnet" },
     { id: "rg", name: "Recovery", per: 0.002, text: "heals 0.2% of max HP a second", icon: "medicine" }
   ];
+  /* how many moves can be equipped, by stage (Baby, In-Training, Rookie, Champion, Ultimate, Mega) */
+  /* focus: an equipped move hits this much harder. A partner used to fire every move it knew (6 to 16 by
+   * Champion); now it fires 3 or 4, so each one carries more of the load (scripts/siege-boss-bench.js). */
+  var EQUIP = { byStage: [2, 2, 3, 4, 4, 4], focus: 1.75 };
   var PASSIVE_BY = {};
   PASSIVES.forEach(function (p) { PASSIVE_BY[p.id] = p; });
 
@@ -203,11 +212,31 @@
 
   /* what a CPU partner (or a player who stepped away) does with a point:
    * learn the biggest new move it can, else raise what it fires */
-  function autoPick(data, form, skills) {
-    var t = tree(data, form, skills), s, i, list, act, best = null;
-    for (s = 0; s < SLOTS.length; s++) {
+  function autoPick(data, form, skills, slots) {
+    var t = tree(data, form, skills), s, i, list, act, best = null, e, g, b;
+    /* with a slot count: fill the empty move slots first */
+    if (slots && active(data, skills).length < slots) for (s = 0; s < SLOTS.length; s++) {
       list = t.slots[SLOTS[s]];
       for (i = list.length - 1; i >= 0; i--) if (!lvOf(skills, list[i].id) && !blocked(data, form, skills, list[i].id)) return list[i].id;
+    }
+    /* first (17z33, with the Lv 7 gate): a bigger move this form could have, held back only by the level of
+     * the one before it, so raise that one */
+    for (s = 0; s < SLOTS.length; s++) {
+      list = t.slots[SLOTS[s]];
+      for (i = list.length - 1; i >= 0; i--) {
+        e = list[i];
+        if (lvOf(skills, e.id) || e.tier > t.stage || lockedBy(data, skills, e.id)) continue;
+        g = sigOf(data, e.id);
+        if (g && g.up) { if (lvOf(skills, g.up) > 0 && lvOf(skills, g.up) < RULES.prereqLevel) return g.up; continue; }
+        if (MULTI[SLOTS[s]]) continue;
+        b = bestInSlot(data, skills, SLOTS[s], 1);
+        if (b && b.tier < e.tier && b.level < RULES.prereqLevel) return b.id;
+      }
+    }
+    /* a new move: with every slot already full, only one that takes over from a smaller one of its kind */
+    for (s = 0; s < SLOTS.length; s++) {
+      list = t.slots[SLOTS[s]];
+      for (i = list.length - 1; i >= 0; i--) if (!lvOf(skills, list[i].id) && !blocked(data, form, skills, list[i].id) && (!slots || (!MULTI[SLOTS[s]] && bestInSlot(data, skills, SLOTS[s], 1)) || (sigOf(data, list[i].id) && sigOf(data, list[i].id).up))) return list[i].id;
     }
     act = active(data, skills);
     for (i = 0; i < act.length; i++) if (act[i].skill < MAX && (!best || act[i].skill < best.skill)) best = act[i];
@@ -242,9 +271,69 @@
     return out;
   }
 
+  /* ---------- equipped moves ---------- */
+  function slotCount(stageIdx, extra) {
+    var l = EQUIP.byStage, i = Math.max(0, Math.min(l.length - 1, stageIdx | 0));
+    return l[i] + (extra || 0);
+  }
+  /* the move that took over from `id`: the bigger one of the same kind, or what a signature grew into */
+  function successor(data, id, ids) {
+    var m = metaOf(data, id), i, g, k, guard = 0;
+    if (m && !MULTI[m.slot]) {
+      for (i = 0; i < ids.length; i++) { var mi = metaOf(data, ids[i]); if (mi && mi.slot === m.slot) return ids[i]; }
+      return null;
+    }
+    k = id;
+    while (k && guard++ < 8) { g = sigOf(data, k); k = g && g.upTo; if (k && ids.indexOf(k) >= 0) return k; }
+    return null;
+  }
+  /* What is equipped after something changed. prev is the last { list, known, n } (or null the first time).
+   * Moves that grew or were replaced keep their place under their new name; a move just learned goes in if
+   * there is room; when the number of slots grows (a new stage), the free slots fill up; when it shrinks,
+   * the last ones come off. Returns { list, known, n, left }: left = new moves that didn't fit. */
+  function fixEquip(data, skills, prev, n) {
+    var ids = active(data, skills).map(function (a) { return a.id; }), out = [], left = [], i, id, r, first = !(prev && prev.list);
+    var list = first ? ids : prev.list, known = (prev && prev.known) || [], grew = !first && n > (prev.n || 0);
+    for (i = 0; i < list.length; i++) {
+      id = list[i];
+      if (ids.indexOf(id) >= 0) { if (out.indexOf(id) < 0) out.push(id); continue; }
+      r = successor(data, id, ids);
+      if (r && out.indexOf(r) < 0 && list.indexOf(r) < 0) out.push(r);
+    }
+    for (i = 0; i < ids.length; i++) {
+      id = ids[i];
+      if (out.indexOf(id) >= 0) continue;
+      var isNew = known.indexOf(id) < 0 && successorOfAny(id);
+      if (out.length < n && (first || grew || isNew)) out.push(id);
+      else if (isNew && !first) left.push(id);
+    }
+    /* a move counts as new unless it simply took over from one that was known */
+    function successorOfAny(id2) { for (var j = 0; j < known.length; j++) if (successor(data, known[j], [id2]) === id2) return false; return true; }
+    return { list: out.slice(0, n), known: ids, n: n, left: left };
+  }
+
+  /* a player's swap: put `id` on (taking `drop` off if every slot is full), or take it off with off = true.
+   * `ids` are the moves it could use (active). Returns { ok, list } or { ok: false, reason }. */
+  function applyEquip(list, ids, id, drop, off, n) {
+    list = (list || []).slice();
+    if (ids.indexOf(id) < 0) return { ok: false, reason: "Learn that move first" };
+    if (off) {
+      if (list.indexOf(id) < 0) return { ok: false, reason: "Not equipped" };
+      if (list.length <= 1) return { ok: false, reason: "Keep at least one move" };
+      list.splice(list.indexOf(id), 1);
+      return { ok: true, list: list };
+    }
+    if (list.indexOf(id) >= 0) return { ok: false, reason: "Already equipped" };
+    if (list.length >= n) {
+      if (!drop || list.indexOf(drop) < 0) return { ok: false, reason: "Every slot is full: pick a move to swap out" };
+      list[list.indexOf(drop)] = id;
+    } else list.push(id);
+    return { ok: true, list: list };
+  }
+
   var api = { MAX: MAX, MULTI: MULTI, SLOTS: SLOTS, SLOT_NAME: SLOT_NAME, STAGE_NAME: STAGE_NAME, RULES: RULES, PASSIVES: PASSIVES, PASSIVE_BY: PASSIVE_BY,
     tree: tree, blocked: blocked, active: active, moveLevel: moveLevel, passiveMul: passiveMul, autoPick: autoPick, bestInSlot: bestInSlot, offer: offer,
-    learned: learned, sigNote: sigNote, GONE: GONE };
+    learned: learned, sigNote: sigNote, GONE: GONE, EQUIP: EQUIP, slotCount: slotCount, fixEquip: fixEquip, applyEquip: applyEquip };
   if (root.DBH) root.DBH.SKILLS = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));

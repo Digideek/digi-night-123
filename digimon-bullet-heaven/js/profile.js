@@ -123,7 +123,7 @@
   }
   function tick(run, state) {
     if (!P || !run || run.ended || state !== "playing") return;
-    var S = D.SEASONS_CFG || {}, yearLen = (S.lengthSec || 360) * 4;
+    var S = D.SEASONS_CFG || {}, yearLen = (S.lengthSec || 486) * 4;
     if ((run.time || 0) >= yearLen) award("year");
     if (D.online && D.online.active && D.online.active() && (run.others || []).length && (run.time || 0) > 60) award("online");
     if (D.BADGES) D.BADGES.tick(api, run);
@@ -198,6 +198,7 @@
     add("Reached " + (st || "Baby"), v || 0);
     add("Bosses beaten", (run._rankBoss || 0) * C.boss);
     add("Rival beaten", ((run.rival && run.rival.wins) || 0) * C.rivalWin);
+    if (run.turf && run.turf.won) { add("Turf war won", C.turfWar || 200); if (run.turf.underdog) add("...for the underdog", C.turfUnderdog || 150); }
     return { parts: parts, total: total };
   }
   function runEnded(run) {
@@ -211,7 +212,7 @@
     P.rank.xp = before.xp + pay.total;
     after = rankAt(P.rank.xp);
     pay.before = before; pay.after = after; pay.ups = [];
-    /* every run pays a few DigiBits for the Lab, rank-up or not */
+    /* every run pays a few DigiCoins for the Lab, rank-up or not */
     pay.bits = Math.floor(pay.total / ((D.LAB && D.LAB.runBitsPer) || 8));
     if (pay.bits > 0 && D.cosmetics && (!D.cosmetics.ready || D.cosmetics.ready())) D.cosmetics.grantBits(pay.bits, "run");
     for (r = before.rank + 1; r <= after.rank; r++) {
@@ -247,7 +248,7 @@
     for (k in (log.forms || {})) if (!T || T.species[k]) found++;
     for (k in (log.shiny || {})) shiny++;
     return {
-      n: P.name, g: P.ghost, pic: picOf(P), c: P.created, a: Object.keys(P.ach).filter(function (k) { return !!ACH_BY[k]; }), rx: (P.rank && P.rank.xp) || 0, lb: P.lab || {}, mm: info.memTiers || {}, gr: (D.items && D.items.loadout) ? D.items.loadout() : null,
+      n: P.name, g: P.ghost, pic: picOf(P), c: P.created, a: Object.keys(P.ach).filter(function (k) { return !!ACH_BY[k]; }), rx: (P.rank && P.rank.xp) || 0, lb: P.lab || {}, mm: info.memTiers || {}, gr: (D.items && D.items.loadout) ? D.items.loadout() : null, vr: D.vsRookie ? D.vsRookie.get() : null, hd: D.hatchery && D.hatchery.duelSpec ? D.hatchery.duelSpec() : null,
       st: { kos: P.stats.kos || 0, runs: P.stats.runs || 0, best: Math.max(P.stats.best || 0, Math.floor(info.bestTime || 0)), evos: P.stats.evos || 0,
         eggs: info.eggs || 0, eggsOf: info.eggsTotal || 0, forms: found, formsOf: total, shiny: shiny, bosses: P.stats.bosses || 0, top: info.bestForm || "", tr: info.trophies || 0 }
     };

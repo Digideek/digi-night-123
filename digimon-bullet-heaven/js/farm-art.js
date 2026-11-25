@@ -143,6 +143,10 @@
     var bladeD = shade(gDark, -0.08), bladeL = [gBase[0] + (gLight[0] - gBase[0]) * 0.6, gBase[1] + (gLight[1] - gBase[1]) * 0.6, gBase[2] + (gLight[2] - gBase[2]) * 0.6];
     var dirt = one("#a07c50", "path"), dirtDark = one("#6c4e30", "path"), dirtLight = one("#bd9a68", "path"), dirtRim = one("#4f3a24", "path");
     var pebble = one("#cfc6b4", "path"), pebbleD = one("#7d7468", "path");
+    /* 17z33: cobbles, their kerb and gaps; straw between the garden beds */
+    var cob = [one("#a89a86", "path"), one("#b8ab95", "path"), one("#9a8c78", "path")], cobGap = one("#5e5446", "path"), cobKerb = one("#7a6e5e", "path"), cobRim = one("#4a4036", "path");
+    var straw = one("#c8a868", "path"), strawD = one("#a88a50", "path"), strawL = one("#e4cc8c", "path");
+    function mix3(c1, c2, t2) { return [c1[0] + (c2[0] - c1[0]) * t2, c1[1] + (c2[1] - c1[1]) * t2, c1[2] + (c2[2] - c1[2]) * t2]; }
     var soil = rgb(s === "winter" ? "#8a8a90" : "#5a3a22"), soilDark = rgb(s === "winter" ? "#6a6c74" : "#3e2614"), soilLight = rgb(s === "winter" ? "#c8d0d8" : "#7a5434");
     var sand = rgb(seasonize("#d8c08a", "path", 0.5, s)), sandDark = rgb(seasonize("#b89c68", "path", 0.5, s)), sandLight = rgb(seasonize("#ecdcae", "path", 0.5, s));
     var stone = rgb("#9a9488"), stoneDark = rgb("#5e5a54"), stoneLight = rgb("#c4beb0");
@@ -158,19 +162,23 @@
         wx = b.x0 + ix * P + 1;
         n = hash(ix, iy, 11);
         inYard = wx > fence.x0 && wx < fence.x1 && wy > fence.y0 && wy < fence.y1;
-        /* --- grass: three flat tones in broad patches, with small blade marks --- */
-        v = vn(ix, iy, 26, 3) * 0.7 + vn(ix, iy, 9, 4) * 0.3;
+        /* --- grass (17z33): one even tone, its light and dark patches dithered in at the edges rather
+         * than painted as blobs, and a scatter of small tufts on a jittered grid --- */
+        v = vn(ix, iy, 30, 3) * 0.75 + vn(ix, iy, 11, 4) * 0.25;
         set = inYard ? lawn : wild;
-        col = v < 0.36 ? set[0] : (v > 0.64 ? set[2] : set[1]);
+        col = set[1];
+        if (v < 0.33 || (v < 0.39 && ((ix + iy) & 1))) col = set[0];
+        else if (v > 0.67 || (v > 0.61 && ((ix + iy) & 1))) col = set[2];
         dx = wx - T.cx; dy = wy - T.cy;
         e = Math.sqrt((dx * dx) / (T.rx * T.rx) + (dy * dy) / (T.ry * T.ry));
-        if (inYard && e < 1 && s !== "winter" && (Math.floor((ix + iy * 0.5) / 22) & 1)) col = shade(col, 0.045);   /* the infield is mown in bands */
-        cxl = (ix / 6) | 0; cyl = (iy / 5) | 0; h = hash(cxl, cyl, 9);
-        if (h > (inYard ? 0.78 : 0.55)) {
-          lx = ix % 6; ly = iy % 5; ox = 1 + ((h * 97) | 0) % 3; oy = 1 + ((h * 53) | 0) % 2;
-          if (lx === ox && (ly === oy + 1 || ly === oy + 2)) col = bladeD;
-          else if (lx === ox + 1 && ly === oy) col = bladeL;
-          else if (!inYard && lx === ox - 1 && ly === oy + 1) col = bladeD;
+        if (inYard && e < 1 && s !== "winter" && (Math.floor(ix / 14) & 1)) col = shade(col, 0.035);        /* the infield is mown in straight stripes */
+        cxl = (ix / 7) | 0; cyl = (iy / 6) | 0; h = hash(cxl, cyl, 9);
+        if (h > (inYard ? 0.72 : 0.5)) {
+          lx = ix % 7; ly = iy % 6; ox = 2 + ((h * 97) | 0) % 3; oy = 2 + ((h * 53) | 0) % 2;
+          /* a three-blade tuft: dark stems, one lit tip */
+          if (ly === oy + 1 && (lx === ox - 1 || lx === ox + 1)) col = bladeD;
+          else if (lx === ox && (ly === oy || ly === oy + 1)) col = bladeD;
+          else if (lx === ox && ly === oy - 1) col = bladeL;
         }
         /* wildflowers gather in drifts outside the fence */
         if (!inYard && s !== "winter" && vn(ix, iy, 34, 71) > 0.66) {
@@ -183,24 +191,40 @@
           sd = segDist(wx, wy, geo.paths[i][0], geo.paths[i][1], geo.paths[i][2], geo.paths[i][3]) - geo.paths[i][4] / 2;
           if (sd < best) best = sd;
         }
-        wob = (vn(ix, iy, 8, 77) - 0.5) * 14 + (vn(ix, iy, 3, 78) - 0.5) * 5;
+        /* 17z33: laid cobble paths with a clean kerb, not hand-drawn dirt */
+        wob = (vn(ix, iy, 5, 77) - 0.5) * 2;
         edge = best + wob;
         if (edge < 0) {
-          col = dirt;
-          if (edge > -3.2) col = dirtRim;
-          else if (edge > -7) col = dirtDark;
-          else if (vn(ix, iy, 7, 81) > 0.6) col = dirtLight;
-          cxl = (ix / 7) | 0; cyl = (iy / 6) | 0; h = hash(cxl, cyl, 83);
-          if (edge < -5 && h > 0.86) { lx = ix % 7; ly = iy % 6; ox = 1 + ((h * 71) | 0) % 4; oy = 1 + ((h * 37) | 0) % 3; if (lx === ox && ly === oy) col = pebble; else if (lx === ox && ly === oy + 1) col = pebbleD; }
-        } else if (edge < 3.5) col = shade(col, -0.16);       /* grass leans over the edge */
-        else if (edge < 9 && n > 0.72) col = shade(col, -0.1);
+          if (edge > -3.5) col = cobRim;
+          else if (edge > -6.5) col = cobKerb;
+          else {
+            ly = Math.floor(iy / 4); lx = Math.floor((ix + (ly & 1) * 3) / 6);
+            ox = (ix + (ly & 1) * 3) % 6; oy = iy % 4;
+            h = hash(lx, ly, 84);
+            col = h < 0.33 ? cob[0] : (h < 0.72 ? cob[1] : cob[2]);
+            if (ox === 0 || oy === 0) col = cobGap;
+            else if (ox === 1 && oy === 1) col = shade(col, 0.16);
+            else if (ox === 5 || oy === 3) col = shade(col, -0.12);
+          }
+        } else if (edge < 3) col = shade(col, -0.2);         /* the grass is shaded right at the kerb */
         /* --- station pads --- */
         for (pi = 0; pi < geo.pads.length; pi++) {
           pad = geo.pads[pi];
           dx = (wx - pad.x) / pad.rx; dy = (wy - pad.y) / pad.ry;
-          e = dx * dx + dy * dy + (vn(ix, iy, 5, 60 + pi) - 0.5) * 0.3;
-          if (e > 1.12) continue;
-          if (e > 1) { col = shade(col, -0.16); continue; }
+          e = dx * dx + dy * dy + (vn(ix, iy, 5, 60 + pi) - 0.5) * (pad.kind === "plaza" ? 0 : 0.06);
+          if (e > 1.1) continue;
+          if (e > 1) { col = shade(col, -0.2); continue; }
+          if (pad.kind === "plaza") {
+            /* flagstones in rings round a round centre stone, a kerb of dark slabs at the rim */
+            var pr = Math.sqrt(e), pa = Math.atan2(dy, dx), ringI = Math.floor(pr * 5), segN = 6 + ringI * 6, segI = Math.floor((pa + Math.PI) / (Math.PI * 2) * segN);
+            var pf = pr * 5 - ringI, pg = ((pa + Math.PI) / (Math.PI * 2) * segN) - segI, hp = hash(segI, ringI, 89);
+            col = hp < 0.3 ? stone : (hp < 0.7 ? stoneLight : shade(stone, 0.06));
+            if (pr < 0.2) col = pr < 0.12 ? stoneLight : stone;
+            else if (pf < 0.12 || pg < 0.06) col = stoneDark;
+            else if (pf > 0.82) col = shade(col, -0.1);
+            if (e > 0.86) col = (Math.floor((pa + Math.PI) * 40) & 7) ? stoneDark : shade(stoneDark, -0.25);
+            continue;
+          }
           if (pad.kind === "sand") col = e > 0.8 ? sandDark : (vn(ix, iy, 6, 63) > 0.62 ? sandLight : (n > 0.9 ? sandDark : sand));
           else if (pad.kind === "worn") { if (vn(ix, iy, 4, 66) > e * 0.9 + 0.12) col = e < 0.45 && vn(ix, iy, 6, 67) > 0.5 ? dirtLight : dirt; }
           else if (pad.kind === "stone") {
@@ -211,6 +235,24 @@
             if (!edgeS && (((wy % 15) + 15) % 15 < 6) && hs > 0.3) col = shade(col, 0.1);
             if (e > 0.84) col = stoneDark;
           }
+        }
+        /* --- yards (17z33): a sanded training yard and a lawn edged with timber --- */
+        for (i = 0; i < (geo.yards || []).length; i++) {
+          gp = geo.yards[i];
+          if (wx < gp.x || wx >= gp.x + gp.w || wy < gp.y || wy >= gp.y + gp.h) {
+            if (wx >= gp.x - 6 && wx < gp.x + gp.w + 6 && wy >= gp.y && wy < gp.y + gp.h + 8) col = shade(col, -0.18);   /* its shadow */
+            continue;
+          }
+          var yin = Math.min(wx - gp.x, gp.x + gp.w - wx, wy - gp.y, gp.y + gp.h - wy);
+          if (yin < 3) col = rgb("#3a2414");
+          else if (yin < 9) col = (wy > gp.y + gp.h - 9) ? rgb("#6e4826") : (yin < 5 ? rgb("#b8864e") : rgb("#8a5c30"));
+          else if (gp.kind === "sand") {
+            col = (vn(ix, iy, 9, 97) > 0.6 && ((ix + iy) & 1)) ? sandLight : sand;
+            if (n > 0.93) col = sandDark;
+            if (yin < 13) col = sandDark;
+            /* raked lines */
+            if (((iy) % 6 === 0) && yin > 16 && hash(ix >> 3, iy, 98) > 0.35) col = mix3(col, sandDark, 0.5);
+          } else if (yin < 12) col = shade(col, -0.08);
         }
         /* --- flower beds --- */
         for (i = 0; i < geo.beds.length; i++) {
@@ -228,14 +270,22 @@
           var gin = Math.min(wx - (G.x - 20), G.x + G.w + 20 - wx, wy - (G.y - 20), G.y + G.h + 20 - wy);
           if (gin < 3) col = rgb("#3a2414");
           else if (gin < 9) col = wy > G.y + G.h + 8 ? rgb("#6e4826") : (gin < 6 ? rgb("#a87844") : rgb("#8a5c30"));
-          else if (gin < 11) col = dirtRim;
-          else col = vn(ix, iy, 6, 95) > 0.58 ? dirt : dirtDark;
+          else {
+            /* 17z33: fine straw-and-gravel walks between the beds */
+            col = ((ix * 7 + iy * 3) % 5 === 0) ? strawL : (n > 0.55 ? straw : strawD);
+          }
           for (i = 0; i < G.plots.length; i++) {
             plot = G.plots[i];
-            if (wx >= plot.x && wx < plot.x + plot.w && wy >= plot.y && wy < plot.y + plot.h) {
-              var fr = ((wy - plot.y) % 9);
-              col = fr < 3 ? soilDark : (fr < 6 ? soil : (n > 0.6 ? soilLight : soil));
-              if (wx - plot.x < 3 || plot.x + plot.w - wx <= 3) col = soilDark;
+            if (wx >= plot.x - 5 && wx < plot.x + plot.w + 5 && wy >= plot.y - 5 && wy < plot.y + plot.h + 8) {
+              /* each plot is a raised bed in a timber frame: a lit top board, a shaded front board */
+              var pin = Math.min(wx - (plot.x - 5), plot.x + plot.w + 5 - wx, wy - (plot.y - 5), plot.y + plot.h + 8 - wy);
+              if (wy >= plot.y + plot.h && wx >= plot.x - 5 && wx < plot.x + plot.w + 5) col = wy < plot.y + plot.h + 3 ? rgb("#8a5c30") : rgb("#5a3a1c");
+              else if (pin < 2) col = rgb("#3a2414");
+              else if (pin < 5) col = wy < plot.y ? rgb("#c8955a") : rgb("#a87844");
+              else {
+                var fr = ((wy - plot.y) % 10);
+                col = fr < 2 ? soilDark : (fr < 4 ? soilLight : (n > 0.7 ? soilDark : soil));
+              }
             }
           }
         }
@@ -533,6 +583,66 @@
     return finish(a, 5, 11);
   }
 
+  /* 17z33: furniture for the planned yard */
+  function lamp() {
+    var a = mk(12, 36);
+    shadow(a, 6, 34, 5, 2);
+    rect(a, 4, 30, 4, 4, "#2e2a30"); rect(a, 4, 30, 4, 1, "#4a4650");                   /* base */
+    rect(a, 5, 10, 2, 21, "#3a3640"); rect(a, 5, 10, 1, 21, "#5a5660");                  /* post */
+    rect(a, 3, 8, 6, 2, "#2e2a30");
+    rect(a, 2, 2, 8, 7, "#2e2a30"); rect(a, 3, 3, 6, 5, "#ffe08a"); rect(a, 3, 3, 2, 2, "#fff6d0");   /* the lantern */
+    rect(a, 2, 1, 8, 1, "#4a4650"); rect(a, 4, 0, 4, 1, "#2e2a30");
+    rect(a, 5, 3, 1, 5, "#c8a050");
+    outline(a);
+    return finish(a, 6, 34);
+  }
+  function bench() {
+    var a = mk(26, 14);
+    shadow(a, 13, 12, 12, 2);
+    var w = "#9a6a3a", wl = "#c8955a", wd = "#6a4424";
+    rect(a, 2, 1, 22, 2, w); rect(a, 2, 1, 22, 1, wl);                                     /* back rest */
+    rect(a, 2, 5, 22, 3, w); rect(a, 2, 5, 22, 1, wl); rect(a, 2, 7, 22, 1, wd);          /* seat */
+    rect(a, 3, 3, 2, 2, "#3a3640"); rect(a, 21, 3, 2, 2, "#3a3640");
+    rect(a, 3, 8, 2, 4, "#3a3640"); rect(a, 21, 8, 2, 4, "#3a3640");
+    outline(a);
+    return finish(a, 13, 12);
+  }
+  function crates() {
+    var a = mk(22, 22);
+    shadow(a, 11, 20, 10, 2);
+    function crate(x, y, sz) {
+      rect(a, x, y, sz, sz, "#b07a48"); rect(a, x, y, sz, 1, "#d8a468"); rect(a, x, y + sz - 1, sz, 1, "#6a4424");
+      rect(a, x, y, 1, sz, "#8a5a32"); rect(a, x + sz - 1, y, 1, sz, "#8a5a32");
+      line(a, x + 1, y + 1, x + sz - 2, y + sz - 2, "#8a5a32");
+    }
+    crate(1, 9, 11); crate(11, 11, 9); crate(5, 1, 9);
+    outline(a);
+    return finish(a, 11, 20);
+  }
+  function barrel() {
+    var a = mk(12, 16);
+    shadow(a, 6, 14, 5, 2);
+    rect(a, 2, 2, 8, 12, "#9a6a3a"); rect(a, 1, 4, 10, 8, "#9a6a3a");
+    rect(a, 3, 2, 2, 12, "#c8955a"); rect(a, 9, 3, 1, 10, "#6a4424");
+    rect(a, 1, 4, 10, 1, "#4a4650"); rect(a, 1, 11, 10, 1, "#4a4650");
+    rect(a, 2, 1, 8, 2, "#6a4424"); rect(a, 3, 1, 6, 1, "#8a5a32");
+    outline(a);
+    return finish(a, 6, 14);
+  }
+  function planter() {
+    var a = mk(16, 14);
+    shadow(a, 8, 12, 7, 2);
+    rect(a, 1, 6, 14, 6, "#8a5a32"); rect(a, 1, 6, 14, 1, "#c8955a"); rect(a, 1, 11, 14, 1, "#5a3a1c");
+    var s2 = season(), i;
+    if (s2 !== "winter") {
+      ellipse(a, 8, 4, 6, 3, s2 === "fall" ? "#a87a30" : "#4e9a40"); ellipse(a, 7, 3, 3, 1, s2 === "fall" ? "#d0a040" : "#7ac050");
+      var fc = ["#e86080", "#f0c020", "#f4f0e0", "#a070e0"];
+      for (i = 0; i < 5; i++) px(a, 3 + i * 2 + (i & 1), 2 + (i % 3), fc[i % fc.length]);
+    } else rect(a, 2, 5, 12, 1, "#f0f6fa");
+    outline(a);
+    return finish(a, 8, 12);
+  }
+
   /* ---------- Crops ---------- */
   var VEG = {
     carrot:   { body: "#f08a28", light: "#ffb860", dark: "#b85a14", leaf: "#58c040" },
@@ -669,7 +779,12 @@
       hay: function () { return cached("hay", hay); },
       trough: function () { return cached("trough", trough); },
       tree: function (v) { return cached("tree" + (v ? 1 : 0), function () { return tree(v); }); },
-      flowerPot: function () { return cached("flowerPot", flowerPot); }
+      flowerPot: function () { return cached("flowerPot", flowerPot); },
+      lamp: function () { return cached("lamp", lamp); },
+      bench: function () { return cached("bench", bench); },
+      crates: function () { return cached("crates", crates); },
+      barrel: function () { return cached("barrel", barrel); },
+      planter: function () { return cached("planter", planter); }
     },
     crop: function (id, stage) { return cached("crop:" + id + ":" + stage, function () { return cropCanvas(id, stage); }); },
     itemIcon: itemIcon,

@@ -71,6 +71,30 @@
   }
   function toHost(d) { return send({ t: "h", d: d }); }
   function toAll(d, drop) { return send(drop ? { t: "b", d: d, drop: 1 } : { t: "b", d: d }); }
+  /* ---------- chat (17z33): the host checks and stamps every line, then sends it to everyone ---------- */
+  var CHAT = { max: 140, burst: 5, per: 6000, keep: 40 }, chatLog = [], chatRate = {};
+  function chatClean(t) { return String(t == null ? "" : t).replace(/[\u0000-\u001f\u007f]/g, "").replace(/\s+/g, " ").trim().slice(0, CHAT.max); }
+  function chatKeep(m) { chatLog.push(m); if (chatLog.length > CHAT.keep) chatLog.shift(); }
+  function chatPost(id, text) {                                    /* host only */
+    var pl = players[id], t = Date.now(), r;
+    text = chatClean(text);
+    if (!pl || !text) return;
+    r = chatRate[id] || (chatRate[id] = []);
+    while (r.length && t - r[0] > CHAT.per) r.shift();
+    if (r.length >= CHAT.burst) { if (id === myId) emit("chat", { sys: 1, text: "Slow down a little: too many messages at once." }); return; }
+    r.push(t);
+    var m = { t: "chat", id: id, name: pl.name || "Tamer", col: pl.color || null, text: text, at: t };
+    chatKeep(m);
+    toAll(m);
+    emit("chat", m);
+  }
+  function sendChat(text) {
+    text = chatClean(text);
+    if (!text || !role) return false;
+    if (role === "host") chatPost(myId, text);
+    else toHost({ t: "chat", text: text });
+    return true;
+  }
   function toOne(id, d, drop) { return send(drop ? { t: "to", id: id, d: d, drop: 1 } : { t: "to", id: id, d: d }); }
 
   function connect(first, cb) {
@@ -194,6 +218,7 @@
 
   function leave(why) {
     if (!role) return;
+    chatLog = []; chatRate = {};
     if (role === "guest") toHost({ t: "bye" });
     else send({ t: "end" });
     closing = true;
@@ -371,6 +396,8 @@
         hatchLeft: (D.HATCH && D.HATCH.time) || 20,
         lab: (pl.prof && pl.prof.lb) || null,
         gear: (pl.prof && pl.prof.gr) || null,
+        vsRookie: (pl.prof && typeof pl.prof.vr === "string" && pl.prof.vr) || null,   /* Versus: the Rookie they bring */
+        duel: (pl.prof && pl.prof.hd) || null,                                          /* Duel: their Hatchery Digimon as it is */
         memory: (pl.prof && pl.prof.mm && pl.line && pl.prof.mm[pl.line]) || 0,
         lastFarmAt: hostP.lastFarmAt || 0, farmVisitIndex: hostP.farmVisitIndex || 0,
         worldSeed: sim.seed
@@ -396,6 +423,7 @@
     var sp = H.sim && H.sim.player(m.id);
     if (sp) sp.away = false;
     pushRoster();
+    if (chatLog.length) toOne(m.id, { t: "chatlog", list: chatLog.slice(-20) });      /* the chat so far */
     if (!m.back) say(pl.name + " joined", false, 3);
   }
 
@@ -422,11 +450,11 @@
     delete H.net[id]; delete H.holds[id];
   }
 
-  var ACTS = { "pvp.flag": 1, levelup: 1, "shop.buy": 1, capture: 1, "brawl.bet": 1, "field.feed": 1, evolve: 1, "evolve.hold": 1, "stat.add": 1, "skill.add": 1, "dna.ask": 1, "dna.answer": 1, burst: 1, "breather.end": 1, "prop.use": 1 };
+  var ACTS = { "pvp.flag": 1, levelup: 1, "shop.buy": 1, capture: 1, "brawl.bet": 1, "field.feed": 1, evolve: 1, "evolve.hold": 1, "stat.add": 1, "skill.add": 1, "skill.equip": 1, "dna.ask": 1, "dna.answer": 1, burst: 1, "breather.end": 1, "prop.use": 1, "side.pick": 1, "shiny.guard": 1, "bag.discard": 1, "bag.use": 1, "siege.repair": 1, "siege.build": 1 };
   /* What a friend's own farm visit is allowed to change on their record. */
   var FARM_KEYS = ["fullness", "happiness", "bag", "items", "shopBought", "bits", "trainStats", "trainVisits", "bondTrain",
     "careMistakes", "foodEaten", "foodCounts", "garden", "bond", "mood", "ignoredSeconds", "starveCycles",
-    "refusedFoodCycles", "refusedThisCycle", "windows", "omenSeen", "lastFarmAt", "farmVisitIndex", "farmDueAt",
+    "refusedFoodCycles", "refusedThisCycle", "windows", "omenSeen", "lastFarmAt", "farmVisitIndex", "farmDueAt", "trainFresh", "trainTired", "trainBoost", "evoFruit", "shopVisit",
     "pendingAtkBoost", "atkBoost", "farmWarns"];
 
   function fromGuest(id, d) {
@@ -469,7 +497,10 @@
       else if (d.i.type === "dna.answer") { intent.ok = !!d.i.ok; intent.to = String(d.i.to || "").slice(0, 40); }
       else if (d.i.type === "prop.use") { intent.tx = num(d.i.tx) | 0; intent.ty = num(d.i.ty) | 0; }
       else if (d.i.type === "pvp.flag") intent.on = !!d.i.on;
+      else if (d.i.type === "siege.build") intent.i = Math.max(0, Math.min(63, num(d.i.i) | 0));   /* which fence spot */
+      else if (d.i.type === "side.pick") intent.side = d.i.side ? String(d.i.side).slice(0, 16) : null;
       else if (d.i.type === "skill.add") intent.skill = String(d.i.skill || "").slice(0, 32);
+      else if (d.i.type === "skill.equip") { intent.skill = String(d.i.skill || "").slice(0, 32); intent.drop = d.i.drop ? String(d.i.drop).slice(0, 32) : null; intent.off = !!d.i.off; }
       else if (d.i.type === "stat.add") { intent.stat = String(d.i.stat || "").slice(0, 8); intent.n = num(d.i.n) | 0; }
       else if (d.i.type === "brawl.bet") intent.targetId = d.i.targetId === "h" ? "local" : String(d.i.targetId || "");
       var res = auth.act(intent) || { ok: false };
@@ -494,6 +525,8 @@
       }
       H.ack[id] = Math.max(H.ack[id] || 0, num(d.n) | 0);
       delete H.farm.pending[id];
+    } else if (d.t === "chat") {
+      chatPost(id, d.text);
     } else if (d.t === "name") {
       if (d.name) pl.name = String(d.name).replace(/[<>]/g, "").slice(0, 14);
       pushRoster();
@@ -524,8 +557,10 @@
   function pump() {
     var t = now(), n = 0;
     H.acc += t - H.last; H.last = t;
-    if (H.acc > 400) H.acc = 400;
-    while (H.acc >= CFG.tickMs && n < 6) { H.acc -= CFG.tickMs; n += 1; hostTick(); }
+    /* at most two world steps between frames: a slow moment makes the world run a touch slow for a
+     * moment instead of freezing the host's screen while it catches up (17z33; it was six) */
+    if (H.acc > 160) H.acc = 160;
+    while (H.acc >= CFG.tickMs && n < 2) { H.acc -= CFG.tickMs; n += 1; hostTick(); }
   }
 
   function hostTick() {
@@ -669,7 +704,7 @@
     }
   }
 
-  var FAST = { id: 1, slot: 1, kind: 1, hasTamer: 1, x: 1, y: 1, vx: 1, vy: 1, facing: 1, tdir: 1, moving: 1, tamerHp: 1, tamerMaxHp: 1, tamerInvuln: 1,
+  var FAST = { wc: 1, id: 1, slot: 1, kind: 1, hasTamer: 1, x: 1, y: 1, vx: 1, vy: 1, facing: 1, tdir: 1, moving: 1, tamerHp: 1, tamerMaxHp: 1, tamerInvuln: 1,
     mx: 1, my: 1, mfacing: 1, monMoving: 1, hp: 1, maxHp: 1, monInvuln: 1, faint: 1, fullness: 1, happiness: 1, bits: 1, xp: 1, xpNext: 1,
     level: 1, kills: 1, aim: 1, ack: 1, desperation: 1, atkBoost: 1, focusId: 1, form: 1, hatchLeft: 1, downed: 1, pendingLevels: 1 };
   var QUIET = { ignoredSeconds: 1, clock: 1, evoLock: 1, peakHappiness: 1, miracleShimmer: 1, proximityClose: 1, mood: 1, bond: 1, windows: 1, ignoredDuringEvent: 1, undamagedKills: 1 };
@@ -685,13 +720,13 @@
         hp: r1(p.hp), maxHp: p.maxHp, monInvuln: r2(p.monInvuln), faint: r2(p.faint), downed: p.downed ? 1 : 0, ack: p.ack, form: p.form, burst: p.burst || 0, burstLeft: p.burstLeft || 0, burstForm: p.burstForm || null, burstStyle: p.burstStyle || null, shiny: p.shiny ? 1 : 0,
         level: p.level, xp: r1(p.xp), xpNext: p.xpNext, bits: p.bits, fullness: r1(p.fullness), happiness: r1(p.happiness), kills: p.kills, trust: p.trust || null, allied: p.allied || null, atFarm: p.atFarm ? 1 : 0, pvpFlag: p.pvpFlag ? 1 : 0, pvpOffAt: p.pvpOffAt || 0, md: p.md || null,
         hatchLeft: p.hatchLeft == null ? null : r1(p.hatchLeft), desperation: p.desperation ? 1 : 0, atkBoost: r1(p.atkBoost), focusId: p.focusId,
-        aim: r2(p.aim), pendingLevels: p.pendingLevels || 0, away: sp && sp.away ? 1 : 0 });
+        aim: r2(p.aim), pendingLevels: p.pendingLevels || 0, away: sp && sp.away ? 1 : 0, wc: p.wc || null });
       /* the rest of a player's record only goes to that player, when it changes */
       if (p.id !== sim.localId && players[p.id] && players[p.id].here) {
         slow = {}; key = {};
         for (k in p) {
           if (FAST[k] || !Object.prototype.hasOwnProperty.call(p, k)) continue;
-          slow[k] = k === "weapons" ? (p.weapons || []).map(function (w) { return { id: w.id, level: w.level }; }) : p[k];
+          slow[k] = k === "weapons" ? (p.weapons || []).map(function (w) { return { id: w.id, level: w.level, skill: w.skill }; }) : p[k];
           if (!QUIET[k]) key[k] = slow[k];
         }
         key.ia = H.ack[p.id] || 0;
@@ -704,7 +739,7 @@
     }
     for (i = 0; i < s.enemies.length; i++) {
       e = s.enemies[i];
-      E.push([e._id, e.type, Math.round(e.x), Math.round(e.y), Math.round(e.hp), Math.round(e.maxHp), e.facing, e.radius, (e.flash > 0 ? 1 : 0) | (e.boss ? 2 : 0) | (e.mega ? 4 : 0) | (e.lord ? 8 : 0) | (e.rival ? 16 : 0) | (e.virus ? 32 : 0) | (e.zz ? 64 : 0), e.dmgMul || 1, e.st || 0, e.war || 0, e.fac || 0, e.rally != null ? wid(e.rally) : 0, e.alv || 0, e.lv || 1, e.nem || 0, e.nem ? (e.nemTitle || "") : 0, e.nem ? (e.nemScale || 1) : 0]);
+      E.push([e._id, e.type, Math.round(e.x), Math.round(e.y), Math.round(e.hp), Math.round(e.maxHp), e.facing, e.radius, (e.flash > 0 ? 1 : 0) | (e.boss ? 2 : 0) | (e.mega ? 4 : 0) | (e.lord ? 8 : 0) | (e.rival ? 16 : 0) | (e.virus ? 32 : 0) | (e.zz ? 64 : 0) | (e.raider ? 128 : 0), e.dmgMul || 1, e.st || 0, e.war || 0, e.fac || 0, e.rally != null ? wid(e.rally) : 0, e.alv || 0, e.lv || 1, e.nem || 0, e.nem ? (e.nemTitle || "") : 0, e.nem ? (e.nemScale || 1) : 0, e.giant || 0]);
     }
     for (i = 0; i < s.bullets.length; i++) {
       b = s.bullets[i];
@@ -724,8 +759,8 @@
       if (DROP_EVENTS[e.type]) continue;
       /* hits feed the damage numbers on a guest's screen: a few a snapshot, trimmed to what that needs */
       if (e.type === "hit") {
-        if (hitsSent++ >= 10) continue;
-        e = { type: "hit", enemyId: e.enemyId, damage: Math.round(e.damage), x: e.x, y: e.y, r: e.r, f: e.f, c: e.c, m: e.m, k: e.k, bolt: e.bolt, dot: e.dot, by: e.by };
+        if (hitsSent++ >= 32) continue;                 /* every hit has its own number now (17z33): room for far more */
+        e = { type: "hit", enemyId: e.enemyId, damage: Math.round(e.damage), x: Math.round(e.x), y: Math.round(e.y), r: e.r, f: e.f, c: e.c, m: e.m, k: e.k, bolt: e.bolt, dot: e.dot, by: e.by, pvp: e.pvp };
       }
       if (e.type === "spawn" && !(e.boss || e.mega)) continue;
       if (e.type === "hurt" && e.who !== "tamer" && e.who !== "mon") continue;
@@ -733,7 +768,9 @@
       for (k in e) if (Object.prototype.hasOwnProperty.call(e, k) && k !== "tick" && k !== "time") c[k] = e[k];
       if (c.id != null) c.id = wid(c.id);
       if (c.by != null) c.by = wid(c.by);
+      if (c.pvp != null) c.pvp = wid(c.pvp);
       if (c.killer != null) c.killer = wid(c.killer);
+      if (c.pay) { var pw = {}, pk; for (pk in c.pay) pw[wid(pk)] = c.pay[pk]; c.pay = pw; }   /* world event pay, by player (event-sim.js) */
       if (typeof c.x === "number") { c.x = Math.round(c.x); c.y = Math.round(c.y); }
       ev.push(c);
     }
@@ -744,7 +781,7 @@
     var a = s.ally, ar = [];
     for (i = 0; i < (s.arcs || []).length; i++) { b = s.arcs[i]; ar.push({ angle: r2(b.angle), range: b.range, arc: b.arc, color: b.color, life: r2(b.life), max: b.max || b.life, wid: b.wid, ownerId: wid(b.ownerId) }); }
     var w = { t: "s", n: H.snapN, ht: Math.round(now()), tm: r2(s.time), ph: sim.phase === "playing" ? 0 : (sim.phase === "brawl" ? 2 : 1), ro: s.runOver ? 1 : 0,
-      P: P, E: E, B: B, C: C, ar: ar, ev: ev, kl: s.kills, mr: s.merchant || null, wx: s.weather || null, rv: s.rival || null, ck: s.clock || null,
+      P: P, E: E, B: B, C: C, ar: ar, ev: ev, kl: s.kills, mr: s.merchant || null, pv: s.nest || null, wx: s.weather || null, rv: s.rival || null, ck: s.clock || null,
       ps: s.startingPartySize, pc: s.partyReviveCharge,
       al: a && a.form ? { form: a.form, x: r1(a.x), y: r1(a.y), hp: r1(a.hp), maxHp: a.maxHp, facing: a.facing, invuln: r2(a.invuln), level: a.level || 1, passive: a.passive || null } : null,
       pt: (s.patches || []).map(function (q) { return [q.id, q.kind, Math.round(q.x), Math.round(q.y), Math.round(q.r), r2(q.t), r2(q.max)]; }),
@@ -876,6 +913,12 @@
       G.slow = d.s || {};
       G.ia = d.ia || 0;
       G.overrides = G.overrides.filter(function (o) { return o.n > G.ia; });
+    } else if (d.t === "chat") {
+      var cm = { id: d.id, name: chatClean(d.name).slice(0, 14) || "Tamer", col: typeof d.col === "string" ? d.col.slice(0, 9) : null, text: chatClean(d.text), at: d.at };
+      if (cm.text) { chatKeep(cm); emit("chat", cm); }
+    } else if (d.t === "chatlog") {
+      chatLog = []; (d.list || []).slice(-CHAT.keep).forEach(function (q) { var c = { id: q.id, name: chatClean(q.name).slice(0, 14), col: q.col, text: chatClean(q.text), at: q.at }; if (c.text) chatLog.push(c); });
+      emit("chatlog", chatLog);
     } else if (d.t === "roster") {
       var mine = players[myId];
       players = {}; order = [];
@@ -1033,7 +1076,7 @@
     for (i = 0; i < b.E.length; i++) {
       e = b.E[i]; ea = a.Emap[e[0]] || e;
       en.push({ _id: e[0], type: e[1], x: ea[2] + (e[2] - ea[2]) * k, y: ea[3] + (e[3] - ea[3]) * k, hp: e[4], maxHp: e[5], facing: e[6],
-        radius: e[7], flash: (e[8] & 1) ? 0.1 : 0, boss: !!(e[8] & 2), mega: !!(e[8] & 4), lord: !!(e[8] & 8), rival: !!(e[8] & 16), virus: !!(e[8] & 32), zz: (e[8] & 64) ? 1 : 0, dmgMul: e[9], st: e[10] || 0, war: e[11] || null, fac: e[12] || null, rally: e[13] || null, alv: e[14] || 0, lv: e[15] || 1, nem: e[16] || 0, nemTitle: e[17] || null, nemScale: e[18] || 1, dead: false });
+        radius: e[7], flash: (e[8] & 1) ? 0.1 : 0, boss: !!(e[8] & 2), mega: !!(e[8] & 4), lord: !!(e[8] & 8), rival: !!(e[8] & 16), virus: !!(e[8] & 32), zz: (e[8] & 64) ? 1 : 0, raider: (e[8] & 128) ? 1 : 0, dmgMul: e[9], st: e[10] || 0, war: e[11] || null, fac: e[12] || null, rally: e[13] || null, alv: e[14] || 0, lv: e[15] || 1, nem: e[16] || 0, nemTitle: e[17] || null, nemScale: e[18] || 1, giant: e[19] || 0, dead: false });
     }
     /* bullets carry a velocity, so move them along from the newer frame */
     var bl = [];
@@ -1060,7 +1103,7 @@
       cpus: cp, ally: b.al || null, events: ev, kills: L.kl,
       patches: (L.pt || []).map(function (q) { return { id: q[0], kind: q[1], x: q[2], y: q[3], r: q[4], t: q[5], max: q[6] }; }),
       pendingLevels: mine ? (mine.pendingLevels || 0) : 0, levelOffers: mine ? (mine.levelOffers || []) : [],
-      merchant: L.mr || null, runOver: !!L.ro, phase: "playing", clock: L.ck || null, lifecycle: null,
+      merchant: L.mr || null, nest: L.pv || null, runOver: !!L.ro, phase: "playing", clock: L.ck || null, lifecycle: null,
       startingPartySize: L.ps, partyReviveCharge: L.pc, reviveHold: null, weather: L.wx || null, rival: L.rv || null,
       soak: L.sk || 0, terr: L.tr || "", fronts: L.fr || null, nests: L.ns || null, nems: L.nm || null
     };
@@ -1098,23 +1141,33 @@
     }
     if (intent.type === "skill.add") {
       /* shown at once here; the host applies the same tree rules */
-      var sk2 = Object.assign({}, m.skills || {});
-      if (!D.SKILLS || !((m.skillPoints || 0) > 0) || D.SKILLS.blocked(D, m.form, sk2, intent.skill)) return { ok: false, reason: "Can't learn that yet" };
-      if (D.SKILL_CARDS && !(sk2[intent.skill] > 0) && m.skillOffer && m.skillOffer.indexOf(intent.skill) < 0) return { ok: false, reason: "New skills come from level-up cards" };
+      /* (17z33) the skills live in this player's slow record, not the fast one */
+      var sl2 = Object.assign({}, G.slow || {}, m), sk2 = Object.assign({}, (G.slow && G.slow.skills) || m.skills || {});
+      if (!D.SKILLS || !((sl2.skillPoints || 0) > 0) || D.SKILLS.blocked(D, sl2.form, sk2, intent.skill)) return { ok: false, reason: "Can't learn that yet" };
+      if (D.SKILL_CARDS && !(sk2[intent.skill] > 0) && sl2.skillOffer && sl2.skillOffer.indexOf(intent.skill) < 0) return { ok: false, reason: "New skills come from level-up cards" };
       sk2[intent.skill] = (sk2[intent.skill] || 0) + 1;
-      G.overrides.push({ n: G.intentN, f: { skills: sk2, skillPoints: (m.skillPoints || 0) - 1, skillOffer: null } });
+      G.overrides.push({ n: G.intentN, f: { skills: sk2, skillPoints: (sl2.skillPoints || 0) - 1, skillOffer: null } });
       return { ok: true, skill: intent.skill, level: sk2[intent.skill] };
+    }
+    if (intent.type === "skill.equip") {
+      /* shown at once here; the host applies the same rule */
+      if (!D.SKILLS || !D.SKILLS.applyEquip) return { ok: false, reason: "no-skills" };
+      var sl3 = G.slow || {}, ids3 = D.SKILLS.active(D, sl3.skills || m.skills || {}).map(function (a) { return a.id; });
+      var r3 = D.SKILLS.applyEquip(sl3.equip || m.equip, ids3, intent.skill, intent.drop, intent.off, sl3.equipN || m.equipN || 4);
+      if (!r3.ok) return r3;
+      G.overrides.push({ n: G.intentN, f: { equip: r3.list } });
+      return { ok: true, equip: r3.list };
     }
     if (intent.type === "stat.add") {
       /* shown at once here with the same cost rule the host applies */
-      var RO2 = D.RO, at2 = Object.assign(RO2 ? RO2.fresh() : {}, m.attrs || {}), left2 = m.statPoints || 0, want2 = Math.max(1, intent.n | 0 || 1), did2 = 0;
+      var sl4 = Object.assign({}, G.slow || {}, m), RO2 = D.RO, at2 = Object.assign(RO2 ? RO2.fresh() : {}, sl4.attrs || {}), left2 = sl4.statPoints || 0, want2 = Math.max(1, intent.n | 0 || 1), did2 = 0;
       if (!RO2 || at2[intent.stat] == null) return { ok: false, reason: "Not enough points" };
       while (did2 < want2 && at2[intent.stat] < RO2.CFG.cap && left2 >= RO2.cost(at2[intent.stat])) { left2 -= RO2.cost(at2[intent.stat]); at2[intent.stat] += 1; did2 += 1; }
       if (!did2) return { ok: false, reason: "Not enough points" };
       G.overrides.push({ n: G.intentN, f: { attrs: at2, statPoints: left2 } });
       return { ok: true, stat: intent.stat, value: at2[intent.stat], left: left2 };
     }
-    if (intent.type === "breather.end" || intent.type === "prop.use" || intent.type === "pvp.flag") return { ok: true, pending: true };
+    if (intent.type === "breather.end" || intent.type === "prop.use" || intent.type === "pvp.flag" || intent.type === "side.pick" || intent.type === "siege.repair" || intent.type === "siege.build") return { ok: true, pending: true };   /* siege: the host decides; its event tells you */
     if (intent.type === "burst") return (m.burst || 0) >= 100 ? { ok: true, pending: true } : { ok: false, reason: "charging" };
     if (intent.type === "dna.ask" || intent.type === "dna.answer") return { ok: true, pending: true };   /* the host decides; events follow */
     if (intent.type === "evolve" || intent.type === "evolve.hold") {
@@ -1256,6 +1309,8 @@
     netId: function () { return myId; },
     name: function () { return myName; },
     setProfile: setProfile,
+    sendChat: sendChat,
+    chatLog: function () { return chatLog.slice(); },
     playerName: function (id) { var pl = playerInfo(id); return (pl && pl.name) || null; },
     info: function () { return info; },
     players: rosterList,

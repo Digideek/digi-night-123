@@ -1,4 +1,4 @@
-/* node scripts/terrain-test.js : press E on a spire (an evil mini boss comes out, once) and on a cache (Bits and XP, once) */
+/* node scripts/terrain-test.js : press E on a spire (on the rare big roll an evil mini boss comes out after a rumble, once; the rest of the gamble is spire-test.js) and on a cache (Bits and XP, once) */
 const path = require("path"), root = path.join(__dirname, "..");
 global.window = global;
 require(path.join(root, "js/data.js"));
@@ -24,13 +24,15 @@ ok(!r.ok, "nothing to use on an empty tile");
 p.x += 600; r = a.act({ type: "prop.use", id: p.id, tx: 2, ty: 2 }); p.x -= 600;
 ok(!r.ok && /closer/i.test(r.reason), "too far from the spire is refused");
 const n0 = sim.enemies.length;
+sim._spireRoll = () => "big";                                   /* 17z33: the roll is a gamble; here, the big one */
 r = a.act({ type: "prop.use", id: p.id, tx: 2, ty: 2 });
+sim.time += D.TERRAIN.spire.rumbleSec + 0.1; sim._updateSpires(0.1);
 const boss = sim.enemies.find(e => e.spire);
 ok(r.ok && boss && boss.boss && D.TERRAIN.spire.evil[0].indexOf(boss.type) >= 0, "breaking the spire calls an evil mini boss (" + (boss && boss.type) + ", " + (boss && Math.round(boss.hp)) + " HP)");
 ok(used["2,2"] && ev.some(e => e.type === "prop.used" && e.kind === "spire" && e.enemyType === boss.type), "the spire is marked spent and everyone is told");
 r = a.act({ type: "prop.use", id: p.id, tx: 2, ty: 2 });
 ok(!r.ok && sim.enemies.length === n0 + 1, "a spent spire does nothing more");
-sim.time = 1440 * 1 + 10; used["2,2"] = 0; sim.usedProps = {};
+sim.time = (((D.SEASONS_CFG && D.SEASONS_CFG.lengthSec) || 486) * 4) * 1 + 10; used["2,2"] = 0; sim.usedProps = {};
 r = a.act({ type: "prop.use", id: p.id, tx: 2, ty: 2 });
 ok(r.ok && D.TERRAIN.spire.evil[1].indexOf(r.enemyType) >= 0, "in Year 2 an Ultimate comes out (" + r.enemyType + ")");
 p.x = 6.5 * 48; const o0 = sim.orbs.length;

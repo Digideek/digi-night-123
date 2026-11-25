@@ -116,11 +116,24 @@
 
   var orig = S.getIcon;
   S.getIcon = function (name) {
+    /* detailed emblems painted from each move's own look (sig-icons.js, 17z33) */
+    if (D.WEAPONS && D.WEAPONS[name] && D.sigIcons) { var hd = D.sigIcons.get(name); if (hd) return hd; }
     if (D.WEAPONS && D.WEAPONS[name] && (D.WEAPONS[name].grows || ICON_KIND[name] || (D.WEAPONS[name].was && /^(beam|chain|strike|march|boomerang)$/.test(D.WEAPONS[name].type)))) return kitIcon(name);
     if (D.WEAPONS && D.WEAPONS[name] && D.attackFx && D.attackFx.shotSprite && D.attackFx.shotSprite(name)) return spriteIcon(name);
     var k = keyFor(name);
     if (k && art[k]) return art[k];
     return orig ? orig(name) : null;
   };
-  D.moveIcons = { keyFor: keyFor, ready: function (k) { return !!art[k]; } };
+  /* put an icon on a card's canvas: a detailed one at full size and smooth, an old pixel one crisp */
+  function paintIcon(cv, ico, size) {
+    if (!cv || !ico) return;
+    var hd = ico.width >= 96, g;
+    if (hd && cv.width < ico.width) { cv.width = ico.width; cv.height = ico.height; }
+    else if (!hd && size && cv.width !== size) { cv.width = size; cv.height = size; }
+    cv.classList.toggle("is-hd", hd);
+    g = cv.getContext("2d"); g.clearRect(0, 0, cv.width, cv.height);
+    g.imageSmoothingEnabled = hd; if (hd) g.imageSmoothingQuality = "high";
+    g.drawImage(ico, 0, 0, cv.width, cv.height);
+  }
+  D.moveIcons = { keyFor: keyFor, ready: function (k) { return !!art[k]; }, paint: paintIcon };
 })(typeof window !== "undefined" ? window : this);

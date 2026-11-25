@@ -14,16 +14,18 @@ const S = D.seasons, W = D.weather, ST = D.STORM, GF = D.GRASSFIRE;
 
 /* ---- day and night ---- */
 ok(S.dayInfo(0).dark === 0 && S.dayInfo(0).id === "dawn", "a run starts at dawn, in the light");
-ok(S.dayInfo(60).id === "day" && S.dayInfo(60).dark === 0, "one minute in it is day");
-ok(S.dayInfo(120).id === "dusk" && S.dayInfo(120).dusk > 0.9, "two minutes in it is dusk");
-ok(S.dayInfo(150).id === "night" && S.dayInfo(150).dark === 1, "at 2:30 it is full night");
-ok(S.dayInfo(180 + 60).id === "day" && S.dayInfo(360 + 150).id === "night", "and it comes round every three minutes, twice a season");
-let nightSecs = 0; for (let t = 0; t < 180; t += 0.5) if (S.dayInfo(t).id === "night") nightSecs += 0.5;
-ok(nightSecs > 30 && nightSecs < 50, "night lasts " + nightSecs + " s of each 180");
-const day = { time: 60, weather: { id: "clear", fadeT: 6, fadeMax: 6 } }, night = { time: 150, weather: { id: "clear", fadeT: 6, fadeMax: 6 } };
+/* times as parts of a day, so this holds whatever the day's length (17z33: 243 s) */
+const DL = S.DAY.lengthSec, SL = S.CFG.lengthSec, at = f => DL * f;
+ok(S.dayInfo(at(1 / 3)).id === "day" && S.dayInfo(at(1 / 3)).dark === 0, "a third of the way in it is day");
+ok(S.dayInfo(at(2 / 3)).id === "dusk" && S.dayInfo(at(2 / 3)).dusk > 0.9, "two thirds in it is dusk");
+ok(S.dayInfo(at(5 / 6)).id === "night" && S.dayInfo(at(5 / 6)).dark === 1, "five sixths in it is full night");
+ok(S.dayInfo(DL + at(1 / 3)).id === "day" && S.dayInfo(DL * 2 + at(5 / 6)).id === "night" && Math.abs(SL / DL - 2) < 1e-9, "and it comes round every " + DL + " s, twice a season");
+let nightSecs = 0; for (let t = 0; t < DL; t += 0.5) if (S.dayInfo(t).id === "night") nightSecs += 0.5;
+ok(nightSecs > DL / 6 && nightSecs < DL * 0.28, "night lasts " + nightSecs + " s of each " + DL);
+const day = { time: at(1 / 3), weather: { id: "clear", fadeT: 6, fadeMax: 6 } }, night = { time: at(5 / 6), weather: { id: "clear", fadeT: 6, fadeMax: 6 } };
 ok(Math.abs(W.enemySpeedScale(day, D) - 1) < 1e-9 && Math.abs(W.enemySpeedScale(night, D) - (1 + S.DAY.night.enemySpdMul)) < 1e-9, "enemies move " + Math.round(S.DAY.night.enemySpdMul * 100) + "% faster at night, and not by day");
 ok(S.aggroScale(day) === 1 && Math.abs(S.aggroScale(night) - 1.5) < 1e-9 && Math.abs(S.atkRateScale(night) - 1.25) < 1e-9, "at night they notice you from 1.5x as far and bite 1.25x as often");
-const y2 = { time: 360 * 4 + 150, weather: night.weather };
+const y2 = { time: SL * 4 + at(5 / 6), weather: night.weather };
 ok(Math.abs(W.enemySpeedScale(y2, D) - S.mods(y2.time).enemySpdMul * 1.15) < 1e-9, "night stacks on the season's own speed");
 
 /* ---- the weather list ---- */

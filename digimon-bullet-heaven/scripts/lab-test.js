@@ -1,4 +1,4 @@
-/* node scripts/lab-test.js : the Lab (data.js LAB). Buying with DigiBits, and what the levels do inside a run. */
+/* node scripts/lab-test.js : the Lab (data.js LAB). Buying with DigiCoins, and what the levels do inside a run. */
 const path = require("path"), root = path.join(__dirname, "..");
 const store = { dbh_profile_v1: JSON.stringify({ name: "T", pic: "agumon", stats: {}, ach: {} }) };
 global.window = global; global.localStorage = { getItem: k => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); } };
@@ -17,11 +17,11 @@ const L = D.LAB;
 D.cosmetics.load();
 
 /* buying */
-ok(D.lab.buy("vital").reason === "broke", "no DigiBits, no upgrade");
+ok(D.lab.buy("vital").reason === "broke", "no DigiCoins, no upgrade");
 D.cosmetics.grantBits(80);
 ok(D.lab.buy("vital").ok && D.lab.level("vital") === 1 && D.cosmetics.bits() === 55, "level 1 costs " + L.cost[0]);
 ok(D.lab.buy("vital").ok && D.cosmetics.bits() === 5, "level 2 costs " + L.cost[1]);
-ok(!D.lab.buy("vital").ok && D.lab.level("vital") === 2, "level 3 refused at 5 DigiBits");
+ok(!D.lab.buy("vital").ok && D.lab.level("vital") === 2, "level 3 refused at 5 DigiCoins");
 ok(JSON.parse(store.dbh_profile_v1).lab.vital === 2, "levels are saved on the profile");
 D.cosmetics.grantBits(5000);
 for (let i = 0; i < 9; i++) D.lab.buy("farm");
@@ -29,12 +29,14 @@ ok(D.lab.level("farm") === 5 && D.lab.cost("farm") === null && D.lab.buy("farm")
 ok(D.lab.mods().farm === 30 && Math.abs(D.lab.mods().hp - 1.04) < 1e-9, "farm +30 s, health +4%");
 const total = L.cost.reduce((a, b) => a + b, 0);
 const whole = L.list.reduce((a, u) => a + (u.costs || L.cost).reduce((x, y) => x + y, 0), 0);
-ok(whole === 6360, "the whole Lab costs " + whole + " DigiBits (the twelve boosts and the Digivice Port)");
+ok(whole === 8120, "the whole Lab costs " + whole + " DigiCoins (the twelve boosts, the Digivice Port, the Kit Bag and the Move Slot)");
+const ms = L.list.find(u => u.id === "moveslot");
+ok(ms && ms.max === 1 && ms.costs.length === 1 && ms.costs[0] >= 1000, "the Move Slot: one level only, a big saving goal (" + (ms && ms.costs[0]) + " DigiCoins)");
 
-/* a run pays DigiBits */
+/* a run pays DigiCoins */
 D.SPECIES.t_rookie = { name: "R", stage: "Rookie" };
 const b0 = D.cosmetics.bits(), pay = D.profile.runEnded({ time: 480, kills: 150, form: "t_rookie" });
-ok(pay.bits === Math.floor(167 / L.runBitsPer) && D.cosmetics.bits() - b0 === pay.bits + 25, "a 167 XP run pays " + pay.bits + " DigiBits (plus 25 for the rank it reached)");
+ok(pay.bits === Math.floor(167 / L.runBitsPer) && D.cosmetics.bits() - b0 === pay.bits + 25, "a 167 XP run pays " + pay.bits + " DigiCoins (plus 25 for the rank it reached)");
 
 /* inside a run */
 function mk(lab) {

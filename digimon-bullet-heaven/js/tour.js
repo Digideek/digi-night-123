@@ -1,14 +1,17 @@
 /* Digi Night — the first-time tour (Nov 21).
  *
  * Jijimon walks a new player through the game, once:
- *   1. welcome      a few cards on what makes Digi Night different (open world, biomes at war,
- *                   nests and herds, nemeses, respawning)
+ *   1. welcome      a few cards on what makes Digi Night different (open world, the turf wars
+ *                   as the heart of it, pick a side or just survive, nemeses, respawning)
  *   2. the front page  everything dims but one button at a time, with a speech bubble on it:
- *                   Play, the Hatchery, Eggs, Discoveries, Online, DigiBits and what they buy
- *                   (the Lab), Items, the DigiBank, the Cabinet, Badges, the League, How to Play
- *   3. before the first run  the run setup screen the same way (projection, egg, mode, who is
- *                   coming, Start), then how to play: moving, your partner, food and the farm,
+ *                   the four modes, the Hatchery, Eggs, Discoveries, Join a friend, DigiCoins and what
+ *                   they buy (the Lab), Items, the DigiBank, the Cabinet, Badges, the League, How to Play
+ *   3. before the first run  the run setup screen the same way (projection, egg, rules, who is
+ *                   coming, what you bring, Just play / Invite friends), then how to play: moving, your
+ *                   partner, food and the farm, the two levels (job: skills, K; base: stats, T),
  *                   digivolving, warp and ultimates
+ * (17z33: brought up to date: no Online tile, the four modes, three Hatchery slots, bloodlines and
+ *  expeditions, endless Night Siege, Duel, a board for every mode, job and base levels.)
  * Skip ends it at any point; "Replay the tour" on the How to Play screen starts it again.
  * Done flags live in localStorage (dbh_tour_hub, dbh_tour_setup).
  *
@@ -24,41 +27,52 @@
   var HUB = [
     { title: "Welcome to the Digital World!", text: "I'm Jijimon. I've watched a great many tamers come through here, so let me show you around before you set out. It won't take a minute." },
     { title: "One big, living world", text: "There are no waves here. Each run is an open world that keeps going: forests, deserts, snowfields, swamps, volcanoes, the Circuit and the Glitch. Rivers freeze in winter, trees fall, and wild Digimon live in nests and roam in herds." },
-    { title: "The biomes are at war", text: "Each biome's Digimon fight to take land from the others, and you'll see the front lines move. Help a biome and its Digimon start to trust you, and they may even fight at your side." },
+    { title: "The heart of it: turf wars", text: "The Digital World is split between biomes, and they're at war. Every border is a front line. Each side's Digimon fight for the land, and the lines really move: winners spread, losers shrink. Every run, the map starts fresh." },
+    { title: "Pick a side... or don't", text: "Back a biome and help it take over: hunt its enemies at the front and bring down rival lords. Its Digimon will start to trust you, then fight beside you. Help your side swallow the map and the war is yours. Or ignore the war, head off in any direction, and see how long you can survive." },
     { title: "Mind who beats you", text: "If a wild Digimon beats your partner, it remembers. It grows stronger, digivolves, and wears your name as its title: your Nemesis. The more it wins, the worse it gets, with no ceiling. Beat it for a big reward." },
-    { title: "Falling isn't the end", text: "In Open World, a partner that falls hatches again from its egg near the start, where the land is gentle. You keep your tamer, your base level and your stat points, and climb back with bonus XP." },
-    { el: "hub-play", title: "Play", text: "Start a run here. You'll pick your projection (how you look), an egg and a mode, then off you go." },
-    { el: "hub-hatch", title: "The Hatchery", text: "Every Digimon you beat pays a piece of data. Feed it to the egg here to hatch and raise a Digimon between runs. Raise one to Rookie and its whole egg line opens up for good." },
+    { title: "Falling isn't the end", text: "In Story and Survival's Open World, a partner that falls hatches again from its egg near the start, where the land is gentle. You keep your tamer, your base level and your stat points, and climb back with bonus XP." },
+    { el: "hub-modes", title: "Four ways to play", text: "Story: I'll walk you through everything, one goal at a time. Survival: everything on, last as long as you can. Night Siege: grow by day, then guard the Digi-eggs from waves every night, building fences with wood. It never ends: how many nights can you hold? Versus: race a real player to Mega, then fight. Or Duel straight away with your Hatchery Digimon. New here? Start with Story!" },
+    { el: "hub-hatch", title: "The Hatchery", text: "Every Digimon you beat pays a piece of data. Feed it to an egg here to hatch and raise a Digimon between runs. Raise one to Rookie and its whole egg line opens up for good. There are three slots, each its own family. Take one into a run: reach Mega and its bloodline earns traits its children keep, but fall too young and the line suffers. The ones at home go on expeditions while you play." },
     { el: "hub-eggs", title: "Eggs", text: "Every egg line in the game, opened or not. Each one grows into different Digimon, all the way to Mega." },
     { el: "hub-disc", title: "Discoveries", text: "Your field guide: every Digimon you've met, fought or raised. Can you fill it?" },
-    { el: "hub-onl-open", title: "Online", text: "Host a game and send friends a link, or join theirs. You explore the same world together, and you can even battle each other." },
-    { el: "hub-bits", title: "DigiBits", text: "DigiBits are the money you keep between runs. Every run pays some, and more come from ranking up as a tamer and from League seasons. Spend them in the Lab, and on new looks for your farm and Digivice." },
-    { el: "hub-lab", title: "The Lab", text: "Spend DigiBits on permanent upgrades: more health, more power, a better Digivice. They help every run after you buy them." },
+    { el: "hub-join", title: "Playing with friends", text: "Pick any mode and choose Invite friends to send them a link. You explore the same world together, and you can even battle each other. Got an invite yourself? Tap Join a friend up here." },
+    { el: "hub-bits", title: "DigiCoins", text: "DigiCoins are the money you keep between runs. Every run pays some, and more come from ranking up as a tamer and from League seasons. Spend them in the Lab, and on new looks for your farm and Digivice." },
+    { el: "hub-lab", title: "The Lab", text: "Spend DigiCoins on permanent upgrades: more health, more power, a better Digivice. They help every run after you buy them." },
     { el: "hub-items", title: "Items", text: "Crest Pieces, Charms and one-run items you've found. Bosses, biome lords and beaten rivals drop them. Equip them here before a run." },
     { el: "hub-bank", title: "The DigiBank", text: "Partners that reached Champion or beyond leave a memory here, and Digimon you capture are kept here too. A memory gives the next egg of that line a head start." },
     { el: "hub-cabinet", title: "The Cabinet", text: "Your trophies and titles. Tamer ranks and big moments unlock titles to show off." },
     { el: "hub-badges", title: "Badges", text: "Over a hundred badges for everything from your first digivolution to beating a Mega. How many can you collect?" },
-    { el: "hub-league", title: "The League", text: "Leaderboards, the Weekly Map (the same world for everyone that week) and faction seasons, where you back a biome. Log in on the online server to take part." },
+    { el: "hub-league", title: "The League", text: "A board for every mode: Survival (with Ranked and the Weekly Map), Story, Night Siege and Versus, plus your Duel record and faction seasons, where you back a biome for the week. Log in on the online server to take part." },
     { el: "hub-help", title: "How to Play", text: "All the details live here, and so does this tour if you ever want it again. Now press Play. I'll show you the setup screen too." }
   ];
   var SETUP = [
     { el: "setup-tamer", title: "Your projection", text: "This is you in the Digital World, a hologram. Pick any colour you like." },
     { el: "setup-egg", title: "Your Digi Egg", text: "Your partner hatches from this egg a few seconds into the run. Different eggs grow into different Digimon. Open more lines in the Hatchery." },
-    { el: "setup-modes", title: "The mode", text: "Open World lets you respawn. Survival is one life. Ranked and the Weekly Map are one-life runs scored for the League." },
-    { el: "setup-party", title: "Who's coming", text: "Go alone, bring CPU partners, or press Online to bring friends." },
+    { el: "setup-modes", title: "The rules", text: "In Survival you pick the rules here. Open World lets you respawn. One Life is just that. Ranked and the Weekly Map are one-life runs scored for the League. Other modes just show their name." },
+    { el: "setup-party", title: "Who's coming", text: "Go alone, or bring CPU partners to fight beside you." },
+    { el: "setup-gear", title: "What you bring", text: "A Crest Piece, a Charm and your one-run items. Bosses, biome lords and beaten rivals drop them. Locked slots open in the Lab. Tap here to change what you bring." },
+    { el: "btn-setup-invite", title: "With friends", text: "Want friends along? Press Invite friends instead of Just play: you get a link to send them, and everyone meets in the lobby." },
     { title: "How to play", text: {
         keyboard: "Move with WASD or the arrow keys. Your partner fights on its own. Click a Digimon to send it after that one. Pick up the teal gems for XP.",
         touch: "Put your left thumb anywhere low on the left side and a stick appears under it: slide to walk. Your partner fights on its own. Tap a Digimon to send it after that one. Pick up the teal gems for XP.",
         gamepad: "Walk with the left stick. Your partner fights on its own. Point the right stick at a Digimon and pull RT to send it after that one. Pick up the teal gems for XP." } },
     { title: "Keep your partner happy", text: {
-        keyboard: "Food drops go in your bag. Press F to feed it, or G when no enemies are close to visit the farm and feed it, play with it and train it. A well-fed, happy partner digivolves down the best routes. A neglected one... doesn't.",
-        touch: "Food drops go in your bag. Tap Feed to feed it, or Farm when no enemies are close to visit the farm and feed it, play with it and train it. A well-fed, happy partner digivolves down the best routes. A neglected one... doesn't.",
-        gamepad: "Food drops go in your bag. LB feeds it, and LT (when no enemies are close) takes you to the farm to feed it, play with it and train it. A well-fed, happy partner digivolves down the best routes. A neglected one... doesn't." } },
+        keyboard: "Food drops go in your bag. Your partner eats at the farm: walk to the glowing Digi-gate in the middle of the start (or one at a nest your side has taken) and press E. Feed it, play with it and train it there. A well-fed, happy partner digivolves down the best routes. A neglected one... doesn't.",
+        touch: "Food drops go in your bag. Your partner eats at the farm: walk to the glowing Digi-gate in the middle of the start (or one at a nest your side has taken) and tap Act. Feed it, play with it and train it there. A well-fed, happy partner digivolves down the best routes. A neglected one... doesn't.",
+        gamepad: "Food drops go in your bag. Your partner eats at the farm: walk to the glowing Digi-gate in the middle of the start (or one at a nest your side has taken) and press Y. Feed it, play with it and train it there. A well-fed, happy partner digivolves down the best routes. A neglected one... doesn't." } },
+    { title: "Two kinds of level", text: {
+        keyboard: "Your partner has a job level: each one gives a skill point. Press K to spend it on new moves or stronger ones. You, the tamer, have a base level: it gives stat points. Press T to raise STR, AGI, VIT, INT, DEX or LUK. A badge on each chip says when you have points.",
+        touch: "Your partner has a job level: each one gives a skill point. Tap the Job Lv chip to spend it on new moves or stronger ones. You, the tamer, have a base level: it gives stat points. Tap the Base Lv chip to raise STR, AGI, VIT, INT, DEX or LUK. A badge on each chip says when you have points.",
+        gamepad: "Your partner has a job level: each one gives a skill point; press View to spend it on new moves. You, the tamer, have a base level: it gives stat points; press R3 to raise STR, AGI, VIT, INT, DEX or LUK. Steer those windows with the D-pad and A." } },
+    { title: "Equipped moves", text: {
+        keyboard: "Your partner only uses the moves it has equipped: 2 as a Baby or In-Training, 3 as a Rookie, 4 from Champion (one more with the Lab's Move Slot). Swap them any time in Skills (K). A bigger move needs the one before it at Lv 7. The squares at the bottom right are your equipped moves: grey and winding back while one recharges.",
+        touch: "Your partner only uses the moves it has equipped: 2 as a Baby or In-Training, 3 as a Rookie, 4 from Champion (one more with the Lab's Move Slot). Swap them any time in Skills. A bigger move needs the one before it at Lv 7. The squares along the bottom are your equipped moves: grey and winding back while one recharges.",
+        gamepad: "Your partner only uses the moves it has equipped: 2 as a Baby or In-Training, 3 as a Rookie, 4 from Champion (one more with the Lab's Move Slot). Swap them any time in Skills (View). A bigger move needs the one before it at Lv 7. The squares at the bottom right are your equipped moves: grey and winding back while one recharges." } },
     { title: "Grow stronger", text: {
-        keyboard: "Level up to learn moves and spend stat points (K and T). Meet your partner's needs and it digivolves: In-Training, Rookie, Champion, Ultimate and finally Mega. When the meter is full, press R to warp digivolve for a moment, or, at Mega, to fire its ultimate.",
-        touch: "Level up to learn moves and spend stat points: a gold button shows up when you have some. Meet your partner's needs and it digivolves: In-Training, Rookie, Champion, Ultimate and finally Mega. When the big round button fills, tap it to warp digivolve for a moment, or, at Mega, to fire its ultimate.",
-        gamepad: "Level up to learn moves and spend stat points (View and R3; steer the windows with the D-pad and A). Meet your partner's needs and it digivolves: In-Training, Rookie, Champion, Ultimate and finally Mega. When the meter is full, press RB to warp digivolve for a moment, or, at Mega, to fire its ultimate." } },
-    { el: "btn-setup-start", title: "Ready?", text: "That's everything you need. The rest you'll learn out there. Press Start, and good luck, tamer!" }
+        keyboard: "Meet your partner's needs and it digivolves: In-Training, Rookie, Champion, Ultimate and finally Mega. Watch the damage numbers: an up arrow means the foe is weak to that move, a down arrow means it resists. When the warp meter is full, press R to warp digivolve for a moment, or, at Mega, to fire its ultimate.",
+        touch: "Meet your partner's needs and it digivolves: In-Training, Rookie, Champion, Ultimate and finally Mega. Watch the damage numbers: an up arrow means the foe is weak to that move, a down arrow means it resists. When the big round button fills, tap it to warp digivolve for a moment, or, at Mega, to fire its ultimate.",
+        gamepad: "Meet your partner's needs and it digivolves: In-Training, Rookie, Champion, Ultimate and finally Mega. Watch the damage numbers: an up arrow means the foe is weak to that move, a down arrow means it resists. When the meter is full, press RB to warp digivolve for a moment, or, at Mega, to fire its ultimate." } },
+    { el: "btn-setup-start", title: "Ready?", text: "That's everything you need. Out there, a little Digimon will ask which side you're on. Answer it or don't, it's up to you. In Story I'll be with you the whole way. Press Just play, and good luck, tamer!" }
   ];
   var SCRIPTS = { hub: HUB, setup: SETUP };
   var FLAG = { hub: "dbh_tour_hub", setup: "dbh_tour_setup" };
@@ -196,7 +210,7 @@
     if (cur) { if ((which === "hub" && st !== "title") || (which === "setup" && st !== "setup" && st !== "tamer")) finish(false); return; }
     if (st !== lastState) { seenT = Date.now(); lastState = st; }
     if (Date.now() - seenT < 900 || blocked()) return;
-    if (st === "title" && $("hub-play") && !store(FLAG.hub)) start("hub");
+    if (st === "title" && $("hub-modes") && !store(FLAG.hub)) start("hub");
     else if ((st === "setup" || st === "tamer") && $("setup-tamer") && !store(FLAG.setup)) start("setup");
   }
   function replayButton() {

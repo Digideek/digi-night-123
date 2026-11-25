@@ -71,7 +71,7 @@
 
   var ACT = {
     /* --- profile (a copy: gone when you leave) --- */
-    bits: function () { if (D.cosmetics && D.cosmetics.grantBits) { D.cosmetics.grantBits(10000, "tester"); return "+10,000 DigiBits"; } return "No bits store"; },
+    bits: function () { if (D.cosmetics && D.cosmetics.grantBits) { D.cosmetics.grantBits(10000, "tester"); return "+10,000 DigiCoins"; } return "No bits store"; },
     data: function () {
       var H = D.profile && D.profile.hatch && D.profile.hatch(), T = (D.hatchery && D.hatchery.rules && D.hatchery.rules.TYPES) || [], i;
       if (!H) return "Make a profile first";
@@ -178,7 +178,7 @@
       "<div class='row'><input type='text' data-find='enemy' placeholder='find an enemy'><select data-v='enemy'>" + enemyOptions() + "</select></div>" +
       "<div class='row'><input type='number' data-v='count' value='1' min='1' max='40'><select data-v='kind'>" + opt("plain", "Normal") + opt("virus", "Infected") + opt("boss", "Boss") + "</select>" + b("spawn", "Spawn") + b("clear", "Clear all") + "</div>" +
       "<h4>Profile and Hatchery</h4>" +
-      "<div class='row'>" + b("bits", "+10,000 DigiBits") + b("data", "+5,000 data each") + b("eggs", "Open all eggs") + "</div>" +
+      "<div class='row'>" + b("bits", "+10,000 DigiCoins") + b("data", "+5,000 data each") + b("eggs", "Open all eggs") + "</div>" +
       "<div class='tst-say'></div>" +
       "<div class='row' style='margin-top:8px'>" + b("leave", "Leave tester mode", " class='out'") + "</div>" +
       "<div class='tst-note'>Nothing here is kept. Leaving, reloading or closing the tab puts your real save back exactly as it was.</div>";

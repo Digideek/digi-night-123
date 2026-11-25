@@ -159,6 +159,8 @@
         pal: lk.pal || base.pal, glow: lk.glow || base.glow, bits: lk.bits || base.bits, fx: lk.fx || base.fx || (LOOK[famById[k]] && famById[k].indexOf("_") < 0 ? famById[k] : "fire") };
       famById[k] = "W_" + k;
     }
+    /* signature moves with a look of their own (sig-fx.js, 17z33 move revamp) */
+    if (D.sigFx && D.sigFx.applyLooks) D.sigFx.applyLooks(LOOK, famById);
   }
 
   function rgb(hex) {
@@ -261,7 +263,7 @@
   function core(fam, cellsLong, k) {
     var key = fam + "|" + cellsLong + "|" + k;
     if (baked[key]) return baked[key];
-    var look = LOOK[fam] || LOOK.fire, fn = SHAPES[look.shape];
+    var look = LOOK[fam] || LOOK.fire, fn = SHAPES[look.shape] || (D.sigFx && D.sigFx.NEW_SHAPES && D.sigFx.NEW_SHAPES[look.shape]) || SHAPES.orb;
     var W = cellsLong, H = Math.max(3, Math.round(cellsLong * look.aspect));
     var c = document.createElement("canvas");
     c.width = W * CELL; c.height = H * CELL;
@@ -272,7 +274,7 @@
         d = fn(u, v, k);
         if (d <= 0) continue;
         col = d < 0.24 ? look.pal[0] : (d < 0.52 ? look.pal[1] : (d < 0.8 ? look.pal[2] : look.pal[3]));
-        if (fam === "bubble" && d < 0.5) g.globalAlpha = 0.75; else g.globalAlpha = 1;
+        if ((fam === "bubble" || look.shape === "bubble") && d < 0.5) g.globalAlpha = 0.75; else g.globalAlpha = 1;
         g.fillStyle = col;
         g.fillRect(x * CELL, y * CELL, CELL, CELL);
       }
@@ -312,6 +314,7 @@
     p.type = type; p.x = x; p.y = y; p.vx = vx; p.vy = vy; p.life = life; p.max = life; p.size = size; p.color = color;
     p.add = !!(o && o.add); p.grav = (o && o.grav) || 0; p.drag = (o && o.drag) || 0; p.grow = (o && o.grow) || 0;
     p.rot = (o && o.rot) || 0; p.sway = (o && o.sway) || 0; p.len = (o && o.len) || 0; p.seed = Math.random() * TAU; p.ch = (o && o.ch) || "";
+    p.img = (o && o.img) || null; p.spin = (o && o.spin) || 0;
     parts.push(p);
     return p;
   }
@@ -320,6 +323,8 @@
     var i, p, k;
     frameDt = dt;
     updateAnims(dt);
+    updateMarks(dt);
+    if (D.sigFx) D.sigFx.update(dt);
     for (i = parts.length - 1; i >= 0; i--) {
       p = parts[i];
       p.life -= dt;
@@ -329,6 +334,7 @@
       p.x += p.vx * dt + (p.sway ? Math.sin(p.seed + p.life * 14) * p.sway * dt : 0);
       p.y += p.vy * dt;
       p.size += p.grow * dt;
+      if (p.spin) p.rot += p.spin * dt;
     }
   }
 
@@ -363,6 +369,7 @@
         ctx.globalAlpha = u;
         s = p.size * (0.6 + 0.4 * u);
         ctx.drawImage(glowSprite(p.color), p.x - s, p.y - s, s * 2, s * 2);
+        light(p.x, p.y, s * 2.2, p.color, u);
       } else if (p.type === "line") {
         n = Math.sqrt(p.vx * p.vx + p.vy * p.vy) || 1;
         ctx.globalAlpha = Math.min(1, u * 1.6);
@@ -400,6 +407,13 @@
         ctx.font = "bold " + Math.round(p.size) + "px monospace";
         ctx.textAlign = "center";
         ctx.fillText(p.ch, Math.round(p.x), Math.round(p.y));
+      } else if (p.type === "img" && p.img) {
+        /* a little baked shape (a petal, a note, a feather...) tumbling (sig-fx.js) */
+        s = p.size * (p.grow ? 1 : (0.55 + 0.45 * u)) / Math.max(p.img.width, p.img.height);
+        ctx.globalAlpha = Math.min(1, u * 2.2);
+        ctx.save(); ctx.translate(Math.round(p.x), Math.round(p.y)); if (p.rot) ctx.rotate(p.rot);
+        ctx.drawImage(p.img, -p.img.width * s / 2, -p.img.height * s / 2, p.img.width * s, p.img.height * s);
+        ctx.restore();
       } else if (p.type === "cross") {
         s = p.size * (0.5 + 0.5 * u);
         ctx.globalAlpha = u;
@@ -550,6 +564,8 @@
   function event(e) {
     if (!e) return;
     var st = styleOf(e.w, null), a = e.a || 0, i;
+    maybeMark(e, st);
+    if (e.w && D.sigFx && D.sigFx.event(e, st)) return;
     if (e.k === "beam" || e.k === "chain" || e.k === "drop" || e.k === "burst") { kitEvent(e, st); return; }
     if (e.k === "charge" || e.k === "split" || e.k === "slam" || e.k === "zap" || e.k === "spike" || e.k === "erupt") { formEvent(e, st); return; }
     if (e.k === "boom" && BOOM_FX[e.w]) anims.push({ k: BOOM_FX[e.w], t: 0, max: 0.55, x: e.x, y: e.y, r: Math.max(26, e.r || 30), st: st, seed: Math.random() * TAU });
@@ -589,6 +605,8 @@
 
   function drawProjectile(ctx, p, t) {
     var wd = p.wid && D.WEAPONS && D.WEAPONS[p.wid];
+    shotLight(p);
+    if (p.wid && D.sigFx && D.sigFx.drawShot(ctx, p, t, styleOf(p.wid, p.color))) return;
     if (p.wid && SHOT_STYLE[p.wid]) { drawFormShot(ctx, p, t, SHOT_STYLE[p.wid]); return; }
     if (p.wid && SHOTS[p.wid]) { drawStyled(ctx, p, t, SHOTS[p.wid]); return; }
     if (wd && wd.type === "mine") { drawMine(ctx, p, t); return; }
@@ -880,6 +898,7 @@
 
   function drawAnims(ctx) {
     var i, A, u;
+    if (D.sigFx) D.sigFx.draw(ctx);
     if (!anims.length) return;
     ctx.save();
     ctx.imageSmoothingEnabled = false;
@@ -1903,8 +1922,138 @@
     if (m.k === "crater") { if (m.small) for (k = 0; k < polys.length; k++) hole((polys[k].cx - x0) / S, (polys[k].cy - y0) / S, 20); else hole((e.x - x0) / S, (e.y - y0) / S, e.r * 0.36 / S); }
     return { c: c, x: x0, y: y0, w: w * S, h: h * S, t: -(e.windup + 0.12), max: m.time, k: m.k, st: st, cx: e.x, cy: e.y, r: e.r, polys: polys, hot: m.k === "crater" || m.k === "scorch" || m.k === "gash" };
   }
+  /* ---------- 17z33: marks big moves leave, and their light at night ----------
+   * A blast, burst, slam or eruption from an Ultimate or Mega move, or any hit of a big (wound-up) move,
+   * leaves a mark on the ground for a few seconds. Each element's mark is its own SHAPE, not just its own
+   * colour, so they read for colour-blind players too:
+   *   fire     a charred blotch with glowing embers        ice      a six-spoked frost star
+   *   water    a wet ring                                  dark     a stain with curling tendrils
+   *   holy     a ring with a cross                         machine  forked cracks with bright tips
+   *   nature   scattered leaves                            slime    a splat with drips
+   *   wind     curved scuffs                               beast    three claw gouges
+   * Baked once per element, size and variant (art pixels, x3). At most 24 at once (8, and shorter, with
+   * reduced effects). Looks only. */
+  var marks = [], markCv = {}, MARK_LIFE = 5, MARK_ART = 3;
+  var MARK_K = { boom: 1, burst: 1, slam: 1, erupt: 1, zap: 1 };
+  function maybeMark(e, st) {
+    var big = !!(e.w && D.isBigMove && D.isBigMove(e.w)), r, i, m, cap = low() ? 8 : 24;
+    var tier = Math.max(st.tier || 0, (e.w && D.SIG_INFO && D.SIG_INFO[e.w] && D.SIG_INFO[e.w].tier) || 0);
+    if (!(MARK_K[e.k] && (big || tier >= 4 || (e.r || 0) >= 50)) && !(big && e.k === "hit")) return;
+    r = Math.max(18, Math.min(70, e.k === "hit" ? 22 : (e.r || 40) * 0.75));
+    /* one mark per spot: a multi-hit move does not stack ten on one enemy */
+    for (i = marks.length - 1; i >= 0; i--) { m = marks[i]; if (m.t < 0.6 && Math.abs(m.x - e.x) < r * 0.6 && Math.abs(m.y - e.y) < r * 0.6) return; }
+    if (marks.length >= cap) marks.shift();
+    marks.push({ x: e.x, y: e.y, r: r, fam: MARK_SHAPE[st.fam] ? st.fam : "beast", st: st, t: 0, max: low() ? MARK_LIFE * 0.6 : MARK_LIFE, v: (Math.random() * 3) | 0 });
+  }
+  function markRng(seed) { var x = seed | 0 || 1; return function () { x = (x * 1103515245 + 12345) & 0x7fffffff; return x / 0x7fffffff; }; }
+  function bakeMark(fam, R, v, st) {
+    var key = fam + "|" + R + "|" + v + "|" + (st.look.glow || ""), c = markCv[key], g, N, rnd2, pal = st.look.pal, P;
+    if (c) return c;
+    N = R * 2 + 3; c = document.createElement("canvas"); c.width = c.height = N; g = c.getContext("2d");
+    rnd2 = markRng(R * 131 + v * 977 + fam.length * 31);
+    function px(x, y, col, a) { x = Math.round(x); y = Math.round(y); if (x < 0 || y < 0 || x >= N || y >= N) return; g.globalAlpha = a == null ? 1 : a; g.fillStyle = col; g.fillRect(x, y, 1, 1); }
+    function line(x0, y0, x1, y1, col, a, w) { var n = Math.max(1, Math.ceil(Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0)))), i, k; for (i = 0; i <= n; i++) for (k = 0; k < (w || 1); k++) px(x0 + (x1 - x0) * i / n + k * 0.7, y0 + (y1 - y0) * i / n, col, a); }
+    function disc(cx, cy, rr, col, a) { var x, y; for (y = -rr; y <= rr; y++) for (x = -rr; x <= rr; x++) if (x * x + y * y <= rr * rr) px(cx + x, cy + y, col, a); }
+    var C = R + 1, i, a, k, x, y, rr;
+    MARK_SHAPE[fam](px, line, disc, C, R, rnd2, pal, st);
+    markCv[key] = c;
+    return c;
+  }
+  var MARK_SHAPE = {
+    fire: function (px, line, disc, C, R, r, pal) {            /* charred blotch, ember specks */
+      var i, a, d;
+      for (i = 0; i < 6; i++) { a = r() * 6.28; d = r() * R * 0.45; disc(C + Math.cos(a) * d, C + Math.sin(a) * d * 0.7, Math.max(2, R * (0.3 + r() * 0.25)), "#1c120c", 0.55); }
+      for (i = 0; i < R; i++) { a = r() * 6.28; d = r() * R * 0.8; px(C + Math.cos(a) * d, C + Math.sin(a) * d * 0.7, r() < 0.5 ? "#ff9a2a" : "#ffd060", 1); }
+    },
+    ice: function (px, line, disc, C, R, r, pal) {             /* six-spoked frost star with side branches */
+      var i, a, L, bx, by;
+      disc(C, C, Math.max(2, R * 0.22), "#d8f0ff", 0.5);
+      for (i = 0; i < 6; i++) {
+        a = i / 6 * 6.28 + r() * 0.2; L = R * (0.75 + r() * 0.2);
+        line(C, C, C + Math.cos(a) * L, C + Math.sin(a) * L * 0.75, "#eaf8ff", 0.9);
+        bx = C + Math.cos(a) * L * 0.55; by = C + Math.sin(a) * L * 0.55 * 0.75;
+        line(bx, by, bx + Math.cos(a + 0.7) * L * 0.25, by + Math.sin(a + 0.7) * L * 0.25 * 0.75, "#b8e2ff", 0.85);
+        line(bx, by, bx + Math.cos(a - 0.7) * L * 0.25, by + Math.sin(a - 0.7) * L * 0.25 * 0.75, "#b8e2ff", 0.85);
+      }
+    },
+    water: function (px, line, disc, C, R, r, pal) {           /* wet ring: a darker damp patch, a bright rim */
+      var a; disc(C, C, R * 0.8, "#0c2a3c", 0.3);
+      for (a = 0; a < 6.28; a += 0.5 / R) px(C + Math.cos(a) * R * 0.8, C + Math.sin(a) * R * 0.8 * 0.72, "#9adcff", 0.8);
+      for (a = 0; a < 6.28; a += 0.9 / R) px(C + Math.cos(a) * R * 0.5, C + Math.sin(a) * R * 0.5 * 0.72, "#6ab8e8", 0.5);
+    },
+    dark: function (px, line, disc, C, R, r, pal) {            /* a stain with curling tendrils */
+      var i, k, a, x, y; disc(C, C, R * 0.4, "#1a0a26", 0.6);
+      for (i = 0; i < 5; i++) { a = r() * 6.28; x = C; y = C; for (k = 0; k < R * 0.9; k++) { a += 0.12 * (i % 2 ? 1 : -1); x += Math.cos(a); y += Math.sin(a) * 0.75; px(x, y, k < R * 0.6 ? "#2a1040" : "#6a2aa0", 0.75); } }
+    },
+    holy: function (px, line, disc, C, R, r, pal) {            /* a thin ring with a cross */
+      var a; for (a = 0; a < 6.28; a += 0.5 / R) px(C + Math.cos(a) * R * 0.75, C + Math.sin(a) * R * 0.75 * 0.75, "#ffe58a", 0.9);
+      line(C - R * 0.5, C, C + R * 0.5, C, "#fff4c0", 0.9); line(C, C - R * 0.45, C, C + R * 0.45, "#fff4c0", 0.9);
+      px(C, C, "#ffffff", 1);
+    },
+    machine: function (px, line, disc, C, R, r, pal) {         /* forked cracks with bright tips */
+      var i, k, a, x, y, nx, ny;
+      for (i = 0; i < 4; i++) { a = i / 4 * 6.28 + r(); x = C; y = C; for (k = 0; k < 4; k++) { a += (r() - 0.5) * 1.1; nx = x + Math.cos(a) * R * 0.24; ny = y + Math.sin(a) * R * 0.24 * 0.75; line(x, y, nx, ny, "#14141c", 0.75); x = nx; y = ny; } px(x, y, "#c8f4ff", 1); px(x + 1, y, "#ffffff", 0.8); }
+    },
+    nature: function (px, line, disc, C, R, r, pal) {          /* scattered little leaves */
+      var i, a, d, x, y; for (i = 0; i < 7; i++) { a = r() * 6.28; d = r() * R * 0.8; x = C + Math.cos(a) * d; y = C + Math.sin(a) * d * 0.75; px(x, y, "#3a8a26", 1); px(x + 1, y, "#5ab83a", 1); px(x + 1, y - 1, "#8ad860", 1); px(x + 2, y - 1, "#3a8a26", 1); }
+    },
+    slime: function (px, line, disc, C, R, r, pal) {           /* a splat with drips */
+      var i, a, d; disc(C, C, R * 0.38, pal ? pal[1] : "#6ad04a", 0.6);
+      for (i = 0; i < 5; i++) { a = r() * 6.28; d = R * (0.5 + r() * 0.35); disc(C + Math.cos(a) * d, C + Math.sin(a) * d * 0.75, Math.max(1, R * 0.1), pal ? pal[2] : "#9af07a", 0.7); }
+    },
+    wind: function (px, line, disc, C, R, r, pal) {            /* curved scuffs */
+      var i, a, a0; for (i = 0; i < 3; i++) { a0 = r() * 6.28; for (a = 0; a < 2.2; a += 0.6 / R) px(C + Math.cos(a0 + a) * R * (0.35 + i * 0.22), C + Math.sin(a0 + a) * R * (0.35 + i * 0.22) * 0.75, "#e8f0f4", 0.6); }
+    },
+    beast: function (px, line, disc, C, R, r, pal) {           /* three claw gouges */
+      var i, o; for (i = -1; i <= 1; i++) { o = i * R * 0.28; line(C - R * 0.55 + o, C - R * 0.45, C + R * 0.35 + o, C + R * 0.45, "#2a1a0e", 0.7, 2); line(C - R * 0.55 + o + 1, C - R * 0.45 - 1, C + R * 0.35 + o + 1, C + R * 0.45 - 1, "#c8a878", 0.45); }
+    }
+  };
+  MARK_SHAPE.bubble = MARK_SHAPE.water;
+  function updateMarks(dt) { var i; for (i = marks.length - 1; i >= 0; i--) { marks[i].t += dt; if (marks[i].t >= marks[i].max) marks.splice(i, 1); } }
+  function drawMarks(ctx) {
+    var i, m, c, R, al, sz;
+    if (!marks.length) return;
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
+    for (i = 0; i < marks.length; i++) {
+      m = marks[i]; R = Math.max(5, Math.round(m.r / MARK_ART));
+      c = bakeMark(m.fam, R, m.v, m.st); sz = c.width * MARK_ART;
+      al = Math.min(1, m.t / 0.15) * Math.min(1, (m.max - m.t) / 1.5);
+      ctx.globalCompositeOperation = "source-over"; ctx.globalAlpha = al;
+      ctx.drawImage(c, Math.round(m.x - sz / 2), Math.round(m.y - sz / 2), sz, sz);
+      /* fire's embers and holy's ring still glow for the first moment */
+      if ((m.fam === "fire" || m.fam === "holy" || m.fam === "machine") && m.t < 1.6 && !low()) {
+        ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha = al * 0.45 * (1 - m.t / 1.6);
+        ctx.drawImage(glowSprite(m.st.look.glow), m.x - m.r, m.y - m.r * 0.7, m.r * 2, m.r * 1.4);
+        light(m.x, m.y, m.r * 2, m.st.look.glow, 1 - m.t / 1.6);
+      }
+    }
+    ctx.restore();
+  }
+  /* light: bright moves keep their glow over the night wash, like the holograms. Every frame the shots and
+     flashes drawn note a light; game.js calls drawLights right after the wash and the list starts over. */
+  var lights = [], LIT = { fire: 1, holy: 1, machine: 1, ice: 1, bubble: 0 };
+  function light(x, y, r, col, a) { if (lights.length < 80 && a > 0.05) lights.push(x, y, r, col, a); }
+  function shotLight(p) {
+    var st = styleOf(p.wid, p.color);
+    if (LIT[st.fam]) light(p.x, p.y, Math.max(26, (p.radius || 6) * 5), st.look.glow, 0.8);
+  }
+  function drawLights(ctx, dark) {
+    var i;
+    if (dark > 0.05 && !low() && lights.length) {
+      ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.imageSmoothingEnabled = true;
+      for (i = 0; i < lights.length; i += 5) {
+        ctx.globalAlpha = Math.min(1, lights[i + 4]) * dark * 0.55;
+        ctx.drawImage(glowSprite(lights[i + 3]), lights[i] - lights[i + 2] / 2, lights[i + 1] - lights[i + 2] / 2, lights[i + 2], lights[i + 2]);
+      }
+      ctx.restore();
+    }
+    lights.length = 0;
+  }
+
   function drawGround(ctx) {
     var i, g, L, al, P, a, d;
+    drawMarks(ctx);
     for (i = 0; i < ground.length; i++) {
       g = ground[i]; if (g.t < 0) continue;
       L = g.st.look; al = Math.min(1, g.t / 0.3) * Math.min(1, (g.max - g.t) / 12);
@@ -1941,10 +2090,15 @@
 
   D.attackFx = {
     dust: dust,
-    event: event, update: update, draw: draw, styleOf: styleOf, ult: ult, drawGround: drawGround, clear: function () { parts.length = 0; anims.length = 0; },
+    event: event, update: update, draw: draw, styleOf: styleOf, ult: ult, drawGround: drawGround, drawLights: drawLights, clear: function () { parts.length = 0; anims.length = 0; marks.length = 0; lights.length = 0; if (D.sigFx) D.sigFx.clear(); },
+    _marks: function () { return marks; },
     /* the marks ultimates leave last minutes: they go only when a new run starts */
     clearGround: function () { ground.length = 0; },
     count: function () { return parts.length; }, LOOK: LOOK,
+    /* the drawing kit, for sig-fx.js */
+    _k: { add: add, spray: spray, core: core, stamp: stamp, glow: glow, glowSprite: glowSprite, rnd: rnd, pick: pick, low: low, rate: rate, q2: q2, hsh: hsh,
+      SHAPES: SHAPES, LOOK: LOOK, sprite: sprite, claws: claws, bitsOut: bitsOut, trail: trail, impact: impact, boom: boom, styleOf: styleOf, TAU: TAU, CELL: CELL,
+      partCount: function () { return parts.length; } },
     /* the little sprite of a move that has one (the missile, a fish, the torpedo), for its icon */
     shotSprite: function (id) { var s = SHOT_STYLE[id], o = SHOTS[id]; if (o && o.s === "missile") return sprite("missile", o.swap); if (o && o.s === "sprite") return sprite(o.spr); return s === "missile" || s === "torpedo" ? sprite(s) : (s === "fish" ? sprite("fish0") : null); }
   };

@@ -187,7 +187,7 @@
     /* ---- every tick ---- */
     MissionSim.prototype._updateRival = function (dt) {
       var R = this.data.RIVAL, rv = this.rival, rp, e, near, host, a, d, n, spd;
-      if (!R || !this._combatReady()) return;
+      if (!R || !this._combatReady() || this.noRival) return;            /* Story keeps it away till later; Versus has none (17z33) */
       if (!rv) {
         if (this._rivalStart == null) this._rivalStart = this.time + R.arriveAt;
         if (this.time < this._rivalStart) return;
