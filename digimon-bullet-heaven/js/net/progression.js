@@ -981,7 +981,7 @@
       active: true,
       since: sim.time || 0,                      /* 17z33: which visit (the shop's stock follows it) */
       scheduled: scheduled,
-      x: yc.x, y: yc.y, mx: yc.x + 28, my: yc.y + 8,
+      x: yc.x, y: yc.y, mx: yc.x + ((c.follow && c.follow.gap) || 84), my: yc.y + 8,   /* 17z33: it waits a few steps off, so feeding means walking up to it */
       facing: 1, mfacing: -1, moving: false, monMoving: false,
       time: 0,
       stayLeft: stay,
@@ -1014,6 +1014,7 @@
     var fc = this.data.FARM_CFG || {};
     var mult = fc.hungerDrainMult != null ? fc.hungerDrainMult : 0.05;
     p.fullness = Math.max(0, (p.fullness || 0) - (c.fullnessDecayPerSec || 1.05) * mult / (sim._lab ? sim._lab(p).belly : 1) * dt);
+    if (sim._hungerCheck) sim._hungerCheck(p);                        /* the belly still counts at the farm */
     this._tickFarmYard(p, farm, dt, inp, fc);
     if (farm.activity) this._tickFarmActivity(p, farm, dt, inp);
     var R = rarityApi();
@@ -1157,6 +1158,7 @@
     /* 17z33: favourite a third, ordinary a quarter, disliked a sixth (data.js foodFill) */
     var fill = this.data.foodFill ? this.data.foodFill(p.form, kind) : (def.fullness || 20);
     p.fullness = clamp((p.fullness || 0) + fill, 0, (this.data.CARE && this.data.CARE.fullnessMax) || 100);
+    var simE = this.sim(); if (simE && simE._hungerCheck) simE._hungerCheck(p);   /* fed: back up to speed at once */
     p._lastFill = fill;
     p._disAte = !!(this.data.isDisliked && this.data.isDisliked(p.form, kind));
     if (p._disAte) p.happiness = clamp((p.happiness || 0) + ((this.data.CARE && this.data.CARE.dislikeJoy) || -3), 0, (this.data.CARE && this.data.CARE.happinessMax) || 100);
@@ -1271,14 +1273,23 @@
     if (!(p.bag[kind] > 0)) return { ok: false, reason: "None left" };
     if ((p.fullness || 0) >= ((this.data.CARE && this.data.CARE.fullRefuse) || 96)) return { ok: false, reason: "It's full!", full: true };
     /* no distance check: the tamer can feed from anywhere */
-    var refuseFn = (this.data.rarity && this.data.rarity.shouldRefuseFeed) || (rarityApi() && rarityApi().shouldRefuseFeed);
-    if (refuseFn && refuseFn(p)) {
-      this.emit({ type: "farm.refuse", id: p.id, food: kind });
-      return { ok: false, reason: "refused", refused: true };
-    }
+    var grudge = this._grudge(p, kind);
     var diet = this._eat(p, kind, def);
-    this.emit({ type: "field.feed", id: p.id, food: kind, fullness: p.fullness, balanced: !!(diet && diet.balanced), fav: !!p._favAte });
-    return { ok: true, food: kind, fullness: p.fullness, balanced: !!(diet && diet.balanced), fav: !!p._favAte };
+    this.emit({ type: "field.feed", id: p.id, food: kind, fullness: p.fullness, balanced: !!(diet && diet.balanced), fav: !!p._favAte, grudge: grudge });
+    return { ok: true, food: kind, fullness: p.fullness, balanced: !!(diet && diet.balanced), fav: !!p._favAte, grudge: grudge };
+  };
+
+  /* 17z33 (Isaac): a partner never refuses food any more. A sulking one (rarity-sim shouldRefuseFeed: stubborn or
+   * sulky after going hungry) eats grudgingly instead, and that grudging meal counts where a refusal used to
+   * (refusedFoodCycles, once per hunger cycle), so the rare routes that need a sulky partner still open. */
+  Progression.prototype._grudge = function (p, kind) {
+    var fn = (this.data.rarity && this.data.rarity.shouldRefuseFeed) || (rarityApi() && rarityApi().shouldRefuseFeed);
+    if (!fn || !fn(p)) return false;
+    var cyc = p.starveCycles || 0;
+    if (p.grudgeCycle !== cyc) { p.grudgeCycle = cyc; p.refusedFoodCycles = (p.refusedFoodCycles || 0) + 1; }
+    p.refusedThisCycle = false;
+    this.emit({ type: "farm.refuse", id: p.id, food: kind, grudge: true });      /* badges: Picky Eater */
+    return true;
   };
 
   Progression.prototype._handlers["farm.feed"] = function (intent) {
@@ -1292,16 +1303,11 @@
     p.bag = p.bag || {};
     if (!(p.bag[kind] > 0)) return { ok: false, reason: "empty" };
     if ((p.fullness || 0) >= ((this.data.CARE && this.data.CARE.fullRefuse) || 96)) return { ok: false, reason: "It's full!", full: true };
-    var refuseFn = (this.data.rarity && this.data.rarity.shouldRefuseFeed) || (rarityApi() && rarityApi().shouldRefuseFeed);
-    if (refuseFn && refuseFn(p)) {
-      sim.farm.refused += 1;
-      this.emit({ type: "farm.refuse", id: p.id, food: kind });
-      return { ok: false, reason: "refused", refused: true };
-    }
+    var grudge = this._grudge(p, kind);
     var diet = this._eat(p, kind, def);
     sim.farm.fed += 1;
-    this.emit({ type: "farm.feed", id: p.id, food: kind, fullness: p.fullness, balanced: !!(diet && diet.balanced), fav: !!p._favAte, dis: !!p._disAte, fill: p._lastFill, rare: p._rareFx || null });
-    return { ok: true, food: kind, fullness: p.fullness, balanced: !!(diet && diet.balanced), fav: !!p._favAte, dis: !!p._disAte, fill: p._lastFill, rare: p._rareFx || null };
+    this.emit({ type: "farm.feed", id: p.id, food: kind, fullness: p.fullness, balanced: !!(diet && diet.balanced), fav: !!p._favAte, dis: !!p._disAte, fill: p._lastFill, rare: p._rareFx || null, grudge: grudge });
+    return { ok: true, food: kind, fullness: p.fullness, balanced: !!(diet && diet.balanced), fav: !!p._favAte, dis: !!p._disAte, fill: p._lastFill, rare: p._rareFx || null, grudge: grudge };
   };
 
   Progression.prototype._plotNear = function (sim, idx) {
@@ -1738,12 +1744,10 @@
     /* which way the hologram walks: up, down or sideways (the run uses the same rule) */
     if (farm.moving) farm.tdir = Math.abs(inp.y || 0) > Math.abs(inp.x || 0) + 0.05 ? (inp.y > 0 ? "down" : "up") : "side";
     if (!farm.activity) {
-      var tx = farm.x - (farm.facing || 1) * 36, ty = farm.y + 8;
-      var dx = tx - (farm.mx || farm.x), dy = ty - (farm.my || farm.y);
-      var d = Math.sqrt(dx * dx + dy * dy);
-      if (d > 8) {
-        farm.mx = (farm.mx || farm.x) + dx * Math.min(1, 3.2 * dt);
-        farm.my = (farm.my || farm.y) + dy * Math.min(1, 3.2 * dt);
+      /* 17z33 (Isaac): it hangs back (data.js farmFollow), so feeding means walking up to it */
+      var fol = this.data.farmFollow(farm.x, farm.y + 8, farm.mx == null ? farm.x - 84 : farm.mx, farm.my == null ? farm.y : farm.my, dt, fc);
+      farm.mx = fol.mx; farm.my = fol.my;
+      if (fol.moving) {
         farm.monMoving = true;
         if (farm.mx < farm.x - 4) farm.mfacing = 1;
         else if (farm.mx > farm.x + 4) farm.mfacing = -1;

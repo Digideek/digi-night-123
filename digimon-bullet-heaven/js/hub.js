@@ -182,8 +182,8 @@
   }
   function drawAt(c, x, y, sc, fn) { c.save(); c.translate(x, y); c.scale(sc, sc); try { fn(); } catch (e) {} c.restore(); }
   function paintModeArt(S, m, tam, egg) {
-    var c, i, a, k, foe = ["goblimon", "gazimon", "tsukaimon", "dokunemon", "betamon"];
-    if (S.preloadSpecies && !paintModeArt.loaded) { paintModeArt.loaded = 1; ["jijimon", "agumon", "gabumon", "greymon", "garurumon", "goblimon", "gazimon", "tsukaimon", "dokunemon"].forEach(function (f) { try { S.preloadSpecies(f, true); } catch (e) {} }); }
+    var c, i, a, k, foe = ["gotsumon", "gazimon", "otamamon", "kokuwamon"];   /* wild Rookies that are in the game (Goblimon, Tsukaimon, Dokunemon were not, and drew as placeholder cones) */
+    if (S.preloadSpecies && !paintModeArt.loaded) { paintModeArt.loaded = 1; ["jijimon", "agumon", "gabumon", "greymon", "garurumon", "gotsumon", "gazimon", "otamamon", "kokuwamon"].forEach(function (f) { try { S.preloadSpecies(f, true); } catch (e) {} }); }
     /* Story: Jijimon showing the way, an egg waiting */
     c = ctxOf("hub-art-story");
     if (c) {

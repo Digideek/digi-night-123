@@ -2233,4 +2233,19 @@ so real devices are much faster in absolute terms; what matters is the ratio.
   #spec-bar. Parked for later (Isaac): donating data to a Digimon while spectating, to buff a teammate's partner
   or a wild one against rivals; guard against griefing (once per death, a cap, enemy boosts only where there
   are real sides).
+- Farm feeding (Isaac): FARM_CFG.follow { gap 84, leash 120 } and D.farmFollow (data.js), used by farm.js (local) and
+  progression._tickFarmYard (host): follows only past the leash, stops at gap; arrives gap away (farm.enter, the
+  local visit). feed() and item use need nearPartner() (petRadius 58). Prompt over the partner in farm.js draw()
+  (after the station prompts, same order as interact()).
+- Starving fix (Isaac): mission-sim _hungerCheck(p) (starving/hungry flags + stats refresh) called from _updateCare,
+  progression._eat (farm.feed), farm.tick, and the belly item. scripts/hunger-test.js.
+- Sizes (Isaac): species-catalog.js STAGE_GROW { Baby I, Baby II, Rookie: 1.12 } applied in stageHeight (over
+  STAGE_SIZE and SHOW_SIZE); bodyRadius follows. regen-feed-test now expects Rookies ~90% of a tamer.
+- No refusing food (Isaac): progression._grudge(p, kind) replaces the refusals in field.feed and farm.feed: when
+  shouldRefuseFeed says sulky/stubborn it eats anyway, refusedFoodCycles += 1 once per starveCycles (p.grudgeCycle),
+  emits farm.refuse {grudge} (Picky Eater) and returns grudge: true (float "Sulking, but it ate it"). The legacy
+  local paths (game.js tryFeed, farm.js without auth) no longer refuse. The T5 minRefusedFood extras still open.
+- Farm panel (Isaac): index.html .farm-main (#farm-slots food tiles + #btn-farm-pet) and #farm-mood as a one-line hint;
+  farm.js render() paints .farm-food tiles (paintFood, cached by sig; click picks, click again feeds), slotList is food
+  only, Pet button calls pet(). Old .farm-slot / .farm-actions CSS removed (both copies and the 2x2 media block).
 

@@ -594,7 +594,7 @@
       /* 17z33: a head start: stat points, Bits, a full belly and a packed lunch */
       if (fx.attr) { p.itemAttr = p.itemAttr || {}; for (k in fx.attr) p.itemAttr[k] = (p.itemAttr[k] || 0) + fx.attr[k]; p._statsKey = null; }
       if (fx.bits) p.bits = (p.bits || 0) + fx.bits;
-      if (fx.belly) { p.fullness = (this.data.CARE && this.data.CARE.fullnessMax) || 100; p.bag = p.bag || {}; p.bag.meat = (p.bag.meat || 0) + fx.belly; }
+      if (fx.belly) { p.fullness = (this.data.CARE && this.data.CARE.fullnessMax) || 100; p.bag = p.bag || {}; p.bag.meat = (p.bag.meat || 0) + fx.belly; this._hungerCheck(p); }
     }
     if (g.scroll) p.scroll = g.scroll;
   };
@@ -3518,15 +3518,22 @@
     }
   };
 
+  /* starving / hungry from the belly right now. Called every care tick, and the moment it eats (the farm
+   * doesn't run the care tick, so a partner fed there used to stay slow until you left; 17z33, Isaac). */
+  MissionSim.prototype._hungerCheck = function (p) {
+    var c = this._care(), egg = this._isEgg(p.form);
+    var starving = !egg && (p.fullness || 0) <= (c.starveAt != null ? c.starveAt : 10);
+    if (starving !== !!p.starving) { p.starving = starving; p._statsKey = null; this.emit({ type: "starving", id: p.id, on: starving }); }
+    p.hungry = !egg && (p.fullness || 0) < (c.hungryAt || 35);
+    return starving;
+  };
   MissionSim.prototype._updateCare = function (p, dt) {
     var c = this._care(), egg = this._isEgg(p.form), hmax = c.happinessMax || 100, i, e, q, near;
     if (this.phase === "playing" && !egg) {
       p.fullness = Math.max(0, (p.fullness || 0) - (c.fullnessDecayPerSec || 1.05) / this._lab(p).belly * dt);
     }
     /* 17z33: hunger is a need (slower and weaker when starving), happiness is how you treat it */
-    var starving = !egg && (p.fullness || 0) <= (c.starveAt != null ? c.starveAt : 10);
-    if (starving !== !!p.starving) { p.starving = starving; p._statsKey = null; this.emit({ type: "starving", id: p.id, on: starving }); }
-    p.hungry = !egg && (p.fullness || 0) < (c.hungryAt || 35);
+    var starving = this._hungerCheck(p);
     if (starving && this.phase === "playing") p.happiness = Math.max(0, (p.happiness || 0) - (c.starveJoyPerSec || 0.8) * dt);
     /* a rest somewhere quiet: standing still, fed, nothing wild close by */
     p._restChk = (p._restChk || 0) - dt;

@@ -1816,6 +1816,14 @@
     RIVAL: RIVAL,
     VIRUS: VIRUS,
     WORLD_EVENTS: WORLD_EVENTS,
+    /* where the farm partner walks this frame: { mx, my, moving } (farm.js and progression.js both use it) */
+    farmFollow: function (x, y, mx, my, dt, cfg) {
+      var f = (cfg && cfg.follow) || { gap: 84, leash: 120 }, dx = x - mx, dy = y - my, d = Math.sqrt(dx * dx + dy * dy), tx, ty, k;
+      if (d <= f.leash) return { mx: mx, my: my, moving: false };
+      tx = x - dx / d * f.gap; ty = y - dy / d * f.gap;
+      k = Math.min(1, 3.2 * dt);
+      return { mx: mx + (tx - mx) * k, my: my + (ty - my) * k, moving: true };
+    },
     RANK: RANK,
     LAB: LAB,
     MEMORY: MEMORY,
@@ -1906,6 +1914,9 @@
       warnAt: [15, 5],
       petJoy: 8,
       petRadius: 58,
+      /* 17z33 (Isaac): the partner hangs back, so feeding means walking up to it. It only follows once you're
+       * `leash` away, and stops `gap` from you (outside petRadius); walk up to it and it stays put. */
+      follow: { gap: 84, leash: 120 },
       trainJoy: 6,
       trainBond: 10,
       trainCooldown: 0,   /* no wait between training sessions (Nov 18) */

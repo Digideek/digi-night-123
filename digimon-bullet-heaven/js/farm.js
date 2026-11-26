@@ -267,7 +267,7 @@
       selected: 0,
       x: (c.yardW || 1320) / 2,
       y: (c.yardH || 820) / 2 + 20,
-      mx: (c.yardW || 1320) / 2 + 48,
+      mx: (c.yardW || 1320) / 2 + ((c.follow && c.follow.gap) || 84),
       my: (c.yardH || 820) / 2 + 28,
       facing: 1,
       mfacing: -1,
@@ -786,11 +786,9 @@
       if (visit.moving) visit.tdir = Math.abs(inp.y) > Math.abs(inp.x) + 0.05 ? (inp.y > 0 ? "down" : "up") : "side";
       if (inp.x > 0.15) visit.facing = 1;
       else if (inp.x < -0.15) visit.facing = -1;
-      var tx = visit.x - visit.facing * 36, ty = visit.y + 8;
-      var d = dist(visit.mx, visit.my, tx, ty);
-      if (d > 8) {
-        visit.mx += (tx - visit.mx) * Math.min(1, 3.2 * dt);
-        visit.my += (ty - visit.my) * Math.min(1, 3.2 * dt);
+      var fol = D.farmFollow(visit.x, visit.y + 8, visit.mx, visit.my, dt, c), d = dist(visit.x, visit.y, visit.mx, visit.my);
+      if (fol.moving) {
+        visit.mx = fol.mx; visit.my = fol.my;
         visit.monMoving = true;
         if (visit.mx < visit.x - 4) visit.mfacing = 1;
         else if (visit.mx > visit.x + 4) visit.mfacing = -1;
@@ -850,21 +848,8 @@
       n = bagCount(run, foods[i]);
       if (n > 0) out.push({ id: foods[i], kind: "food", n: n });
     }
-    var seeds = seedIds();
-    for (i = 0; i < seeds.length; i++) {
-      n = bagCount(run, seeds[i]);
-      if (n > 0) out.push({ id: seeds[i], kind: "seed", n: n });
-    }
-    var items = ["vitamin", "medicine", "joyToy", "eraser", "atkBoost", "digimental", "crest"];
-    for (i = 0; i < items.length; i++) {
-      id = items[i];
-      n = bagCount(run, id);
-      if (id === "digimental" || id === "crest") {
-        if (run.items && run.items.indexOf(id) >= 0) out.push({ id: id, kind: "key", n: 1 });
-        continue;
-      }
-      if (n > 0) out.push({ id: id, kind: "item", n: n });
-    }
+    /* 17z33 (Isaac): food only. Seeds are planted by walking to a garden bed; care items (Vitamin, Medicine...)
+     * are used from the item row at the bottom left. */
     return out;
   }
 
@@ -915,15 +900,14 @@
       if (host.float) host.float(visit.x, visit.y - 28, "No " + kind, "#ff8080");
       return false;
     }
+    /* 17z33 (Isaac): walk up to it to feed it */
+    if (!nearPartner()) {
+      if (host.float) host.float(visit.x, visit.y - 28, "Walk up to your partner to feed it", "#ffd36a");
+      return false;
+    }
     if (hasAuth()) {
       var fed = authAct({ type: "farm.feed", id: localId(), food: kind });
       pullAuth();
-      if (fed.refused) {
-        if (host.float) host.float(visit.mx, visit.my - 28, "Sulking: not hungry enough to give in", "#c0b8a0");
-        sfx("hurt");
-        render();
-        return false;
-      }
       if (!fed.ok) {
         if (host.float) host.float(visit.x, visit.y - 28, fed.reason || "Can't feed", "#ff8080");
         render();
@@ -932,6 +916,7 @@
       var defA = D.FOOD[kind];
       if (host.float) host.float(visit.mx, visit.my - 32, defA.name + "! +" + (fed.fill || defA.fullness), defA.color);
       if (fed.dis && host.float) host.float(visit.mx, visit.my - 66, "It doesn't like that much \u2639", "#c0b8a0");
+      if (fed.grudge && host.float) host.float(visit.mx, visit.my - 82, "Sulking, but it ate it", "#c0b8a0");
       if (fed.balanced && host.float) host.float(visit.mx, visit.my - 50, "Balanced diet! ♥", "#a8f080");
       if (fed.fav && host.float && !defA.rare) host.float(visit.mx, visit.my - 66, "Its favourite! ♥♥", "#ff8ac8");
       if (fed.rare && host.float) {                                  /* 17z33: a rare food from a spire chest */
@@ -948,13 +933,7 @@
       render();
       return true;
     }
-    if (D.rarity && D.rarity.shouldRefuseFeed && D.rarity.shouldRefuseFeed(run)) {
-      visit.refused += 1;
-      if (host.float) host.float(visit.mx, visit.my - 28, "…", "#c0b8a0");
-      sfx("hurt");
-      render();
-      return false;
-    }
+    /* 17z33: it never refuses any more (progression._grudge) */
     if (!takeBag(run, kind, 1)) return false;
     var def = D.FOOD[kind];
     run.fullness = clamp((run.fullness || 0) + def.fullness, 0, (D.CARE && D.CARE.fullnessMax) || 100);
@@ -1164,7 +1143,10 @@
     if (st) { startActivity(st); return; }
     var slot = selectedKind(run);
     if (slot && slot.kind === "food") { feed(slot.id); return; }
-    if (slot && slot.kind === "item") { useItem(slot.id); return; }
+    if (slot && slot.kind === "item") {
+      if (!nearPartner()) { if (host.float) host.float(visit.x, visit.y - 28, "Walk up to your partner to give it that", "#ffd36a"); return; }
+      useItem(slot.id); return;
+    }
     if (slot && slot.kind === "seed") {
       if (host.float) host.float(visit.x, visit.y - 28, "Walk to the garden to plant", "#d8f0c0");
       return;
@@ -1204,6 +1186,23 @@
     return (m < 10 ? "0" : "") + m + ":" + (s < 10 ? "0" : "") + s;
   }
 
+  /* the food's own picture for the farm panel (17z33) */
+  function paintFood(cv, id) {
+    var g = cv.getContext("2d"), F = D.FOOD && D.FOOD[id], ic = null;
+    g.imageSmoothingEnabled = false; g.clearRect(0, 0, cv.width, cv.height);
+    try {
+      if (D.farmArt && D.farmArt.itemIcon && ((F && F.veg) || (D.isSeed && D.isSeed(id)))) ic = D.farmArt.itemIcon(id);
+      if (!ic && D.sprites && D.sprites.getIcon) {
+        /* care items draw from their shop entry's picture, as in the Bag */
+        var cat = (D.SHOP && D.SHOP.catalog) || [], si = null, j;
+        for (j = 0; j < cat.length; j++) if (cat[j].id === id) si = cat[j];
+        ic = D.sprites.getIcon((si && si.icon) || id);
+      }
+      if (!ic && D.farmArt && D.farmArt.itemIcon) ic = D.farmArt.itemIcon(id);
+    } catch (e) { ic = null; }
+    if (ic && ic.width) { var k = Math.max(1, Math.floor(Math.min(cv.width / ic.width, cv.height / ic.height))); g.drawImage(ic, Math.round((cv.width - ic.width * k) / 2), Math.round((cv.height - ic.height * k) / 2), ic.width * k, ic.height * k); }
+    else { g.fillStyle = (F && F.color) || "#ffd36a"; g.beginPath(); g.arc(cv.width / 2, cv.height / 2, cv.width / 3, 0, 7); g.fill(); }
+  }
   function itemName(id) {
     if (D.FOOD && D.FOOD[id]) return D.FOOD[id].name;
     var crop = D.cropOfSeed && D.cropOfSeed(id);
@@ -1229,16 +1228,10 @@
     var run = host && host.getRun && host.getRun();
     var mood = el("farm-mood");
     if (mood && run) {
-      /* 17z33: joy and fullness are on the bars at the top left, the mood on the strip below them */
-      var extra = ((D.dietOf && D.dietOf(run.foodCounts).balanced) ? "Diet: balanced" : "") + (visit.refused ? (D.dietOf && D.dietOf(run.foodCounts).balanced ? "  ·  " : "") + "Turned down food ×" + visit.refused : "");
-      mood.textContent = (extra ? extra + "\n" : "") +
-        /* 17z33: what training will give right now */
-        "Training" + (run.farmGates ? " +" + Math.min(100, run.farmGates * 10) + "% from " + run.farmGates + " gate" + (run.farmGates === 1 ? "" : "s") : " (take nests over for a bonus)") +
-        "  ·  Fresh sessions " + (run.trainFresh == null ? 3 : run.trainFresh) + "/" + ((cfg().fresh || {}).max || 3) +
-        ((run.trainFresh === 0) ? " (beat " + Math.max(0, ((cfg().fresh || {}).killsPer || 10) - (run.trainKills || 0)) + " more wild Digimon for one)" : "") +
-        "  ·  A session costs a quarter of the belly" + ((run.fullness || 0) < (cfg().trainMinFull || 33) ? ": too hungry to train" : "") +
-        (run.trainBoost > 1 ? "  ·  Next session x" + run.trainBoost + " (Protein Steak)" : "") +
-        (run.evoFruit ? "  ·  Evo Fruit: its next digivolution may go somewhere rare" : "");
+      /* 17z33 (Isaac: "mainly the food, and then pet, and that's it"): one short line that says what to do */
+      var selF = selectedKind(run);
+      mood.textContent = !slotList(run).length ? "No food in the bag. Beat wild Digimon for it, or buy some at Jijimon's cottage."
+        : (selF ? itemName(selF.id) + " picked. " : "") + (nearPartner() ? "Click it again, or press E, to feed it." : "Walk up to your partner to feed it.");
     }
     var icon = el("farm-hunger-icon");
     if (icon) {
@@ -1247,41 +1240,28 @@
       icon.setAttribute("aria-hidden", show ? "false" : "true");
     }
 
-    /* 17z33: one action button that says what E does here (the Train button did the same thing) */
-    var actBtn = el("btn-farm-pet");
-    if (actBtn) {
-      var stNear = visit.activity ? (cfg().stations || {})[visit.activity.id] : nearestStation(visit.x, visit.y), plN = !visit.activity && nearestPlot(visit.x, visit.y), label = "Pet / Use";
-      if (visit.activity) label = visit.activity.id === "bag" ? "Punch" : (visit.activity.id === "board" ? "Repeat it" : (visit.activity.id === "bond" ? "Cheer" : "Switch lane"));
-      else if (nearExit(visit.x, visit.y)) label = "Leave";
-      else if (dist(visit.x, visit.y, shopPoint().x, shopPoint().y) < 70) label = "Shop";
-      else if (plN) label = "Garden";
-      else if (stNear) label = stNear.id === "bag" ? "Power Strike" : (stNear.id === "board" ? "Pattern Recall" : (stNear.id === "track" ? "Rockfall Run" : "Play"));
-      if (actBtn.getAttribute("data-glyph-label") !== label) { actBtn.setAttribute("data-glyph-label", label); actBtn.textContent = label; if (D.input && D.input.applyGlyphs) D.input.applyGlyphs(actBtn.parentNode); }
-    }
     var slotsEl = el("farm-slots");
     if (slotsEl && run) {
       var slots = slotList(run);
       if (visit.selected >= slots.length) visit.selected = 0;
-      var html = "", i, s, cls;
-      if (!slots.length) html = "<p class='sub'>Bag is empty. Visit Jijimon's stall for food and care items.</p>";
-      for (i = 0; i < slots.length; i++) {
-        s = slots[i];
-        cls = "farm-slot" + (i === visit.selected ? " is-selected" : "") + (s.kind === "food" ? " is-food" : "") + (s.kind === "seed" ? " is-seed" : "");
-        html += "<button type='button' class='" + cls + "' data-i='" + i + "' data-id='" + s.id + "'>";
-        html += "<span class='farm-slot-key'>" + (i + 1) + "</span>";
-        html += "<span class='farm-slot-name'>" + itemName(s.id) + "</span>";
-        html += "<span class='farm-slot-n'>×" + s.n + "</span></button>";
-      }
-      slotsEl.innerHTML = html;
-      var btns = slotsEl.querySelectorAll(".farm-slot"), b;
-      for (i = 0; i < btns.length; i++) {
-        btns[i].addEventListener("click", function (ev) {
-          var idx = parseInt(ev.currentTarget.getAttribute("data-i"), 10);
-          selectSlot(idx);
-        });
-        btns[i].addEventListener("dblclick", function (ev) {
-          var id = ev.currentTarget.getAttribute("data-id");
-          useItem(id) || feed(id);
+      var sigF = slots.map(function (q) { return q.id + q.n; }).join(",") + "|" + visit.selected;
+      if (slotsEl.__sig !== sigF) {
+        slotsEl.__sig = sigF;
+        var html = "", i, s2;
+        if (!slots.length) html = "<p class='farm-empty'>No food yet</p>";
+        for (i = 0; i < slots.length; i++) {
+          s2 = slots[i];
+          html += "<button type='button' class='farm-food" + (i === visit.selected ? " is-selected" : "") + "' data-i='" + i + "' data-id='" + s2.id + "' title='" + itemName(s2.id) + "'>" +
+            (i < 9 ? "<kbd>" + (i + 1) + "</kbd>" : "") + "<canvas width='40' height='40' data-food='" + s2.id + "'></canvas><b>" + s2.n + "</b><span>" + itemName(s2.id) + "</span></button>";
+        }
+        slotsEl.innerHTML = html;
+        Array.prototype.forEach.call(slotsEl.querySelectorAll("canvas[data-food]"), function (cv) { paintFood(cv, cv.getAttribute("data-food")); });
+        Array.prototype.forEach.call(slotsEl.querySelectorAll(".farm-food"), function (btn) {
+          btn.addEventListener("click", function (ev) {
+            var idx = parseInt(ev.currentTarget.getAttribute("data-i"), 10), id = ev.currentTarget.getAttribute("data-id");
+            /* click picks it; click the picked one again to feed it (next to your partner) */
+            if (idx === visit.selected) { useItem(id) || feed(id); } else selectSlot(idx);
+          });
         });
       }
     }
@@ -1298,10 +1278,7 @@
       if (n) n.addEventListener("click", fn);
     }
     /* 17z33: no Return button: you leave by the gate (exitPoint). Status in its place (Skills is K / its chip). */
-    on("btn-farm-status", function () { if (D.hud && D.hud.act) D.hud.act("stats"); });
-    on("btn-farm-pet", function () { interact(); });
-    on("btn-farm-bag", function () { if (D.inventoryUi) D.inventoryUi.toggle(); });
-    on("btn-farm-skills", function () { if (D.hud && D.hud.act) D.hud.act("skills"); });   /* 17z33: the shop is Jijimon's cottage door (E) */
+    on("btn-farm-pet", function () { if (visit && visit.activity) interact(); else pet(); });   /* 17z33: Bag, Skills and Status are on their keys (I, K, T) */
   }
 
   /* Cached stylized File Island props. Visual only — anchors, hitboxes,
@@ -2327,6 +2304,25 @@
         nx = pN.x; ny = pN.y;
       }
       label(promptFor("interact", verb), sx(nx), sy(ny) - (near.id === "track" ? 28 : 64));
+    }
+    /* 17z33 (Isaac): next to your partner, say what E does (the same order interact() checks things in) */
+    if (!visit.activity && !near && !plotN && !nearExit(visit.x, visit.y) && !(dist(visit.x, visit.y, shop.x, shop.y) < 70) && nearPartner()) {
+      var sl = selectedKind(run), mtxt, mcol = "#ffe9a8";
+      if (sl && sl.kind === "food") mtxt = "Feed " + itemName(sl.id) + " (x" + sl.n + ")";
+      else if (sl && sl.kind === "item") mtxt = "Give " + itemName(sl.id) + " (x" + sl.n + ")";
+      else { mtxt = "Pet"; mcol = "#ffc8ea"; }
+      ctx.font = "bold 14px Trebuchet MS, sans-serif";
+      var mw = ctx.measureText(promptFor("interact", mtxt)).width, mx0 = sx(visit.mx), my0 = sy(visit.my) - 78 + Math.round(Math.sin(t * 4) * 2);
+      ctx.fillStyle = "rgba(8,12,22,0.85)"; ctx.fillRect(Math.round(mx0 - mw / 2 - 8), my0 - 15, Math.round(mw + 16), 22);
+      ctx.fillStyle = mcol; ctx.fillRect(Math.round(mx0 - mw / 2 - 8), my0 + 7, Math.round(mw + 16), 2);
+      label(promptFor("interact", mtxt), mx0, my0 + 1, mcol);
+      if (sl && sl.kind === "food" && slotList(run).length > 1) {
+        ctx.font = "bold 11px Trebuchet MS, sans-serif";
+        var hw = ctx.measureText("Keys 1-9: other food").width;
+        ctx.fillStyle = "rgba(8,12,22,0.8)"; ctx.fillRect(Math.round(mx0 - hw / 2 - 6), my0 + 11, Math.round(hw + 12), 16);
+        label("Keys 1-9: other food", mx0, my0 + 23, "#dfe8ff");
+      }
+      ctx.font = "13px Trebuchet MS, sans-serif";
     }
     drawActivityOverlay(ctx, sx, sy, t);
     if (visit.particles) {

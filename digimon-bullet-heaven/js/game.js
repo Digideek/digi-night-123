@@ -2160,6 +2160,11 @@
       slots[i].classList.toggle("is-cool", cd > 0.02);
     }
   }
+  /* what kind of attack a move is, for its card: Shot, Claw, Aura, Orbit, Signature, Technique */
+  function moveKind(id) {
+    var m = D.MOVE_META && D.MOVE_META[id], one = { primary: "Shot", melee: "Claw", aura: "Aura", orbit: "Orbit", special: "Signature", tech: "Technique" };
+    return (m && one[m.slot]) || "Move";
+  }
   function escTxt(t) { return String(t == null ? "" : t).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
   function equipStrip(act) {
     var esc = escTxt;
@@ -2201,8 +2206,11 @@
       html = "<div class='skill-cards'>";
       for (i = 0; i < offer.length; i++) {
         e = offer[i]; p = SK.PASSIVE_BY[e]; def = D.WEAPONS[e] || { name: e }; lv = sk[e] || 0;
-        html += "<button type='button' class='skill-card" + (lv ? "" : " is-new") + "' data-skill='" + e + "'><kbd>" + (i + 1) + "</kbd>" +
-          "<canvas width='48' height='48' data-ico='" + (p ? p.icon : e) + "'></canvas>" +
+        /* 17z33 (Isaac: "I can't tell attack and passive skills apart"): a banner that says which, its own
+         * colour, a square frame for an attack and a round one for a passive */
+        html += "<button type='button' class='skill-card " + (p ? "is-passive" : "is-attack") + (lv ? "" : " is-new") + "' data-skill='" + e + "'><kbd>" + (i + 1) + "</kbd>" +
+          "<em class='skill-kind'>" + (p ? "\u271a PASSIVE \u00b7 always on" : "\u2694 ATTACK \u00b7 " + moveKind(e)) + "</em>" +
+          "<span class='skill-ico'><canvas width='48' height='48' data-ico='" + (p ? p.icon : e) + "'></canvas></span>" +
           "<b>" + (p ? p.name : def.name) + "</b>" +
           "<i>" + (lv ? "Lv " + lv + " \u2192 " + (lv + 1) : "NEW") + "</i>" +
           (!p && SK.sigNote && SK.sigNote(D, sk, e) ? "<em class='skill-tag'>" + SK.sigNote(D, sk, e) + "</em>" : "") +
@@ -2235,13 +2243,13 @@
     for (s = 0; s < SK.SLOTS.length; s++) {
       list = t.slots[SK.SLOTS[s]];
       if (!list.length) continue;
-      html += "<div class='skill-group'>" + SK.SLOT_NAME[SK.SLOTS[s]] + "</div>";
+      html += "<div class='skill-group is-attack'>\u2694 Attacks: " + SK.SLOT_NAME[SK.SLOTS[s]] + "</div>";
       for (i = 0; i < list.length; i++) {
         e = list[i]; def = D.WEAPONS[e.id] || { name: e.id }; lv = sk[e.id] || 0; why = SK.blocked(D, run.form, sk, e.id);
         legacy = lv > 0 && !firing[e.id];
         var onNow = firing[e.id] && (!run.equip || eqOn[e.id]);
-        html += "<div class='skill-row" + (why && !lv ? " is-locked" : "") + (onNow ? " is-firing" : "") + (firing[e.id] && !onNow ? " is-off" : "") + "'><canvas width='36' height='36' data-ico='" + e.id + "'></canvas>" +
-          "<span class='skill-name'>" + def.name + "<span class='skill-sub'>" +
+        html += "<div class='skill-row is-attack" + (why && !lv ? " is-locked" : "") + (onNow ? " is-firing" : "") + (firing[e.id] && !onNow ? " is-off" : "") + "'><span class='skill-ico'><canvas width='36' height='36' data-ico='" + e.id + "'></canvas></span>" +
+          "<span class='skill-name'><em class='skill-kind'>\u2694 ATTACK</em>" + def.name + "<span class='skill-sub'>" +
           (firing[e.id] && !onNow ? "Learned, not equipped" : firing[e.id] ? (run.equip ? "Equipped" : "In use") + (firing[e.id].bonus > 1.001 ? "  \u00b7  +" + Math.round((firing[e.id].bonus - 1) * 100) + "% damage" : "") + (D.SIG_INFO && D.SIG_INFO[e.id] && D.SIG_INFO[e.id].upTo && D.WEAPONS[D.SIG_INFO[e.id].upTo] ? "  \u00b7  grows into " + D.WEAPONS[D.SIG_INFO[e.id].upTo].name + " later" : "")
             : (legacy ? "Adds to the bigger move" : (why && !lv ? why : (SK.STAGE_NAME[e.tier] || "") + " move" + (SK.sigNote && SK.sigNote(D, sk, e.id) ? "  \u00b7  " + SK.sigNote(D, sk, e.id) : "")))) + "</span></span>" +
           "<span class='skill-lv'>Lv " + lv + "/" + SK.MAX + "</span>" +
@@ -2249,10 +2257,10 @@
           "<button type='button' data-skill='" + e.id + "'" + (why || pts < 1 || cardOnly(e.id, lv) ? " disabled" : "") + ">+</button></div>";
       }
     }
-    html += "<div class='skill-group'>Masteries</div>";
+    html += "<div class='skill-group is-passive'>\u271a Passives: always on, no move slot needed</div>";
     for (i = 0; i < SK.PASSIVES.length; i++) {
       p = SK.PASSIVES[i]; lv = sk[p.id] || 0;
-      html += "<div class='skill-row'><canvas width='36' height='36' data-ico='" + p.icon + "'></canvas><span class='skill-name'>" + p.name + "<span class='skill-sub'>" + p.text + " per level</span></span>" +
+      html += "<div class='skill-row is-passive'><span class='skill-ico'><canvas width='36' height='36' data-ico='" + p.icon + "'></canvas></span><span class='skill-name'><em class='skill-kind'>\u271a PASSIVE</em>" + p.name + "<span class='skill-sub'>" + p.text + " per level</span></span>" +
         "<span class='skill-lv'>Lv " + lv + "/" + SK.MAX + "</span><i></i><button type='button' data-skill='" + p.id + "'" + (lv >= SK.MAX || pts < 1 || cardOnly(p.id, lv) ? " disabled" : "") + ">+</button></div>";
     }
     rows = $("skills-rows");
@@ -2907,13 +2915,13 @@
     } else {
       if (!missionAuth) return false;
       res = missionAuth.act({ type: "field.feed", id: missionLocalId, food: kind }) || { ok: false };
-      if (res.refused) { burst(run.mx, run.my - 6, "#c0b8a0", 6, 70); addFloat(run.mx, run.my - 32, "Sulking: not hungry enough to give in", "#c0b8a0"); sfx("hurt"); return false; }   /* 17z33: say why */
       if (!res.ok) { addFloat(run.x, run.y - 28, res.reason || "Can't feed", "#ff8080"); return false; }
       applyMissionSnapshot(takeMissionSnapshot());
       run.feedAnim = 0.4;
       addFloat(run.mx, run.my - 32, def.name + "! +" + def.fullness, def.color);
       if (res.balanced) addFloat(run.mx, run.my - 50, "Balanced diet! \u2665", "#a8f080");
       if (res.fav) addFloat(run.mx, run.my - 66, "Its favourite! \u2665\u2665", "#ff8ac8");
+      if (res.grudge) addFloat(run.mx, run.my - 82, "Sulking, but it ate it", "#c0b8a0");
       burst(run.mx, run.my - 8, def.color, 12, 130);
       sfx("meat");
       updateHud();
@@ -2929,13 +2937,7 @@
     if (run.feedCd > 0) return;
     var d = Math.sqrt(dist2(run.x, run.y, run.mx, run.my));
     if (d > D.LEASH.feedRadius) return;
-    if (D.rarity && D.rarity.shouldRefuseFeed && D.rarity.shouldRefuseFeed(run)) {
-      run.feedCd = 0.7;
-      /* No "refused" copy — the turn-down is silent on purpose. */
-      burst(run.mx, run.my - 6, "#c0b8a0", 6, 70);
-      sfx("hurt");
-      return;
-    }
+ /* 17z33: it never refuses any more (progression._grudge) */
     var kind = run.carry.shift();
     var def = D.FOOD[kind] || D.FOOD.meat;
     run.fullness = clamp(run.fullness + def.fullness, 0, D.CARE.fullnessMax);
@@ -3513,7 +3515,7 @@
     if (!row || !run) return;
     if (el.carryRow) el.carryRow.hidden = true;
     var ids = (state === "farm") ? ["medicine", "eraser", "vitamin", "joyToy", "atkBoost"] : ["gateKey", "lure", "map", "meat", "fish", "berry", "_veg", "_seed"].concat(D.RARE_FOODS || []);
-    var iconFor = { meat: "meatPack", fish: "fishPack", berry: "berryPack" };
+    var iconFor = { meat: "meatPack", fish: "fishPack", berry: "berryPack", vitamin: "joy" };   /* vitamin: no picture of its own */
     var i, id, n, html = "", sig = "";
     for (i = 0; i < ids.length; i++) {
       id = ids[i];

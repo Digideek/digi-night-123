@@ -128,12 +128,16 @@
     return "Rookie";
   }
 
+  /* 17z33 (Isaac): Baby, In-Training and Rookie were drawing a little small: 12% bigger, Champions and up as
+   * they were. On top of STAGE_SIZE and SHOW_SIZE alike, so every one of them grows (hitboxes follow:
+   * sprites.js bodyRadius scales with the drawn height). */
+  var STAGE_GROW = { "Baby I": 1.12, "Baby II": 1.12, "Rookie": 1.12 };
   function stageHeight(idOrNode) {
     var node = typeof idOrNode === "string" ? nodeOf(idOrNode) : idOrNode;
     var sid = typeof idOrNode === "string" ? resolveId(idOrNode) : (node && node.id);
-    if (sid && SHOW_SIZE[sid]) return Math.round(SHOW_SIZE[sid] * TAMER_H);
-    var key = stageKeyOf(node);
-    return STAGE_HEIGHT[key] || Math.round(0.8 * TAMER_H);
+    var key = stageKeyOf(node), grow = STAGE_GROW[key] || 1;
+    if (sid && SHOW_SIZE[sid]) return Math.round(SHOW_SIZE[sid] * TAMER_H * grow);
+    return Math.round((STAGE_HEIGHT[key] || Math.round(0.8 * TAMER_H)) * grow);
   }
 
   function nodeOf(id) {

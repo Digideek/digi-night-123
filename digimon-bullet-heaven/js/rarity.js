@@ -992,7 +992,7 @@
     lines.push("");
     lines.push("- `ignoredSeconds` — partner farther than 220px from the tamer");
     lines.push("- `ignoredDuringEvent` — ignored while the silent once-per-run omen pulse is open");
-    lines.push("- `refusedFoodCycles` — feed attempts turned down (stubborn/sulky after a starve cycle; food is not consumed). Never refuses at critical hunger.");
+    lines.push("- `refusedFoodCycles` — meals eaten grudgingly while stubborn/sulky after a starve cycle (once per cycle). Since 17z33 a partner never refuses food; the grudging meal counts instead.");
     lines.push("- `deliberateLoss` — partner fainted while the short `trial` window was open");
     lines.push("- `undamagedKills` / `starveCycles` / `bond`");
     lines.push("");

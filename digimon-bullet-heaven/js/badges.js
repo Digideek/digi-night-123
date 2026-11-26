@@ -123,7 +123,7 @@
   ladder("Farm", "trains", function (n) { return n === "1" ? "Train at the Digi Farm" : "Train " + n + " times at the Digi Farm"; }, [[1, "tn1", "Training Day", 1], [100, "tn100", "Drill Sergeant", 2], [500, "tn500", "Iron Regimen", 3]]);
   ladder("Farm", "pets", function (n) { return "Play with your partner " + n + " times"; }, [[50, "pet50", "Best Friends", 2]]);
   add("Farm", "bal", "Balanced Diet", "Feed your partner a balanced meal", 1);
-  add("Farm", "picky", "Picky Eater", "Have your partner turn its nose up at dinner", 1, S);
+  add("Farm", "picky", "Picky Eater", "Feed your partner while it's sulking", 1, S);
 
   /* ---------------- Collection ---------------- */
   add("Collection", "egg", "New Shell", "Unlock an egg", 1);

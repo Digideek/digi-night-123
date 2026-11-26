@@ -52,6 +52,38 @@
   - Each tab says in a line what it counts. Survival's boards (Level, Fastest Mega, Survival, Lords, PvP) now only count Survival runs, so a long Night Siege run doesn't land on the Survival board.
   - What sends a run in: a Survival run of a minute or more (as before), a finished Story, a Night Siege run with a night held, a won Versus or Duel. The server turns away runs that couldn't be real (9 nights in 5 minutes, a Versus win before the race was over).
 
+**A simpler farm panel**
+- The panel at the bottom of the farm is now just **your food and a Pet button**. Each food is a tile with its picture, how many you have, and its number key. Click one to pick it, then click it again (or press E) next to your partner to feed it. Pet is the big pink button.
+- One short line under it says what to do ("Berry picked. Click it again, or press E, to feed it." / "Walk up to your partner to feed it.").
+- Removed: the training and gate summary (each station's sign still says what it trains), the turned-down-food counter, and the Bag, Skills and Status buttons (still on I, K and T). Seeds are planted by walking to a garden bed. Care items (Vitamin, Medicine, Joy Toy...) are used from the item row at the bottom left, where the Vitamin now has a picture.
+
+**Your partner never refuses food any more**
+- A sulking partner (one that went hungry and is unhappy) used to turn down meals. Now it **always eats**, out in the world and at the farm. When it's sulking, "Sulking, but it ate it" pops up over it.
+- The only time food is turned away is a completely full belly ("It's full!"), so a meal isn't wasted.
+- **The hidden routes still work:** some of the rarest digivolutions need a sulky partner. A grudging meal now counts where a refusal used to, once per hunger cycle.
+- The Picky Eater badge is now "Feed your partner while it's sulking".
+
+**Baby, In-Training and Rookie Digimon are 12% bigger**
+- Every Baby, In-Training and Rookie is now drawn 12% bigger: your partner, wild ones, rivals and CPU partners. For example, Botamon is 17 → 19 px, Koromon 23 → 26 and Agumon 39 → 44, so a Rookie now stands about 90% of a tamer's height. Champions and up are unchanged.
+- Hitboxes grew with them, so what you see is what you hit, and what hits you.
+
+**Attack moves and passive skills look different now**
+- **Level-up cards:** an attack has a warm red-orange card with a solid border, a "⚔ ATTACK" banner naming its kind (Shot, Claw, Aura, Orbit, Signature, Technique) and a **square** icon frame. A passive has a cool teal card with a **dashed** border, a "✚ PASSIVE · always on" banner and a **round** icon frame.
+- **The skills list (K)** matches: every row has an ATTACK or PASSIVE tag and a square or round icon frame. The sections read "⚔ Attacks: Shots" and so on, and the last one, "✚ Passives: always on, no move slot needed", sits under a dashed divider.
+- The word and the shape say which kind it is too, so it never depends on colour.
+
+**Fixed: a starving partner now speeds back up as soon as it eats**
+- A starving partner (belly at 10 or below) is 20% slower and does 15% less damage. When you fed it at the farm, it stayed slow and weak until you walked out the gate, because the farm didn't recheck its hunger. Now it's back to full speed and strength the moment it eats. Starving still counts while you're at the farm.
+- New test: scripts/hunger-test.js.
+
+**Feeding at the farm: walk up to your partner**
+- Your partner now **hangs back** at the farm. When you arrive it waits a few steps off. It only follows once you're well away, then stops a few steps short of you. Walk up to it and it stays put.
+- **You have to be next to it** to feed it or give it an item, the same as petting. From further away you're told to walk up to it.
+- **Next to it, a prompt over its head says what E does:** "Feed Meat (x3) [E]", "Give Vitamin [E]", or "Pet [E]" with nothing selected. When you carry more than one food, a line under it says keys 1 to 9 pick another.
+
+**Fixed: the Night Siege tile's enemies**
+- The wild Digimon closing in on the Night Siege tile on the main menu were mostly orange placeholder cones. The art asked for Goblimon, Tsukaimon and Dokunemon, which aren't in the game. It now shows real wild Rookies: Gotsumon, Gazimon, Otamamon and Kokuwamon.
+
 **Spectating, and world events made for friends**
 - **Spectating:** online, when you're down in a one-life run and waiting for a teammate to pick you up, the camera now follows a friend who's still fighting.
   - A bar along the bottom shows who you're watching, their Digimon, level and health.

@@ -213,11 +213,15 @@ function main() {
   C2.p.careMistakes = 0;
   C2.p.bag = { meat: 2 };
   C2.authority.act({ type: "farm.enter", id: "p0" });
-  const refused = C2.authority.act({ type: "farm.feed", id: "p0", food: "meat" });
-  assert(refused.refused, "stubborn partner refuses a meal");
-  assert(C2.sim.farm.refused >= 1, "refuse counted");
+  /* 17z33 (Isaac): it never refuses; a sulking partner eats grudgingly, and that counts where a refusal did */
+  const before = C2.p.fullness;
+  const grudging = C2.authority.act({ type: "farm.feed", id: "p0", food: "meat" });
+  assert(grudging.ok && grudging.grudge && C2.p.fullness > before && C2.p.bag.meat === 1, "a stubborn partner eats anyway, grudgingly");
+  assert(C2.p.refusedFoodCycles === 1, "the grudging meal counts for the sulky routes");
+  const again = C2.authority.act({ type: "farm.feed", id: "p0", food: "meat" });
+  assert(again.ok && C2.p.refusedFoodCycles === 1, "once per hunger cycle, not once per meal");
   const retRefuse = C2.authority.act({ type: "farm.return", id: "p0" });
-  assert(!retRefuse.careMistake && C2.p.careMistakes === 0, "refused meal is not a care mistake");
+  assert(!retRefuse.careMistake && C2.p.careMistakes === 0, "fed: no care mistake");
   const C3 = makeAuth();
   C3.p.fullness = 5;
   C3.p.happiness = 50;
@@ -226,7 +230,7 @@ function main() {
   C3.authority.act({ type: "farm.enter", id: "p0" });
   const retHungry = C3.authority.act({ type: "farm.return", id: "p0" });
   assert(retHungry.careMistake && C3.p.careMistakes === 1, "hungry unfed exit is a care mistake");
-  console.log("ok hunger care rule (refused meal is not a mistake)");
+  console.log("ok hunger care rule (never refuses; a grudging meal counts once per cycle)");
 
   /* ---- Discoveries / unlocks persist + replay idempotency. ---- */
   const store = { acc: null, n: 0 };
