@@ -978,6 +978,8 @@
       if (p.levelOffers) run.levelOffers = p.levelOffers;
       if (p.pendingLevels != null) pendingLevels = p.pendingLevels;
       if (p.downed != null) run.downed = !!p.downed;
+      run.choosing = !!(p.choosing || p.ch);          /* inside the skill-pick shield */
+      run.downLeft = p.downLeft != null ? p.downLeft : (p.dl != null ? p.dl : null);   /* Open World with friends: until it starts over as an egg */
       run.evoOffer = p.evoOffer || null;
       run.burst = p.burst || 0; run.burstLeft = p.burstLeft || 0; run.burstForm = p.burstForm || null; run.burstStyle = p.burstStyle || null; run.shiny = !!p.shiny; run.shinyBoost = p.shinyBoost || 0; run.passives = p.passives || [];
       run.tamerLevel = p.tamerLevel || 1; run.tamerXp = p.tamerXp || 0; run.tamerXpNext = p.tamerXpNext || 1;
@@ -993,7 +995,7 @@
         form: list[i].form, facing: list[i].facing, tdir: list[i].tdir, moving: list[i].moving,
         mfacing: list[i].mfacing, monMoving: list[i].monMoving, hp: list[i].hp, maxHp: list[i].maxHp,
         tamerHp: list[i].tamerHp, tamerMaxHp: list[i].tamerMaxHp, tamerInvuln: list[i].tamerInvuln, monInvuln: list[i].monInvuln,
-        faint: list[i].faint, downed: list[i].downed, level: list[i].level, hatchLeft: list[i].hatchLeft, burstForm: list[i].burstForm || null, burstStyle: list[i].burstStyle || null, shiny: !!list[i].shiny,
+        faint: list[i].faint, downed: list[i].downed, choosing: !!(list[i].choosing || list[i].ch), downLeft: list[i].downLeft != null ? list[i].downLeft : (list[i].dl != null ? list[i].dl : null), level: list[i].level, hatchLeft: list[i].hatchLeft, burstForm: list[i].burstForm || null, burstStyle: list[i].burstStyle || null, shiny: !!list[i].shiny,
         trust: list[i].trust || null, pvpFlag: !!list[i].pvpFlag, bounty: (list[i].md && list[i].md.bo) || 0, hungry: !!list[i].hungry, starving: !!list[i].starving
       });
     }
@@ -1004,6 +1006,8 @@
     if (snap.weather) run.weather = snap.weather;
     run.rival = snap.rival || null;
     if (Object.prototype.hasOwnProperty.call(snap, "merchant")) run.merchant = snap.merchant;
+    run.catches = snap.catches || run.catches || [];    /* defeated Digimon lying there to be caught (17z33) */
+    run.spireChests = snap.spireChests || run.spireChests || [];   /* spire chests at a spire's foot (17z33) */
     if (Object.prototype.hasOwnProperty.call(snap, "nest")) {
       if (snap.nest && !run.nest && D.minimap && D.minimap.mark) D.minimap.mark("nest", { x: snap.nest.x, y: snap.nest.y, color: "#ffe070", label: "Eggs" });
       run.nest = snap.nest;     /* Night Siege's Primary Village */
@@ -1052,6 +1056,11 @@
         }
         continue;
       }
+      if (e.type === "catch.spot" && String(e.id) === String(missionLocalId)) {
+        showNoticeToast(kindName(e.form) + " is down! Walk up and press E for one try at catching it (" + e.sec + " s).", "is-ready"); noticeToastTimer = 4; sfx("ui"); continue;
+      }
+      if (e.type === "catch.gone" && String(e.id) === String(missionLocalId)) { addFloat(e.x, e.y - 30, "It faded away", "#8a94b8"); continue; }
+      if (e.type === "capture" && String(e.id) === String(missionLocalId) && online() && online().role && online().role() === "guest") { catchResult(!!e.ok, e.form, e.x, e.y); continue; }
       if (e.type === "skill.full" && e.id === missionLocalId) {
         /* learned a move with every slot full: it waits in the skills window until you swap it in */
         showNoticeToast("New move: " + ((D.WEAPONS[e.move] && D.WEAPONS[e.move].name) || e.move) + "! All " + e.n + " move slots are full: swap it in from Skills" + kh("skills") + "."); noticeToastTimer = 4;
@@ -1106,6 +1115,7 @@
         if (e.k === "rshot") { rivalShot(e); continue; }
         if (e.k === "boltwarn") { boltWarns.push({ x: e.x, y: e.y, t: e.t || 0.9, max: e.t || 0.9 }); continue; }
         if (e.k === "bolt") { strikeFx(e.x, e.y, e.r || 60); continue; }
+        if (e.k === "land") { burst(e.x, e.y, LAND_COL[e.el] || "#e8e0d0", 7, 110); continue; }   /* a move aimed at the ground comes down (17z33) */
         if (e.k === "frost") { burst(e.x, e.y, "#c4ecff", 14, 150); addFloat(e.x, e.y - 10, "Frozen over", "#bfe8ff"); continue; }
         if (livingEvent(e)) continue;
         if (e.k === "weak") { addFloat(e.x, e.y - 6, "Weak!", e.id != null ? "#ff6a5a" : "#ff9a3a"); continue; }
@@ -1193,8 +1203,9 @@
         showNoticeToast(spName(e.enemyType) + " climbs out of the dark, and it's hunting you.  Beat it for a gold chest.", "is-season is-war"); noticeToastTimer = 5;
       } else if (e.type === "spire.cleared") {
         burst(e.x, e.y - 8, CHEST_COL[e.chest] || "#ffd23a", 30, 260); sfx("level");
-        showNoticeToast("Cleared!  A " + e.chest + " chest dropped where the last one fell."); noticeToastTimer = 4;
+        showNoticeToast("Cleared!  A " + e.chest + " chest is waiting at the foot of the spire.  Walk up and press " + (kh("interact") ? kh("interact").slice(1) : "E") + " to open it."); noticeToastTimer = 4.5;
       } else if (e.type === "chest.open") {
+        if (e.x != null) burst(e.x, e.y - 12, CHEST_COL[e.chest] || "#ffd23a", 22, 200);   /* the lid flies open, for everyone */
         if (e.id === missionLocalId || e.id == null) {
           var cfd = e.food && D.FOOD && D.FOOD[e.food], cTn = e.dataType && D.hatchery && D.hatchery.typeName ? D.hatchery.typeName(e.dataType) : e.dataType;
           addFloat(run.x, run.y - 40, e.chest.charAt(0).toUpperCase() + e.chest.slice(1) + " chest!  +" + e.bits + " Bits", CHEST_COL[e.chest] || "#ffd23a"); sfx("level"); burst(run.x, run.y - 10, CHEST_COL[e.chest] || "#ffd23a", 26, 220);
@@ -1291,8 +1302,10 @@
     if (clicked) authIn.focus = clicked._id;
     else if (lastPvpClick) { authIn.pvp = lastPvpClick; lastGroundClick = null; }
     else if (lastGroundClick) authIn.go = [lastGroundClick.x, lastGroundClick.y];
+    if (lastStrikeClick) authIn.strike = [lastStrikeClick.x, lastStrikeClick.y];
     lastPvpClick = null;
     lastGroundClick = null;
+    lastStrikeClick = null;
     missionAuth.onMessage({
       type: "input",
       id: missionLocalId,
@@ -2531,20 +2544,37 @@
   /* ---------- warp burst (data.js BURST) ----------
    * The chip under the bars fills as the meter does. R (or a tap) spends it. */
   /* shinies: a line when it happens, and a twinkle on any shiny partner */
-  /* a spire's chest (17z33): bronze, silver or gold, bobbing and glinting until you walk over it */
+  /* a spire's chest (17z33, Isaac): bronze, silver or gold, standing at the spire's foot until someone opens it
+   * with E (spire-sim.js). Drawn like the data caches, with a soft glow in its grade's colour. */
   var CHEST_COL = { bronze: "#d8925a", silver: "#d8e4f4", gold: "#ffd23a" };
-  function drawChest(x, y, tier, t) {
-    var c = CHEST_COL[tier] || "#d8925a", dk = tier === "gold" ? "#a87010" : (tier === "silver" ? "#7a8aa4" : "#7a4a22"), bob = Math.round(Math.sin(t * 3 + x) * 1.5), bx = Math.round(x) - 10, by = Math.round(y) - 14 + bob, k;
+  function chestInReach() {
+    var L = run && run.spireChests, R = ((D.TERRAIN && D.TERRAIN.useRadius) || 78) + 30, i, c, best = null, bd = R * R, d;
+    for (i = 0; i < (L || []).length; i++) { c = L[i]; d = dist2(run.x, run.y, c[2], c[3]); if (d <= bd) { bd = d; best = c; } }
+    return best;
+  }
+  function tryOpenChest() {
+    var c = chestInReach(), res;
+    if (!c || !missionAuth) return false;
+    res = missionAuth.act({ type: "chest.open", id: missionLocalId, spot: c[0] }) || {};
+    if (!res.ok && !res.pending && res.reason) addFloat(run.x, run.y - 40, res.reason, "#ffd36a");
+    if (res.ok) applyMissionSnapshot(takeMissionSnapshot());
+    return !!(res.ok || res.pending);
+  }
+  function drawSpireChest(c, near) {
+    var x = c[2], y = c[3], tier = c[1], col = CHEST_COL[tier] || "#d8925a", t = run.time || 0, lab, gy;
     ctx.save();
-    ctx.globalAlpha = 0.35; ctx.fillStyle = "#000"; ctx.beginPath(); ctx.ellipse(x, y + 2, 12, 4, 0, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1;
-    ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha = 0.25 + 0.15 * Math.sin(t * 4 + x); ctx.fillStyle = c;
-    ctx.beginPath(); ctx.arc(x, by + 8, 16, 0, Math.PI * 2); ctx.fill(); ctx.globalCompositeOperation = "source-over"; ctx.globalAlpha = 1;
-    ctx.fillStyle = "#1a120a"; ctx.fillRect(bx - 1, by - 1, 22, 16);
-    ctx.fillStyle = "#5a3a1c"; ctx.fillRect(bx, by + 5, 20, 9);                 /* the box */
-    ctx.fillStyle = "#7a5228"; ctx.fillRect(bx, by, 20, 6);                     /* the lid */
-    ctx.fillStyle = c; ctx.fillRect(bx, by + 5, 20, 2); ctx.fillRect(bx + 3, by, 2, 14); ctx.fillRect(bx + 15, by, 2, 14);   /* its bands */
-    ctx.fillStyle = dk; ctx.fillRect(bx + 8, by + 4, 4, 5); ctx.fillStyle = "#fff6c8"; ctx.fillRect(bx + 9, by + 5, 2, 2);   /* the lock */
-    for (k = 0; k < 2; k++) if (Math.sin(t * 5 + k * 2.4 + x) > 0.6) { ctx.fillStyle = "#ffffff"; var sx = bx + 4 + k * 11, sy = by - 3 - k * 2; ctx.fillRect(sx, sy - 2, 1, 5); ctx.fillRect(sx - 2, sy, 5, 1); }
+    ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha = (tier === "gold" ? 0.3 : 0.2) + 0.1 * Math.sin(t * 3 + x); ctx.fillStyle = col;
+    ctx.beginPath(); ctx.ellipse(x, y - 8, 22, 14, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+    if (D.sprites.drawProp) D.sprites.drawProp(ctx, "chest_" + tier, x, y);
+    if (Math.sin(t * 5 + x) > 0.75) { ctx.fillStyle = "#ffffff"; ctx.fillRect(Math.round(x + 7), Math.round(y - 28), 1, 5); ctx.fillRect(Math.round(x + 5), Math.round(y - 26), 5, 1); }
+    /* always says which grade it is in words, so the colour isn't the only clue */
+    lab = (near ? (kh("interact") ? kh("interact").slice(1) + " " : "E ") + "Open the " : "") + tier.charAt(0).toUpperCase() + tier.slice(1) + " chest";
+    ctx.save();
+    ctx.font = "bold 13px Trebuchet MS, sans-serif"; ctx.textAlign = "center"; ctx.lineWidth = 3;
+    ctx.strokeStyle = "rgba(8,10,24,0.9)"; ctx.fillStyle = near ? col : "rgba(240,236,248,0.85)";
+    gy = y - (tier === "gold" ? 40 : 36);
+    ctx.strokeText(lab, x, gy); ctx.fillText(lab, x, gy);
     ctx.restore();
   }
   var shinyNote = null, shinyTw = 0;
@@ -2827,7 +2857,8 @@
     if (!(noticeToastTimer > 0)) { showNoticeToast("Entering " + b.name); noticeToastTimer = 2.6; }
   }
   var frameStep = 0.016, stepTick = 0;
-  var lastGroundClick = null;
+  var lastGroundClick = null, lastStrikeClick = null;
+  var eTarget = null;   /* what E does this frame (interactWhat) */
   var BOSS_LOOK = { bossScale: 1.35, megaScale: 1.5, lordScale: 2.0 };
 
   function feedFoodList() {
@@ -3243,14 +3274,18 @@
   }
   function paintShopIcon(cv, item) {
     if (!cv || !D.sprites || !D.sprites.getIcon) return;
-    var ico = item.kind === "seed" && D.farmArt && D.farmArt.itemIcon ? D.farmArt.itemIcon(item.seed) : D.sprites.getIcon(item.icon || item.id);
+    /* 17z33: seed packets use the shop's packet picture too (the farm's own drawing is the fallback) */
+    var ico = (item.kind === "seed" && D.pickupArt && D.pickupArt.ready(item.seed) && D.sprites.getIcon(item.seed)) ||
+      (item.kind === "seed" && D.farmArt && D.farmArt.itemIcon ? D.farmArt.itemIcon(item.seed) : D.sprites.getIcon(item.icon || item.id));
     if (!ico) return;
-    var size = 48;
+    /* 17z33: drawn at a whole-number size (the 28 px pictures at 2x) and centred, so no pixel comes out wider than
+     * its neighbour; the page then scales the 56 px canvas smoothly into the 48 px slot */
+    var size = 56, k = Math.max(1, Math.floor(size / Math.max(ico.width, ico.height))), w = ico.width * k, h = ico.height * k;
     if (cv.width !== size || cv.height !== size) { cv.width = size; cv.height = size; }
     var ic = cv.getContext("2d");
     ic.imageSmoothingEnabled = false;
     ic.clearRect(0, 0, size, size);
-    ic.drawImage(ico, 0, 0, size, size);
+    ic.drawImage(ico, Math.round((size - w) / 2), Math.round((size - h) / 2), w, h);
   }
   function paintShopJiji() {
     var cv = $("shop-jiji");
@@ -3320,7 +3355,7 @@
       row.type = "button";
       row.className = "shop-row" + (can ? "" : " is-locked") + (shopFlashId === item.id ? " is-flash" : "");
       row.dataset.id = item.id;
-      row.innerHTML = '<canvas class="shop-ico" width="48" height="48"></canvas>' +
+      row.innerHTML = '<canvas class="shop-ico" width="56" height="56"></canvas>' +
         '<div class="info"><div class="title"></div><div class="desc"></div><div class="owned"></div><div class="why"></div></div>' +
         '<div class="buy-col"><div class="price"></div><span class="btn shop-buy">Buy</span></div>';
       row.querySelector(".title").textContent = item.name;
@@ -3664,13 +3699,13 @@
       else if (!run.catchSaid[k]) {
         /* the moment a kind becomes catchable, say so once */
         run.catchSaid[k] = true;
-        showNoticeToast("You can try to catch " + kindName(k) + " now. Get near one and press E (" + Math.round(((D.CAPTURE && D.CAPTURE.chance) || 0.1) * 100) + "% chance).", "is-ready");
+        showNoticeToast(kindName(k) + " can be caught now: defeat one and it stays down for a moment. Walk up and press E (" + Math.round(((D.CAPTURE && D.CAPTURE.chance) || 0.06) * 100) + "% chance).", "is-ready");
         sfx("ui");
       }
       if (r >= 1) ready.push(kindName(k));
       else if (r > bestR) { bestR = r; best = kindName(k) + " " + by[k] + "/" + need; }
     }
-    if (ready.length) return "Catch ready: " + ready.slice(0, 2).join(", ") + (ready.length > 2 ? " +" + (ready.length - 2) : "") + " (E)";
+    if (ready.length) return "Catch ready: defeat a " + ready.slice(0, 2).join(" or ") + (ready.length > 2 ? " (+" + (ready.length - 2) + ")" : "");
     return best ? "Catch: " + best : "";      /* 17z33: nothing to say until a kind is under way */
   }
   function noteCaptureKill() {
@@ -3786,12 +3821,24 @@
   /* Click-to-attack: returns the enemy under the latest canvas click/tap
    * (sprites stand above their feet, so the hit box leans upward). */
   var lastPvpClick = null;
+  var LAND_COL = { fire: "#ff8a2a", ice: "#bfe8ff", water: "#5ab8ff", slime: "#9ae05a", wind: "#e0f4ff", thunder: "#ffe14a", dark: "#a070e0", holy: "#fff4b0", nature: "#7ad04a" };
   function consumeEnemyClick() {
     var c = D.input && D.input.consumeClick ? D.input.consumeClick() : null;
     if (!c || !run || isEggForm(run.form)) return null;
     var w = c.world || screenToWorldPt(c);
     if (!w) return null;
     lastGroundClick = null;
+    if (c.strike) {
+      /* 17z33 (Isaac): right-click / hold / RT with nothing that way: your partner attacks that spot */
+      if (run.downed) return null;
+      lastStrikeClick = { x: Math.round(w.x), y: Math.round(w.y) };
+      run.strikeMark = { x: w.x, y: w.y, t: (D.GROUND_STRIKE && D.GROUND_STRIKE.sec) || 3 };
+      run.goMark = null;
+      addFloat(w.x, w.y - 22, "Attack here!", "#ffb24a");
+      sfx("ui");
+      return null;
+    }
+    run.strikeMark = null;
     var i, e, r, d, best = null, bestD = 1e15;
     var slack = c.type === "touch" ? 26 : 16;
     /* the gold arrow over the hologram is a button: clicking it opens the status window */
@@ -3850,7 +3897,11 @@
       }
       if (sc < bestSc) { bestSc = sc; best = e; }
     }
-    if (!best) { showNoticeToast("No enemy that way."); noticeToastTimer = 1.2; return; }
+    if (!best) {
+      /* 17z33: no enemy that way: attack the ground over there (water to freeze, grass to burn) */
+      if (ang != null && D.input.pushClick) { D.input.pushClick({ world: { x: run.x + Math.cos(ang) * 170, y: run.y + Math.sin(ang) * 170 }, type: "pad", strike: true }); return; }
+      showNoticeToast("No enemy that way."); noticeToastTimer = 1.2; return;
+    }
     if (D.input.pushClick) D.input.pushClick({ world: { x: best.x, y: best.y - (best.radius || 12) * 0.6 }, type: "pad" });
   }
   function focusedEnemy() {
@@ -4063,6 +4114,26 @@
     ctx.beginPath(); ctx.moveTo(44, 0); ctx.lineTo(30, -11); ctx.lineTo(30, 11); ctx.closePath(); ctx.fill(); ctx.stroke();
     ctx.restore();
   }
+  /* the spot your partner was told to attack (17z33): a target, shrinking as the order runs out */
+  function drawStrikeMarker() {
+    var g = run && run.strikeMark, max = (D.GROUND_STRIKE && D.GROUND_STRIKE.sec) || 3, u, r, a, k, x, y;
+    if (!g) return;
+    g.t -= frameStep;
+    if (g.t <= 0 || isEggForm(run.form)) { run.strikeMark = null; return; }
+    u = g.t / max; r = 14 + 6 * u; x = Math.round(g.x); y = Math.round(g.y);
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, 0.35 + u);
+    ctx.lineWidth = 3; ctx.strokeStyle = "rgba(10,8,20,0.75)";
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.stroke();
+    ctx.lineWidth = 2; ctx.strokeStyle = "#ffb24a";
+    ctx.beginPath(); ctx.arc(x, y, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * u); ctx.stroke();   /* empties as time runs out */
+    for (k = 0; k < 4; k++) {
+      a = k * Math.PI / 2 + (run.time || 0) * 1.5;
+      ctx.beginPath(); ctx.moveTo(x + Math.cos(a) * (r - 6), y + Math.sin(a) * (r - 6)); ctx.lineTo(x + Math.cos(a) * (r + 5), y + Math.sin(a) * (r + 5)); ctx.stroke();
+    }
+    ctx.fillStyle = "#fff0d0"; ctx.fillRect(x - 1, y - 1, 3, 3);
+    ctx.restore();
+  }
   function drawGoMarker() {
     var g = run && run.goMark, u, r;
     if (!g) return;
@@ -4204,6 +4275,18 @@
     if (!run || run.ended || run.downed || !D.world || !D.world.usableNear || !D.TERRAIN) return null;
     return D.world.usableNear(run.x, run.y, D.TERRAIN.useRadius || 78);
   }
+  /* 17z33 sweep: what E would do right now, in the same order as interactNow, so only that one shows the key
+   * (a spire chest, a Digimon to catch and a data cache can all be in reach at once) */
+  function interactWhat() {
+    if (!run || state !== "playing") return null;
+    if (D.farmGates && D.farmGates.inReach(run, nestList) && !isEggForm(run.form)) return "gate";
+    if (merchantInRange()) return "shop";
+    if (nestRepairInRange() || fenceSpotInRange() >= 0) return "siege";
+    if (usableProp()) return "prop";
+    if (missionAuth && chestInReach()) return "chest";
+    if (missionAuth && myCatchInReach()) return "catch";
+    return null;
+  }
   function tryUseProp() {
     var u = usableProp(), res;
     if (!u || !missionAuth) return false;
@@ -4212,6 +4295,43 @@
     return !!(res && res.ok);
   }
 
+  /* ---------- catching a defeated Digimon (17z33, Isaac) ---------- */
+  function mineId(owner) { return String(owner) === String(missionLocalId) || (!online() && owner === "local"); }
+  function myCatchInReach() {
+    var L = run && run.catches, i, c, R = (D.CAPTURE && D.CAPTURE.range) || 92, best = null, bd = R * R, d;
+    for (i = 0; i < (L || []).length; i++) { c = L[i]; if (!mineId(c[4])) continue; d = dist2(run.x, run.y, c[2], c[3]); if (d <= bd) { bd = d; best = c; } }
+    return best;
+  }
+  function catchResult(ok, form, x, y) {
+    if (x == null) { x = run.x; y = run.y; }
+    run.chipThrow = { x: run.x, y: run.y - 8, tx: x, ty: y - 8, t: 0.16, max: 0.16 };
+    run.captureFx = { x: x, y: y, t: 0.85, ok: ok, form: form };
+    burst(x, y, ok ? "#6ad0ff" : "#c0b8a0", ok ? 22 : 12, 160);
+    if (ok) { addFloat(x, y - 36, "Caught! " + kindName(form) + " joins you", "#6ad0ff"); sfx("level"); }
+    else { addFloat(x, y - 36, "It slipped away...", "#c0b8a0"); sfx("hurt"); }
+    updateHud();
+  }
+  function drawCatchSpot(c) {
+    var mine = mineId(c[4]), x = c[2], y = c[3], t = run.time || 0, left = c[5], near = mine && eTarget === "catch" && dist2(run.x, run.y, x, y) <= Math.pow((D.CAPTURE && D.CAPTURE.range) || 92, 2), lab, w, fade = left < 4 ? 0.45 + 0.4 * Math.abs(Math.sin(t * 8)) : 1;
+    ctx.save();
+    /* a ring on the ground that empties as time runs out */
+    ctx.globalAlpha = 0.9 * fade;
+    ctx.lineWidth = 3; ctx.strokeStyle = mine ? "#ffd23a" : "#8a94b8";
+    ctx.beginPath(); ctx.arc(x, y + 2, 26, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.min(1, left / ((D.CAPTURE && D.CAPTURE.waitSec) || 20))); ctx.stroke();
+    /* the Digimon, down on its side */
+    ctx.globalAlpha = 0.85 * fade;
+    ctx.translate(x, y); ctx.rotate(-Math.PI / 2 * 0.92);
+    try { if (D.sprites && D.sprites.drawEnemy) D.sprites.drawEnemy(ctx, c[1], 0, 6, 0, false, 1, 1); } catch (e) {}
+    ctx.restore();
+    ctx.save();
+    ctx.font = "bold 12px Trebuchet MS, sans-serif"; ctx.textAlign = "center";
+    lab = mine ? (near ? (D.input && D.input.prompt ? D.input.prompt("interact", "Catch") : "E: Catch") + " " + kindName(c[1]) + " (" + Math.round(((D.CAPTURE && D.CAPTURE.chance) || 0.06) * 100) + "%)" : "Walk up to catch " + kindName(c[1])) + "  \u00b7  " + Math.ceil(left) + " s"
+      : (((online() && online().playerName && online().playerName(c[4])) || "Another tamer") + "'s to catch");
+    w = ctx.measureText(lab).width + 14;
+    ctx.fillStyle = "rgba(8,10,24,0.85)"; ctx.fillRect(Math.round(x - w / 2), Math.round(y - 56), Math.round(w), 18);
+    ctx.fillStyle = mine ? (near ? "#ffd23a" : "#ffe9a8") : "#aab4ca"; ctx.fillText(lab, x, Math.round(y - 43));
+    ctx.restore();
+  }
   function tryCapture(opts) {
     opts = opts || {};
     if (!run || run.ended) return { ok: false, reason: "no run" };
@@ -4219,16 +4339,13 @@
       if ((opts.force || opts.roll != null || opts.chance != null || opts.free) && !missionAuth.allowDebugIntents) {
         return { ok: false, reason: "rejected" };
       }
-      var eA = opts.enemy || captureTarget();
-      var cap = missionAuth.act({ type: "capture", id: missionLocalId, enemyId: eA && eA._id });
+      /* 17z33: one try at a Digimon you beat, lying in reach (the host picks which; online the result comes back) */
+      var sp = myCatchInReach();
+      var cap = missionAuth.act({ type: "capture", id: missionLocalId, spot: sp ? sp[0] : null }) || { ok: false };
       applyMissionSnapshot(takeMissionSnapshot());
-      if (eA) {
-        run.chipThrow = { x: run.x, y: run.y - 8, tx: eA.x, ty: eA.y - 8, t: 0.16, max: 0.16 };
-        run.captureFx = { x: eA.x, y: eA.y, t: 0.85, ok: !!cap.ok, form: cap.form || eA.type };
-      }
-      if (cap.ok) { addFloat(run.x, run.y - 36, "Captured!", "#6ad0ff"); sfx("level"); }
+      if (cap.pending) return cap;
+      if (cap.tried) catchResult(!!cap.ok, cap.form, cap.x, cap.y);
       else if (cap.reason && cap.reason !== "rejected") addFloat(run.x, run.y - 28, cap.reason, "#ff8080");
-      else if (cap.chance != null) { addFloat(run.x, run.y - 36, "Broke free!", "#ff8080"); sfx("hurt"); }
       updateHud();
       return cap;
     }
@@ -5574,12 +5691,13 @@
     }
     spec.el.hidden = false;
     for (i = 0; i < l.length; i++) if (String(l[i].id) === spec.id) o = l[i];
-    sig = (spec.id || "me") + "|" + l.length + "|" + (o ? Math.round(10 * (o.hp || 0) / (o.maxHp || 1)) + "," + (o.form || "") + "," + (o.level || 1) : "");
+    sig = (spec.id || "me") + "|" + l.length + "|" + (run.downLeft != null ? Math.ceil(run.downLeft) : "") + "|" + (o ? Math.round(10 * (o.hp || 0) / (o.maxHp || 1)) + "," + (o.form || "") + "," + (o.level || 1) : "");
     if (sig === spec.sig) return;
     spec.sig = sig;
     html = "<button type='button' class='spec-arrow' data-spec='-1' aria-label='Previous'>&#9664;</button><div class='spec-mid'><small>" + (who ? "WATCHING" : "YOUR SPOT") + "</small><b>" +
       (who ? escTxt(who) : "You're down here") + "</b><span>" +
       (o ? escTxt((D.SPECIES[o.form] && D.SPECIES[o.form].name) || o.form || "") + " · Lv " + (o.level || 1) + " · " + Math.round(100 * (o.hp || 0) / (o.maxHp || 1)) + "% health" : (l.length ? "A teammate has to come here and hold to revive you" : "Nobody else is up")) +
+      (run.downLeft != null ? "</span><span class='spec-timer" + (run.downLeft <= 5 ? " is-low" : "") + "'>Back as a fresh egg in " + Math.ceil(run.downLeft) + " s, unless a friend revives you first" : "") +
       "</span><em>" + (l.length + 1) + " to watch · left / right to switch</em></div><button type='button' class='spec-arrow' data-spec='1' aria-label='Next'>&#9654;</button>";
     spec.el.innerHTML = html;
   }
@@ -5588,7 +5706,7 @@
   function updatePlaying(dt) {
     if (D.seasons && D.seasons.useMode && run) D.seasons.useMode(run.mode);   /* Night Siege's shorter days, on every screen */
     var inp = D.input.poll();
-    if (levelWin.t > 0 && levelWin.lock && inp) { inp.x = 0; inp.y = 0; }   /* choosing a skill solo: the pair is locked in place (mission-sim.js p.choosing); online you keep moving */
+    if (levelWin.t > 0 && levelWin.lock && inp) { inp.x = 0; inp.y = 0; }   /* choosing a skill: the pair is locked in place in its shield (mission-sim.js p.choosing), solo and online */
     if (missionAuth) {
       tickSpectate(inp);
       updatePlayingAuth(dt, inp);
@@ -6351,6 +6469,60 @@
     for (i = 0; i < (run.others || []).length; i++) {
       o = run.others[i];
       if (o.hungry && !(o.faint > 0) && !o.downed && !isEggForm(o.form)) drawFoodBubble(o.mx, monHeadY(o.form, o.my), !!o.starving, t + i);
+    }
+  }
+  /* Open World with friends (17z33): over a fallen friend's partner, how long until it starts over as an egg,
+   * as a ring that empties and the seconds in it, and what to do about it */
+  /* the skill-pick shield (17z33, Isaac): a bubble round the tamer and partner while the cards are up, so
+   * everyone can see they're out of it for now (they can't be hurt and don't attack) */
+  function pmCol(r, g, b, a) {
+    var gl = !!(ctx && ctx._r);
+    return gl ? "rgba(" + Math.round(r * a) + "," + Math.round(g * a) + "," + Math.round(b * a) + "," + a + ")" : "rgba(" + r + "," + g + "," + b + "," + a + ")";
+  }
+  function drawChoosingShields() {
+    var i, o, list = [];
+    if (run && run.choosing) list.push(run);
+    for (i = 0; i < (run.others || []).length; i++) { o = run.others[i]; if (o.choosing) list.push(o); }
+    for (i = 0; i < list.length; i++) {
+      o = list[i];
+      var cx = (o.x + o.mx) / 2, cy = (o.y + o.my) / 2 - 18, r = Math.max(46, Math.hypot(o.x - o.mx, o.y - o.my) / 2 + 38), tt = (run.time || 0) * 3 + i, k;
+      ctx.save();
+      /* plain see-through fills and rings (the GL canvas only does gradients on rectangles) */
+      /* the GL canvas blends as premultiplied but doesn't premultiply plain colours, so a see-through colour
+       * has to be handed over already multiplied by its alpha there (on a plain 2D canvas it's given as is) */
+      ctx.fillStyle = pmCol(124, 220, 255, 0.12); ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+      ctx.lineWidth = 7; ctx.strokeStyle = pmCol(124, 220, 255, 0.28); ctx.beginPath(); ctx.arc(cx, cy, r - 4, 0, Math.PI * 2); ctx.stroke();
+      ctx.lineWidth = 3; ctx.strokeStyle = pmCol(190, 245, 255, 0.6 + 0.3 * Math.sin(tt)); ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
+      /* a few hexagon glints round the rim */
+      ctx.fillStyle = "rgba(220,250,255,0.8)";
+      for (k = 0; k < 6; k++) { var a = tt * 0.4 + k * Math.PI / 3; ctx.fillRect(Math.round(cx + Math.cos(a) * r) - 2, Math.round(cy + Math.sin(a) * r) - 2, 4, 4); }
+      ctx.font = "bold 11px Trebuchet MS, sans-serif"; ctx.textAlign = "center";
+      var lab = o === run ? "Shielded: pick your skill" : "Picking a skill";
+      var w = ctx.measureText(lab).width + 12;
+      ctx.fillStyle = "rgba(8,14,30,0.82)"; ctx.fillRect(Math.round(cx - w / 2), Math.round(cy - r - 18), Math.round(w), 16);
+      ctx.fillStyle = "#c8f4ff"; ctx.fillText(lab, cx, Math.round(cy - r - 6));
+      ctx.restore();
+    }
+  }
+  function drawDownTimers() {
+    var i, o, x, y, left, full, T = D.DOWN_TIMER || { first: 15, more: 20 }, frac, lab, w;
+    for (i = 0; i < (run.others || []).length; i++) {
+      o = run.others[i];
+      if (!o.downed || o.downLeft == null) continue;
+      left = Math.max(0, o.downLeft); full = Math.max(left, o.downMax = Math.max(o.downMax || 0, left, T.first)); frac = full ? left / full : 0;
+      x = Math.round(o.mx); y = Math.round(o.my - 58);
+      ctx.save();
+      ctx.lineWidth = 5; ctx.strokeStyle = "rgba(8,10,24,0.85)"; ctx.beginPath(); ctx.arc(x, y, 17, 0, Math.PI * 2); ctx.stroke();
+      ctx.lineWidth = 4; ctx.strokeStyle = left <= 5 ? "#ff6a5a" : "#7cf0c0"; ctx.beginPath(); ctx.arc(x, y, 17, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * frac); ctx.stroke();
+      ctx.fillStyle = "rgba(8,10,24,0.8)"; ctx.beginPath(); ctx.arc(x, y, 14, 0, Math.PI * 2); ctx.fill();
+      ctx.font = "bold 15px Trebuchet MS, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillStyle = left <= 5 ? "#ffb0a8" : "#ffffff"; ctx.fillText(String(Math.ceil(left)), x, y + 1);
+      ctx.textBaseline = "alphabetic"; ctx.font = "bold 12px Trebuchet MS, sans-serif";
+      lab = (D.input && D.input.prompt ? D.input.prompt("interact", "Hold") : "Hold E") + " here to revive";
+      w = ctx.measureText(lab).width + 12;
+      ctx.fillStyle = "rgba(8,10,24,0.8)"; ctx.fillRect(Math.round(x - w / 2), y + 22, Math.round(w), 17);
+      ctx.fillStyle = "#b8ffe0"; ctx.fillText(lab, x, y + 35);
+      ctx.restore();
     }
   }
   var nameTags = [];
@@ -7146,7 +7318,6 @@
     var i, o, e, b, a, w, def, lv, ang, ox, oy, p;
     for (i = 0; i < orbs.length; i++) {
       o = orbs[i];
-      if (String(o.kind).indexOf("chest_") === 0) { drawChest(o.x, o.y, o.kind.slice(6), run.time); continue; }
       if (D.sprites.drawPickup) {
         if (o.kind === "xp" && D.PACING && D.PACING.xpOrbScale) { ctx.save(); ctx.translate(o.x, o.y); ctx.scale(D.PACING.xpOrbScale, D.PACING.xpOrbScale); D.sprites.drawPickup(ctx, o.kind, 0, 0, run.time); ctx.restore(); }
         else D.sprites.drawPickup(ctx, o.kind, o.x, o.y, run.time);
@@ -7305,6 +7476,7 @@
       }
     }
     var actors = [], propList, pi;
+    eTarget = interactWhat();
     function enqueue(yy, zz, fn) { actors.push({ y: yy, z: zz, draw: fn }); }
     nameTags.length = 0;
     /* farm gates (farm-gates.js): in the world, drawn by depth like everything else */
@@ -7364,7 +7536,7 @@
               ctx.beginPath(); ctx.ellipse(pr.x, pr.y - 62, 15, 36, 0, 0, Math.PI * 2); ctx.fill();
               ctx.restore();
             }
-            if (useNow && pr.key === useNow.key) {
+            if (useNow && pr.key === useNow.key && eTarget === "prop") {
               var label = (kh("interact") ? kh("interact").slice(1) + " " : "") + (pr.kind === "spire" ? "Break the spire" : "Open");
               ctx.save();
               ctx.font = "bold 13px Trebuchet MS, sans-serif"; ctx.textAlign = "center"; ctx.lineWidth = 3;
@@ -7490,6 +7662,9 @@
     }
     if (run.nest && run.nest.eggs) { run.nest.eggs.forEach(function (g, gi) { enqueue(g[1], 1, function () { drawNestEgg(g, gi); }); }); enqueue(run.nest.y + 60, 3, drawNestLabel);
       if (run.nest.fences) { run.nest.fences.forEach(function (f, fi) { enqueue(f[1], 1, function () { drawFence(f, fi); }); }); enqueue(run.nest.y + 200, 3, drawFenceLabel); } }
+    (run.catches || []).forEach(function (c) { enqueue(c[3], 1, function () { drawCatchSpot(c); }); });
+    var nearChest = eTarget === "chest" ? chestInReach() : null;
+    (run.spireChests || []).forEach(function (c) { enqueue(c[3], 1, function () { drawSpireChest(c, c === nearChest); }); });
     enqueue(run.my, 2, paintMon);
     enqueue(run.y, 2, paintTamer);
     if (run.rival && run.rival.eid != null) enqueue(run.rival.ty, 2, drawRivalTamer);
@@ -7614,6 +7789,7 @@
     drawMagnetRing();
     drawFocusMarker();
     drawGoMarker();
+    drawStrikeMarker();
     drawAim();
     for (i = 0; i < particles.length; i++) pDraw(particles[i]);
     if (D.attackFx) D.attackFx.draw(ctx);
@@ -7622,6 +7798,8 @@
     if (D.hitFx) D.hitFx.draw(ctx);
     drawNameTags();
     drawHungerBubbles();
+    drawDownTimers();
+    drawChoosingShields();
     drawVsAim();
     for (i = 0; i < floats.length; i++) {
       var f = floats[i];
@@ -9450,6 +9628,8 @@
     });
     D.input.on("pause", function () {
       if (state === "brawl" && D.brawl) { D.brawl.togglePause(); return; }
+      /* 17z33 (Isaac): Escape with the skill cards up closes them (and drops the shield) instead of pausing */
+      if (state === "playing" && levelWin.t > 0 && skillsUi.open) { toggleSkills(false); return; }
       if (state === "farm") return;
       togglePause();
     });
@@ -9478,10 +9658,10 @@
       if (nestRepairInRange()) { tryNestRepair(); return; }      /* Night Siege: rebuild a smashed egg */
       var fsp = fenceSpotInRange(); if (fsp >= 0) { startFenceBuild(fsp); return; }   /* Night Siege: hold to put up a fence */
       if (usableProp()) { tryUseProp(); return; }
-      ct = captureTarget();
-      if (ct && chargeReadyFor(ct)) { tryCapture({ enemy: ct }); return; }
+      if (missionAuth && chestInReach()) { tryOpenChest(); return; }   /* a spire's chest (17z33) */
+      if (missionAuth && myCatchInReach()) { tryCapture(); return; }   /* a Digimon you beat, lying there to be caught (17z33) */
       if (!dnaBox && dnaMate()) { dnaAsk(); return; }
-      if (ct) tryCapture({ enemy: ct });   /* not ready yet: say why */
+      if (!missionAuth) { ct = captureTarget(); if (ct) tryCapture({ enemy: ct }); }
     }
     D.input.on("feed", function () { toggleFeedMenu(); });
 

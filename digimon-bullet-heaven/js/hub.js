@@ -85,7 +85,8 @@
     document.body.classList.add("has-hub");
 
     Array.prototype.forEach.call(hub.querySelectorAll("[data-main]"), function (b) { b.addEventListener("click", function () { pickMain(b.getAttribute("data-main")); }); });
-    $("hub-eggs").addEventListener("click", function () { var m = M(); if (m) { m.eggsSeen(); m.go("egg"); } });
+    /* 17z33 (Isaac): every egg at once, in its numbered spot (egg-grid.js), not the one-at-a-time picker */
+    $("hub-eggs").addEventListener("click", function () { var m = M(); if (!m) return; m.eggsSeen(); if (D.eggGrid) D.eggGrid.open({ onPick: function () { refreshHub(); } }); else m.go("egg"); });
     $("hub-hatch").addEventListener("click", function () { var m = M(); if (m) m.go("hatchery"); });
     $("hub-disc").addEventListener("click", function () { press("btn-log"); });
     $("hub-join").addEventListener("click", function () { press("btn-online-join"); });

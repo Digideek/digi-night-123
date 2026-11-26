@@ -24,6 +24,13 @@
   var RARE = { sweet_nut: "#ffcf5a", protein_steak: "#ff6a5a", golden_meat: "#ffd84a", digi_seed: "#3ad8a8", evo_fruit: "#c080ff", moldy_meat: "#9ab060" };
   for (i in RARE) { FILES[i] = [i]; GLOW[i] = RARE[i]; ICONS[i] = i; ICONS[i + "Pack"] = i; }
   for (i = 0; i < CROPS.length; i++) { FILES["seed_" + CROPS[i]] = ["seed_" + CROPS[i]]; GLOW["seed_" + CROPS[i]] = CROP_GLOW[CROPS[i]]; }
+  /* 17z33 (Isaac: "in Jijimon's shop only the Digi Meat looked good, the rest looked square, like Paint"): every
+   * shop item gets a picture in the meat's style (scripts/art/make_items.py), in the shop, the Bag and the farm */
+  var SHOP_ART = { sprintBoots: "shop_boots", ticket: "shop_ticket", gateKey: "shop_gatekey", lure: "shop_lure", map: "shop_map",
+    eraser: "shop_eraser", crest: "shop_crest", digimental: "shop_digimental", dm_courage: "shop_dm_courage", dm_miracles: "shop_dm_miracles",
+    dm_light: "shop_dm_light", dm_knowledge: "shop_dm_knowledge", dm_love: "shop_dm_love", dm_hope: "shop_dm_hope" };
+  for (i = 0; i < CROPS.length; i++) ICONS["seed_" + CROPS[i]] = "seed_" + CROPS[i];
+  for (i in SHOP_ART) { FILES[SHOP_ART[i]] = [SHOP_ART[i]]; ICONS[i] = SHOP_ART[i]; }
 
   function load(kind) {
     var list = FILES[kind], out = [], left = list.length;
@@ -100,6 +107,7 @@
   function getIcon(name) {
     var k = ICONS[name];
     if (k && art[k]) return art[k][0];
+    if (/^dm_/.test(name)) return getIcon("digimental");   /* a Digimental's own picture hasn't loaded: the plain one */
     return origIcon ? origIcon(name) : null;
   }
 

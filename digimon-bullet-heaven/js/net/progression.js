@@ -20,7 +20,7 @@
   function rarityApi() { return (D.net && D.net.rarity) || (D.rarity) || null; }
 
   var INTENTS = {
-    capture: 1, hatch: 1, evolve: 1, "evolve.hold": 1, "pvp.flag": 1, "side.pick": 1, "dna.ask": 1, "dna.answer": 1, burst: 1, "breather.end": 1, "prop.use": 1, "stat.add": 1, "skill.add": 1, "skill.equip": 1, levelup: 1,
+    capture: 1, hatch: 1, evolve: 1, "evolve.hold": 1, "pvp.flag": 1, "side.pick": 1, "dna.ask": 1, "dna.answer": 1, burst: 1, "breather.end": 1, "prop.use": 1, "chest.open": 1, "stat.add": 1, "skill.add": 1, "skill.equip": 1, levelup: 1,
     "shop.buy": 1,
     "farm.enter": 1, "farm.tick": 1, "farm.pet": 1, "farm.feed": 1, "farm.plant": 1, "farm.harvest": 1,
     "field.feed": 1,
@@ -383,10 +383,22 @@
     return { ok: true, kind: kind, tier: res.tier, enemyType: res.enemyType || null };
   };
 
+  /* 17z33: E beside a spire's chest (spire-sim.js): open it, whoever you are */
+  Progression.prototype._handlers["chest.open"] = function (intent) {
+    var sim = this.sim(), p = this.player(intent.id);
+    if (!sim || !p || !sim._takeChest) return { ok: false, reason: "no-run" };
+    if (sim.phase && sim.phase !== "playing") return { ok: false, reason: "Not now" };
+    if (p.downed) return { ok: false, reason: "Not while down" };
+    var c = sim._takeChest(p, intent.spot == null ? null : intent.spot);
+    if (!c) return { ok: false, reason: (sim.spireChests || []).length ? "Get closer" : "Nothing to open" };
+    return { ok: true, chest: c.tier };
+  };
+
   Progression.prototype._handlers["breather.end"] = function (intent) {
     var sim = this.sim(), p = this.player(intent.id);
     if (!sim || !p) return { ok: false, reason: "no-player" };
-    p.monInvuln = Math.min(p.monInvuln || 0, 0.35);
+    /* picked or closed: the shield drops and everything resumes at once (a moment's grace) */
+    if (p.choosing > 0 || sim.coop) { p.monInvuln = Math.min(p.monInvuln || 0, 0.35); p.tamerInvuln = Math.min(p.tamerInvuln || 0, 0.35); }
     p.choosing = 0;
     if (!sim.coop) sim.enemyFreeze = 0;
     return { ok: true };
@@ -394,6 +406,7 @@
   Progression.prototype._handlers.burst = function (intent) {
     var sim = this.sim(), p = this.player(intent.id);
     if (!sim || !p || !sim.startBurst) return { ok: false, reason: "no-player" };
+    if (p.choosing > 0) return { ok: false, reason: "Pick your skill first" };      /* no warp from inside the shield */
     var r = sim.startBurst(p);
     if (r && r.ok) p.burstUses = (p.burstUses || 0) + 1;      /* Story's warp goal */
     return r;
@@ -819,47 +832,24 @@
     var sim = this.sim();
     if (!p || !sim) return { ok: false, reason: "no-run" };
     if (sim.phase && sim.phase !== "playing" && !this.allowDebugIntents) return { ok: false, reason: "not-playing" };
-    var e = null, i;
-    if (intent.enemyId != null) {
-      for (i = 0; i < sim.enemies.length; i++) if (sim.enemies[i]._id === intent.enemyId) e = sim.enemies[i];
+    /* 17z33 (Isaac): you catch a Digimon you've defeated, lying where it fell (mission-sim.js _catchSpot): yours,
+     * in reach, one try. It goes either way: caught, or it fades. */
+    var data = this.data, C = data.CAPTURE || {}, R = C.range || 92, L = sim.catches || [], i, c, d, best = null, bd = R * R, other = null;
+    for (i = 0; i < L.length; i++) {
+      c = L[i]; d = Math.pow(c.x - p.x, 2) + Math.pow(c.y - p.y, 2);
+      if (intent.spot != null && c.id !== intent.spot) continue;
+      if (d > R * R) continue;
+      if (c.owner !== p.id) { other = c; continue; }
+      if (d <= bd) { bd = d; best = c; }
     }
-    if (!e) {
-      var best = null, bestD = 1e15, d;
-      for (i = 0; i < sim.enemies.length; i++) {
-        if (sim.enemies[i].dead || sim.enemies[i].virus) continue;
-        d = Math.pow(sim.enemies[i].x - p.x, 2) + Math.pow(sim.enemies[i].y - p.y, 2);
-        if (d < bestD) { bestD = d; best = sim.enemies[i]; }
-      }
-      e = best;
-    }
-    if (!e || e.dead) return { ok: false, reason: "No foe nearby" };
-    var data = this.data;
-    var cap = data.CAPTURE || { hpThreshold: 0.35, reserveMax: 3 };
-    var def = (data.ENEMIES && data.ENEMIES[e.type]) || {};
-    if (e.virus) return { ok: false, reason: "Infected Digimon can't be caught" };
-    if (def.boss && !e.mega) return { ok: false, reason: "Can't capture bosses" };
-    /* Catching: you must have defeated enough of this exact kind this run.
-     * Then it is a flat, small chance, and the tally for that kind starts
-     * over whether it works or not. */
-    var need = data.captureKoNeeded ? data.captureKoNeeded(e) : 30;
-    p.killsBy = p.killsBy || {};
-    var have = p.killsBy[e.type] || 0;
-    var nm = (data.SPECIES && data.SPECIES[e.type] && data.SPECIES[e.type].name) || (def && def.name) || e.type;
-    if (have < need) {
-      return { ok: false, reason: "Defeat " + (need - have) + " more " + nm, blocked: "charge", have: have, need: need };
-    }
-    p.killsBy[e.type] = 0;
-    p.captureKills = 0;
-    var chance = cap.chance != null ? cap.chance : 0.1;
+    if (!best) return { ok: false, reason: other ? "That one is for the tamer who beat it" : "Nothing to catch here" };
+    L.splice(L.indexOf(best), 1);
+    var chance = C.chance != null ? C.chance : 0.06;
     var roll = sim.rng ? sim.rng() : Math.random();
     var success = roll < chance;
-    if (success) {
-      e.dead = true;
-      e.hp = 0;
-      this._joinCaptured(p, sim, e.type);
-    }
-    this.emit({ type: "capture", id: p.id, ok: success, form: e.type, chance: chance, enemyId: e._id, x: e.x, y: e.y });
-    return { ok: success, chance: chance, form: e.type };
+    if (success) this._joinCaptured(p, sim, best.type);
+    this.emit({ type: "capture", id: p.id, ok: success, form: best.type, chance: chance, x: best.x, y: best.y, spot: best.id });
+    return { ok: success, chance: chance, form: best.type, x: best.x, y: best.y, tried: true };
   };
 
   Progression.prototype._joinCaptured = function (p, sim, form) {

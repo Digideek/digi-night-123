@@ -1946,7 +1946,9 @@
     marks.push({ x: e.x, y: e.y, r: r, fam: MARK_SHAPE[st.fam] ? st.fam : "beast", st: st, t: 0, max: low() ? MARK_LIFE * 0.6 : MARK_LIFE, v: (Math.random() * 3) | 0 });
   }
   function markRng(seed) { var x = seed | 0 || 1; return function () { x = (x * 1103515245 + 12345) & 0x7fffffff; return x / 0x7fffffff; }; }
-  function bakeMark(fam, R, v, st) {
+  /* (17z33 sweep: this was also called bakeMark, so it replaced the ultimate's ground mark above and that one
+   * crashed on its arguments; renamed) */
+  function bakeMarkArt(fam, R, v, st) {
     var key = fam + "|" + R + "|" + v + "|" + (st.look.glow || ""), c = markCv[key], g, N, rnd2, pal = st.look.pal, P;
     if (c) return c;
     N = R * 2 + 3; c = document.createElement("canvas"); c.width = c.height = N; g = c.getContext("2d");
@@ -2017,7 +2019,7 @@
     ctx.imageSmoothingEnabled = false;
     for (i = 0; i < marks.length; i++) {
       m = marks[i]; R = Math.max(5, Math.round(m.r / MARK_ART));
-      c = bakeMark(m.fam, R, m.v, m.st); sz = c.width * MARK_ART;
+      c = bakeMarkArt(m.fam, R, m.v, m.st); sz = c.width * MARK_ART;
       al = Math.min(1, m.t / 0.15) * Math.min(1, (m.max - m.t) / 1.5);
       ctx.globalCompositeOperation = "source-over"; ctx.globalAlpha = al;
       ctx.drawImage(c, Math.round(m.x - sz / 2), Math.round(m.y - sz / 2), sz, sz);

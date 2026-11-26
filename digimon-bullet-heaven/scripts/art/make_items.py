@@ -220,24 +220,145 @@ RARE = (('sweet_nut', sweet_nut), ('protein_steak', protein_steak), ('golden_mea
 
 SEEDS = (('carrot', '#f08a28'), ('cucumber', '#5cb848'), ('tomato', '#e83a30'), ('corn', '#f4d040'), ('cabbage', '#9ad860'), ('potato', '#c8a060'))
 
-def seed(col):
-    """A folded paper seed packet with the crop's colour on the label."""
-    p = Pen(); paper = rgb('#f3e6c0'); c = rgb(col); sprout = rgb('#1f4a1a')
+def seed(col, crop=None):
+    """A folded paper seed packet; the label shows the crop itself (its shape tells them apart, not just its colour)."""
+    p = Pen(); paper = rgb('#f3e6c0'); c = rgb(col); leaf = rgb('#3a9a2a')
     p.poly([(7, 8), (21, 8), (22, 25), (6, 25)], paper)
     p.poly([(6, 4), (22, 4), (21, 9), (7, 9)], c)                              # folded top
     p.line([(8, 6), (20, 6)], lt(c))
-    p.ell(9, 12, 19, 22, c)                                                    # label
-    p.line([(14, 20), (14, 15)], sprout); p.poly([(14, 16), (11, 13), (13, 13)], sprout, edge=False); p.poly([(14, 15), (17, 12), (16, 15)], sprout, edge=False)
-    p.px(11, 14, WHITE)
+    if crop == 'carrot':
+        p.poly([(11, 13), (17, 13), (14, 23)], c); p.line([(12, 16), (14, 16)], dk(c))
+        p.poly([(14, 13), (11, 10), (13, 11)], leaf, edge=False); p.poly([(14, 13), (17, 10), (15, 11)], leaf, edge=False)
+    elif crop == 'cucumber':
+        p.oval(14, 17, 3, 6.5, 0.5, c); p.px(13, 15, lt(c)); p.px(15, 19, lt(c)); p.px(14, 13, WHITE)
+    elif crop == 'tomato':
+        p.ell(9, 13, 19, 22, c); p.poly([(14, 12), (12, 14), (14, 13.5), (16, 14)], leaf, edge=False); p.px(11, 15, WHITE)
+    elif crop == 'corn':
+        p.oval(14, 17, 3.4, 6, 0, c)
+        for yy in (14, 17, 20): p.px(13, yy, dk(c)); p.px(15, yy + 1, dk(c))
+        p.poly([(11, 23), (10, 15), (13, 20)], leaf, edge=False); p.poly([(17, 23), (18, 15), (15, 20)], leaf, edge=False)
+    elif crop == 'cabbage':
+        p.ell(9, 12, 19, 22, c); p.line([(14, 13), (14, 21)], dk(c)); p.line([(11, 15), (14, 18)], dk(c)); p.line([(17, 15), (14, 18)], dk(c))
+    elif crop == 'potato':
+        p.oval(14, 17, 5.4, 4, 0.3, c)
+        for xx, yy in ((12, 16), (15, 18), (16, 15)): p.px(xx, yy, dk(c))
+    else:
+        p.ell(9, 12, 19, 22, c)
     return p.finish()
+
+# ---------------------------------------------------------------- Jijimon's shop (17z33: "everything but the meat looked
+# square, like I made it in Paint"). Same 28x28 cel shading and tinted outline as the meat.
+def boots():
+    """Sprint Boots: a red running boot with a white sole, laces and wind streaks."""
+    p = Pen(); c = rgb('#e2423a'); sole = rgb('#f4f0e6'); lace = rgb('#ffe08a'); wind = rgb('#9ad8ff')
+    p.poly([(10, 5), (17, 5), (17, 14), (24, 16), (25, 20), (8, 20), (9, 12)], c)
+    p.rect(8, 20, 25, 23, sole)
+    p.ell(9, 4, 18, 8, c)
+    for y in (9, 12, 15): p.line([(12, y), (16, y + 1)], lace)
+    p.line([(18, 15), (23, 17)], dk(c))
+    p.px(11, 7, WHITE); p.px(12, 6, WHITE)
+    for y, x0 in ((10, 1), (14, 2), (18, 3)): p.line([(x0, y), (x0 + 4, y)], wind)
+    return p.finish()
+
+def ticket():
+    """Training Ticket: a gold ticket with notched ends, a dashed tear line and a little dumbbell."""
+    p = Pen(); c = rgb('#f2b632'); stub = rgb('#ffd96a'); ink = rgb('#8a4a10')
+    pts = [(3, 8), (25, 8), (25, 12), (23, 14), (25, 16), (25, 20), (3, 20), (3, 16), (5, 14), (3, 12)]
+    p.poly([(x, y) for x, y in pts], c)
+    p.rect(18, 9, 24, 19, stub, edge=False)
+    for y in range(9, 20, 2): p.px(17, y, ink)
+    p.line([(7, 14), (14, 14)], ink, 1)
+    p.rect(6, 12, 7, 16, ink, edge=False); p.rect(14, 12, 15, 16, ink, edge=False)
+    p.ell(19, 12, 23, 16, rgb('#e2423a'))
+    p.px(5, 10, WHITE); p.px(6, 10, WHITE)
+    return p.finish()
+
+def gate_key():
+    """Gate Key: a chunky brass key with a round bow and a leaf on it (it opens farm gates)."""
+    p = Pen(); c = rgb('#e2a624'); leaf = rgb('#58c040')
+    p.line([(12, 15), (23, 24)], dk(c), 5); p.line([(12, 15), (23, 24)], c, 3)
+    p.poly([(19, 22), (22, 19), (24, 21), (21, 24)], c)
+    p.poly([(16, 20), (18, 18), (20, 20), (18, 22)], c)
+    p.ell(3, 3, 16, 16, c)
+    p.ell(6, 6, 13, 13, rgb('#7a4a10'), edge=False)
+    p.poly([(9, 12), (8, 8), (12, 7), (11, 11)], leaf, edge=False)
+    p.px(5, 6, WHITE); p.px(6, 5, WHITE)
+    return p.finish()
+
+def lure():
+    """Lure: a tall fishing float (red cap, white body, a stick below) on its line, with sparkles that call them over."""
+    p = Pen(); top = rgb('#e8344a'); bot = rgb('#f4f4f4'); line = rgb('#9aa6c0'); stick = rgb('#ffd040')
+    p.line([(14, 0), (14, 4)], line)
+    p.rect(13, 3, 15, 6, top)
+    p.ell(9, 5, 19, 22, bot)
+    p.d.chord([9, 5, 19, 22], 180, 360, fill=top, outline=dk(top))
+    p.rect(13, 21, 15, 26, stick)
+    p.px(11, 8, WHITE); p.px(12, 7, WHITE); p.px(11, 9, lt(top))
+    sparkle(p, 23, 7); sparkle(p, 5, 18, False); sparkle(p, 22, 21, False)
+    return p.finish()
+
+def treasure_map():
+    """Treasure Map: a rolled parchment, half open, a dotted path to a red X."""
+    p = Pen(); paper = rgb('#ecd29a'); roll = rgb('#c89a5a'); path = rgb('#8a5a2a'); x = rgb('#d8302a')
+    p.poly([(5, 7), (23, 5), (24, 21), (6, 23)], paper)
+    p.ell(2, 5, 8, 25, roll)
+    p.ell(21, 3, 26, 23, roll)
+    for k, (px_, py) in enumerate(((9, 19), (11, 17), (13, 16), (15, 14), (17, 12))): p.px(px_, py, path)
+    p.line([(17, 8), (21, 12)], x, 2); p.line([(21, 8), (17, 12)], x, 2)
+    p.line([(10, 9), (13, 10)], path)
+    p.px(4, 8, WHITE)
+    return p.finish()
+
+def eraser():
+    """Care Reset: a soft pink eraser with a blue sleeve, rubbing out a little care-mistake mark."""
+    p = Pen(); pink = rgb('#f48aa8'); sleeve = rgb('#3a7ae0'); smudge = rgb('#c8b8d0')
+    p.oval(12, 13, 9, 5.4, -0.55, pink)
+    p.poly([(14, 4), (22, 9), (17, 17), (9, 12)], sleeve)
+    p.line([(13, 7), (19, 11)], lt(sleeve))
+    p.line([(3, 24), (9, 22)], smudge, 2); p.line([(12, 25), (16, 23)], smudge, 1)
+    p.px(7, 13, WHITE); p.px(8, 12, WHITE)
+    sparkle(p, 23, 21, False)
+    return p.finish()
+
+def crest():
+    """Crest of Courage: a rounded gold tag on a cord, with an orange flame set in it (an original emblem)."""
+    p = Pen(); gold = rgb('#e2a624'); inset = rgb('#6a2a1a'); fl = rgb('#ff8a2a'); core = rgb('#ffe060'); cord = rgb('#c8302a')
+    p.line([(9, 1), (14, 5), (19, 1)], cord, 1)
+    p.poly([(6, 5), (22, 5), (22, 16), (14, 26), (6, 16)], gold)
+    p.ell(5, 4, 9, 8, gold, edge=False); p.ell(19, 4, 23, 8, gold, edge=False)
+    p.poly([(9, 8), (19, 8), (19, 15), (14, 22), (9, 15)], inset, edge=False)
+    p.poly([(14, 9), (18, 15), (16, 19), (12, 19), (10, 15), (12, 13), (13, 15)], fl, edge=False)
+    p.poly([(14, 13), (16, 17), (14, 19), (12, 17)], core, edge=False)
+    p.px(8, 7, WHITE); p.px(9, 6, WHITE)
+    return p.finish()
+
+DIGIMENTALS = (('dm_courage', '#f47a22'), ('dm_miracles', '#f2c020'), ('dm_light', '#f272aa'),
+               ('dm_knowledge', '#9a48e0'), ('dm_love', '#e0264a'), ('dm_hope', '#3cc070'), ('digimental', '#a9b7c9'))
+
+def digimental(col):
+    """A Digimental: a shining egg with a horn on top and a round gem in its face, in that one's colour."""
+    p = Pen(); c = rgb(col); band = rgb('#e2a624'); gem = mix(rgb(col), WHITE, 0.45)
+    p.poly([(14, 1), (17, 7), (11, 7)], band)
+    p.ell(6, 5, 22, 26, c)
+    p.line([(7, 17), (21, 17)], band, 2)
+    p.ell(11, 11, 17, 17, gem)
+    p.px(13, 12, WHITE)
+    p.px(9, 9, WHITE); p.px(10, 8, WHITE); p.px(9, 10, lt(c))
+    sparkle(p, 23, 5, False)
+    return p.finish()
+
+SHOP = (('shop_boots', boots), ('shop_ticket', ticket), ('shop_gatekey', gate_key), ('shop_lure', lure),
+        ('shop_map', treasure_map), ('shop_eraser', eraser), ('shop_crest', crest))
 
 def main():
     out = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'assets', 'items', 'pickups'); os.makedirs(out, exist_ok=True)
     frames = [('meat', meat()), ('fish', fish()), ('berry', berry()), ('xp_0', xp(0)), ('xp_1', xp(1))]
     frames += [('bits_%d' % i, bits(i)) for i in range(4)]
-    frames += [('seed_' + n, seed(c)) for n, c in SEEDS]
+    frames += [('seed_' + n, seed(c, n)) for n, c in SEEDS]
     frames += [(n, f()) for n, f in RARE]
     frames += [('wood', wood()), ('evo', evo())]
+    frames += [(n, f()) for n, f in SHOP]
+    frames += [('shop_' + n, digimental(c)) for n, c in DIGIMENTALS]
     for name, im in frames: im.save(os.path.join(out, name + '.png'))
     if len(sys.argv) > 1:
         Z = 6; sheet = Image.new('RGBA', (len(frames) * S * Z, S * Z), (74, 122, 58, 255))

@@ -291,11 +291,13 @@
     ctx.partyReviveCharge = 1;
     if (ctx.run) ctx.run.partyReviveCharge = 1;
     ctx.reviveHold = null;
+    if (ctx.players) for (var i = 0; i < ctx.players.length; i++) if (ctx.players[i]) ctx.players[i].reviveHold = null;
     return 1;
   }
 
   function clearHold(ctx) {
     if (ctx) ctx.reviveHold = null;
+    if (ctx && ctx.players) for (var i = 0; i < ctx.players.length; i++) if (ctx.players[i]) ctx.players[i].reviveHold = null;   /* each tamer's own (17z33) */
     if (ctx && ctx.run) ctx.run.reviveHold = null;
   }
 

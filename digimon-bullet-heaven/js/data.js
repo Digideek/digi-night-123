@@ -17,9 +17,11 @@
     starveHpPerSec: 2.0,
     feedFullness: 30,
     feedHappiness: 10,
-    meatDropChance: 0.22,
-    eliteMeatDropChance: 0.6,
-    bossMeatDropChance: 1,
+    /* 17z33 (Isaac: "food needs to be at least 50% more rare, it's too readily available"): half as often from
+     * everything (was 0.22 / 0.6 / 1: a boss no longer always drops food). Jijimon's 3 meat a visit is unchanged. */
+    meatDropChance: 0.11,
+    eliteMeatDropChance: 0.3,
+    bossMeatDropChance: 0.5,
     toyDropChance: 0.045,
     worldFoodEvery: 7.5,
     toyHappiness: 20,
@@ -299,7 +301,9 @@
    * every enemy stands still. No countdown: it ends when the window closes or the point is spent
    * (`time` is only a backstop in case a window never closes). Online the others cannot be made
    * to wait, so the levelling partner alone is safe, for `coopTime` seconds at most. */
-  var LEVEL_PAUSE = { time: 600, coopTime: 20 };
+  /* time: solo (the world waits). coopTime: online, where the world goes on (17z33, Isaac: 20 -> 40 s, and you sit in a
+   * shield: the pair stays put, can't be hurt and doesn't attack, until you pick or close the window) */
+  var LEVEL_PAUSE = { time: 600, coopTime: 40 };
   /* Level-up cards: each skill point comes with `count` random skills to
    * choose from (weights: a move not yet learned, one already known, a
    * mastery). New skills are learned only from a card; the point can go
@@ -362,6 +366,12 @@
    * puddle, melts ice to a puddle and sets goo alight.  ice freezes a puddle into a
    * sheet and smothers fire.  wind fans fire wider and dries puddles.
    * Times are halved on bosses. Enemy hits do not apply any of this. */
+  /* 17z33 (Isaac: "right-click the ground and my Digimon attacks that spot, so Ice can freeze water or Fire can
+   * light the grass"): right-click (touch: hold on the ground; controller: RT with no enemy that way) and the partner
+   * walks within `stand` of the spot and aims every move at it for `sec` seconds. Each move that fires there leaves
+   * its element on the ground for sure (fire burns grass, ice freezes water, water soaks, slime goo, wind fans flames).
+   * Not further than `maxRange` from the tamer. Clicking an enemy or the ground (left) ends it. */
+  var GROUND_STRIKE = { sec: 3, maxRange: 380, stand: 70, mark: 1.2 };
   var STATUS = {
     fire:    { s: "burn",   chance: 0.25, time: 3,   dps: 0.25 },      /* dps: share of the hit's damage dealt each second */
     ice:     { s: "freeze", chance: 0.15, time: 1.2, wetMul: 1.7 },
@@ -525,7 +535,7 @@
      * sets of rules under it (group "survival"); Story, Night Siege and Versus are their own. */
     list: [
       { id: "story", group: "story", name: "Story", short: "Learn with Jijimon", blurb: "Jijimon gives you one goal at a time and the rest of the game opens up as you go. Solo or with friends: the party shares the goals." },
-      { id: "open", group: "survival", name: "Open World", short: "Respawn", blurb: "Your partner falls? It starts over as an egg near the start. Same map, same tamer, keep your base level." },
+      { id: "open", group: "survival", name: "Open World", short: "Revive", blurb: "With friends: fall, and a friend can revive you where you fell before your timer runs out (15 s, then 20 s longer each time). Too late, and you start over as an egg near the start. Everyone down: the run is over. Alone: one life." },
       { id: "survival", group: "survival", name: "One Life", short: "One life", blurb: "One life. When your partner falls, the run is over." },
       { id: "ranked", group: "survival", name: "Ranked", short: "Hardcore", blurb: "One life, no CPU partners, scored for the Ranked board.", ranked: true },
       { id: "weekly", group: "survival", name: "Weekly Map", short: "This week", blurb: "One life on this week's map: the same world for everyone. Scored for the Weekly board.", ranked: true },
@@ -734,12 +744,14 @@
   var LAB = {
     cost: [25, 50, 90, 140, 200],          // DigiCoins for level 1..5 of any upgrade
     runBitsPer: 8,                          // a finished run pays 1 DigiCoin per this much rank XP
+    /* upgrades taken out of the Lab: whatever was spent on them is given back once (lab.js refundRetired).
+     * Farm Pass (17z33, Isaac): longer farm visits, but the farm has no time limit any more. */
+    retired: { farm: { name: "Farm Pass" } },
     list: [
       { id: "vital",  name: "Vital Data",  stat: "hp",     per: 0.02,  unit: "%", text: "Partner max health" },
       { id: "power",  name: "Battle Data", stat: "dmg",    per: 0.015, unit: "%", text: "Damage from every move" },
       { id: "scan",   name: "Scan Range",  stat: "magnet", per: 0.05,  unit: "%", text: "Pickup range" },
       { id: "study",  name: "Study Data",  stat: "xp",     per: 0.02,  unit: "%", text: "Job XP gained" },
-      { id: "farm",   name: "Farm Pass",   stat: "farm",   per: 6,     unit: "s", text: "Longer Digi Farm visits" },
       { id: "bits",   name: "Bit Finder",  stat: "bits",   per: 0.05,  unit: "%", text: "Bits found in a run" },
       { id: "warp",   name: "Warp Coil",   stat: "burst",  per: 0.04,  unit: "%", text: "Warp meter fills by itself faster" },
       { id: "swift",  name: "Swift Data",  stat: "speed",  per: 0.01,  unit: "%", text: "Partner move speed" },
@@ -926,7 +938,10 @@
     group: { min: 3, max: 4, spread: 44 },
     /* 17z33: a small magnet to start (you nearly walk over a drop to take it); pickup-range boosts grow it.
      * Drops don't drift: they wait until they're inside it. */
-    magnetRadius: 50, magnetSpeed: 430, levelMagnet: 650, xpOrbScale: 1.35,
+    magnetRadius: 50, magnetSpeed: 430,
+    /* 17z33 (Isaac: "for my friend the gems didn't come, he had to stand on them"): the host sees a guest where it
+     * was a moment ago, so a guest's pull reaches this much further to make up the lag (about 0.25 s of walking) */
+    remoteMagnet: 42, levelMagnet: 650, xpOrbScale: 1.35,
   };
 
   var LEASH = {
@@ -1572,8 +1587,13 @@
     radius: 80,
     hpRatio: 0.4,
     tamerHpRatio: 0.5,
-    minLiving: 2
+    minLiving: 1           /* 17z33 (Isaac): the last one standing can pick a friend up (was 2: no last-survivor revive) */
   };
+  /* Survival, Open World (17z33, Isaac). Alone, one death ends the run. With friends you go down and a timer
+   * starts: first `first` seconds, `more` longer each time after. A friend who reaches your partner before it runs
+   * out revives you where you fell, Digimon and all; if it runs out, you start over near the start as a fresh egg
+   * (modes-sim.js _respawn). Everyone down at once: the run is over. */
+  var DOWN_TIMER = { first: 15, more: 20 };
 
   /* Mission weather (the list of skies and their numbers) lives in js/weather.js. */
 
@@ -1816,6 +1836,7 @@
     RIVAL: RIVAL,
     VIRUS: VIRUS,
     WORLD_EVENTS: WORLD_EVENTS,
+    DOWN_TIMER: DOWN_TIMER,
     /* where the farm partner walks this frame: { mx, my, moving } (farm.js and progression.js both use it) */
     farmFollow: function (x, y, mx, my, dt, cfg) {
       var f = (cfg && cfg.follow) || { gap: 84, leash: 120 }, dx = x - mx, dy = y - my, d = Math.sqrt(dx * dx + dy * dy), tx, ty, k;
@@ -1831,6 +1852,7 @@
     TROPHY: TROPHY,
     GRASSFIRE: GRASSFIRE,
     STATUS: STATUS,
+    GROUND_STRIKE: GROUND_STRIKE,
     LORD: LORD,
     REGION: REGION,
     ALLY: ALLY,

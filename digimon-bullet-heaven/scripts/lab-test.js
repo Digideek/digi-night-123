@@ -24,12 +24,21 @@ ok(D.lab.buy("vital").ok && D.cosmetics.bits() === 5, "level 2 costs " + L.cost[
 ok(!D.lab.buy("vital").ok && D.lab.level("vital") === 2, "level 3 refused at 5 DigiCoins");
 ok(JSON.parse(store.dbh_profile_v1).lab.vital === 2, "levels are saved on the profile");
 D.cosmetics.grantBits(5000);
-for (let i = 0; i < 9; i++) D.lab.buy("farm");
-ok(D.lab.level("farm") === 5 && D.lab.cost("farm") === null && D.lab.buy("farm").reason === "max", "five levels and no further");
-ok(D.lab.mods().farm === 30 && Math.abs(D.lab.mods().hp - 1.04) < 1e-9, "farm +30 s, health +4%");
+for (let i = 0; i < 9; i++) D.lab.buy("power");
+ok(D.lab.level("power") === 5 && D.lab.cost("power") === null && D.lab.buy("power").reason === "max", "five levels and no further");
+ok(Math.abs(D.lab.mods().dmg - 1.075) < 1e-9 && Math.abs(D.lab.mods().hp - 1.04) < 1e-9, "damage +7.5%, health +4%");
+/* the Farm Pass is gone (17z33, Isaac: the farm has no time limit): whoever bought it gets it all back, once */
+ok(!L.list.some(u => u.id === "farm") && L.retired && L.retired.farm, "no Farm Pass in the Lab");
+const prof = JSON.parse(store.dbh_profile_v1); prof.lab.farm = 3; store.dbh_profile_v1 = JSON.stringify(prof);
+if (D.profile.reload) D.profile.reload(); D.profile.lab().farm = 3;
+const coins0 = D.cosmetics.bits(), back = D.lab.refundRetired();
+ok(back && back[0] && back[0].bits === L.cost[0] + L.cost[1] + L.cost[2] && D.cosmetics.bits() === coins0 + back[0].bits, "three Farm Pass levels bought: " + (back && back[0] && back[0].bits) + " DigiCoins back");
+ok(!D.profile.lab().farm && !JSON.parse(store.dbh_profile_v1).lab.farm, "and the levels are taken off the save");
+const coins1 = D.cosmetics.bits(); D.lab.refundRetired();
+ok(D.cosmetics.bits() === coins1, "only once");
 const total = L.cost.reduce((a, b) => a + b, 0);
 const whole = L.list.reduce((a, u) => a + (u.costs || L.cost).reduce((x, y) => x + y, 0), 0);
-ok(whole === 8120, "the whole Lab costs " + whole + " DigiCoins (the twelve boosts, the Digivice Port, the Kit Bag and the Move Slot)");
+ok(whole === 7615, "the whole Lab costs " + whole + " DigiCoins (the eleven boosts, the Digivice Port, the Kit Bag and the Move Slot)");
 const ms = L.list.find(u => u.id === "moveslot");
 ok(ms && ms.max === 1 && ms.costs.length === 1 && ms.costs[0] >= 1000, "the Move Slot: one level only, a big saving goal (" + (ms && ms.costs[0]) + " DigiCoins)");
 
@@ -56,5 +65,5 @@ ok(plain.p.bits === 10 && full.p.bits === 25, "Bit Finder 5: 20 Bits picked up c
 const x0 = plain.p.xp, x1 = full.p.xp;
 plain.sim._eatOrb(plain.p, { kind: "xp", value: 5 }); full.sim._eatOrb(full.p, { kind: "xp", value: 5 });
 ok(Math.abs((full.p.xp - x1) - 5.5) < 1e-9 && plain.p.xp - x0 === 5 || full.p.level > 1, "Study Data 5: +10% job XP");
-ok(full.sim._lab(full.p).farm === 30 && plain.sim._lab(plain.p).farm === 0, "Farm Pass 5: +30 s at the farm");
+ok(!full.p.lab.farm && !full.sim._lab(full.p).farm, "an old save's Farm Pass levels are dropped when a tamer joins");
 console.log(failed ? failed + " FAILED" : "lab-test: all passed"); process.exit(failed ? 1 : 0);

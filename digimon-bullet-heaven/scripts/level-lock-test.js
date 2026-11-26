@@ -53,11 +53,18 @@ ok(w.p.hp < hp0, "and can be hurt again");
 /* the lock runs out with its timer (co-op: 20 s) */
 w = mk(true); w.p.choosing = 1; spin(w, 2, RIGHT);
 ok(w.p.x > 20 && !(w.p.choosing > 0), "the lock ends by itself when its time is up");
-ok(D.LEVEL_PAUSE.coopTime === 20 && D.LEVEL_PAUSE.time === 600, "co-op lock 20 s, solo until the window closes");
+ok(D.LEVEL_PAUSE.coopTime === 40 && D.LEVEL_PAUSE.time === 600, "online 40 s to pick (17z33, Isaac: twice the old 20), solo until the window closes");
 
 /* a real level-up sets it for a player and not for a CPU partner */
 w = mk(true); w.p.xp = w.p.xpNext + 1; w.sim._eatOrb(w.p, { kind: "xp", value: 0 });
-ok(w.p.level === 6 && !(w.p.choosing > 0) && w.p.monInvuln >= 2.5, "online a job level-up does NOT lock you in place (the world doesn't stop), just a few seconds' cover (Nov 21)");
+ok(w.p.level === 6 && w.p.choosing === 40 && w.p.monInvuln >= 40 && w.p.tamerInvuln >= 40 && !(w.sim.enemyFreeze > 0),
+  "online a job level-up puts you in the shield (17z33, Isaac): locked in place, untouchable for 40 s, while the world goes on");
+{ const x0 = w.p.x, hp1 = w.p.hp; spin(w, 1, RIGHT); w.sim.hurtMon(w.p, 10, w.e); w.sim.hurtTamer(w.p, 10);
+  ok(w.p.x === x0 && w.p.hp === hp1, "inside it: you don't move and nothing hurts you"); }
+h.call({ sim: () => w.sim, player: () => w.p }, { id: w.p.id });
+ok(w.p.choosing === 0 && w.p.monInvuln <= 0.35 && w.p.tamerInvuln <= 0.35, "pick or close the window: the shield drops at once");
+spin(w, 1, RIGHT);
+ok(w.p.x > 50, "and you move (and fight) again straight away");
 w = mk(false); w.p.xp = w.p.xpNext + 1; w.sim._eatOrb(w.p, { kind: "xp", value: 0 });
 ok(w.p.level === 6 && w.p.choosing === 600 && w.sim.enemyFreeze > 0, "solo it still locks you, and the whole world waits with you");
 w = mk(true); w.p.kind = "cpu"; w.p.xp = w.p.xpNext + 1; w.sim._eatOrb(w.p, { kind: "xp", value: 0 });

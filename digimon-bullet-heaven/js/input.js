@@ -551,11 +551,25 @@
       if (e.button === 0 && !fakeMouse(e)) setSource("mouse");
     });
     var wheelAcc = 0, wheelAt = 0;
+    /* the nearest box under the pointer that can still scroll this way (null: the game keeps the wheel) */
+    function scrollerUnder(el, canvas) {
+      var cs, oy;
+      for (; el && el !== canvas && el !== document.body && el !== document.documentElement; el = el.parentElement) {
+        if (el.scrollHeight <= el.clientHeight + 1) continue;
+        cs = global.getComputedStyle ? global.getComputedStyle(el) : null; oy = cs ? cs.overflowY : "";
+        if (oy !== "auto" && oy !== "scroll") continue;
+        return el;   /* even at its end it keeps the wheel (overscroll-behavior stops the page moving) */
+      }
+      return null;
+    }
     window.addEventListener("wheel", function (e) {
       var canvas = document.getElementById("game");
       if (!canvas) return;
       var r = canvas.getBoundingClientRect();
       if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) return;
+      /* 17z33 (Isaac: "in my skills the wheel doesn't scroll the list, I have to drag the bar"): over a window that
+       * scrolls (skills, bag, stats, shop...) the wheel scrolls that window, not the zoom */
+      if (scrollerUnder(e.target, canvas)) return;
       e.preventDefault();
       setSource("mouse");
       /* The wheel zooms the view. At the farm it still flips through the
@@ -581,15 +595,33 @@
         var cv = e.target.getBoundingClientRect();
         clicks.push({ x: e.clientX - cv.left, y: e.clientY - cv.top, type: e.pointerType });
         if (clicks.length > 4) clicks.shift();
+        /* 17z33: a finger held still on the ground for a moment = right-click: attack that spot */
+        if (e.pointerType === "touch") {
+          clearTimeout(holdStrike.timer);
+          holdStrike = { id: e.pointerId, x: e.clientX, y: e.clientY, cx: e.clientX - cv.left, cy: e.clientY - cv.top, timer: setTimeout(function () {
+            if (holdStrike.id == null || camFingers().length > 1) return;
+            clicks.push({ x: holdStrike.cx, y: holdStrike.cy, type: "touch", strike: true }); holdStrike.id = null;
+            if (navigator.vibrate) try { navigator.vibrate(18); } catch (er) {}
+          }, HOLD_STRIKE_MS) };
+        }
+      }
+      /* 17z33 (Isaac): right-click the ground: your partner attacks that spot (fire lights grass, ice freezes water) */
+      if (e.target && e.target.id === "game" && e.pointerType === "mouse" && e.button === 2) {
+        var cv2 = e.target.getBoundingClientRect();
+        clicks.push({ x: e.clientX - cv2.left, y: e.clientY - cv2.top, type: "mouse", strike: true });
+        if (clicks.length > 4) clicks.shift();
       }
     }, { passive: true });
+    var HOLD_STRIKE_MS = 480, holdStrike = { id: null, timer: 0 };
     window.addEventListener("pointermove", function (e) {
+      if (e.pointerId === holdStrike.id && Math.abs(e.clientX - holdStrike.x) + Math.abs(e.clientY - holdStrike.y) > 14) { clearTimeout(holdStrike.timer); holdStrike.id = null; }
       trackPointer(e, null);
       if (pinch.active && e.pointerType === "touch") {
         try { e.preventDefault(); } catch (err) {}
       }
     }, { passive: false });
     function pointerEnd(e) {
+      if (e.pointerId === holdStrike.id) { clearTimeout(holdStrike.timer); holdStrike.id = null; }
       trackPointer(e, false);
       if (camFingers().length < 2) endPinch();
     }

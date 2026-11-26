@@ -5,9 +5,10 @@
  *   mixed                a few In-Training ones led by a Rookie or two
  *   big (rare)           the ground rumbles for a moment (spire.rumble: run!), then a mini boss of evil, well
  *                        above you, comes out and hunts you down (the old spire, e.spire: it pays extra)
- * Beat everything a spire let out and a chest drops where the last one fell: bronze, silver or gold by
- * how hard it was (spire.cleared). Walk over it to open it (chest.open): Bits, a chunk of Hatchery data and
- * one rare food, picked by the chest's odds (data.js TERRAIN.spire.chests).
+ * Beat everything a spire let out and a chest appears at the spire's foot: bronze, silver or gold by how
+ * hard it was (spire.cleared). It stays put like a data cache until someone walks up and presses E
+ * (progression "chest.open" -> chest.open): Bits, a chunk of Hatchery data and one rare food, picked by the
+ * chest's odds (data.js TERRAIN.spire.chests). Whoever opens it gets it.
  */
 (function (root) {
   "use strict";
@@ -67,9 +68,13 @@
       if (G.killed >= G.members && G.members > 0 && !G.done) this._spireClear(G);
     };
     MissionSim.prototype._spireClear = function (G) {
-      var S = cfg(this), chest = { small: "bronze", mixed: "silver", big: "gold" }[G.tier] || "bronze", s = this._snap(G.lastX, G.lastY, 10, 160);
+      /* 17z33 (Isaac): at the spire's foot, where it stays until opened (it used to drop where the last one fell
+       * and be picked up by walking over it, so it could fly to you like a gem) */
+      var chest = { small: "bronze", mixed: "silver", big: "gold" }[G.tier] || "bronze", s = this._snap(G.x, G.y + 4, 10, 160);
       G.done = true;
-      this._spawnOrb("chest_" + chest, s.x, s.y, 1);
+      this.spireChests = this.spireChests || [];
+      this._chestN = (this._chestN || 0) + 1;
+      this.spireChests.push({ id: this._chestN, tier: chest, x: s.x, y: s.y, key: G.key });
       this.emit({ type: "spire.cleared", key: G.key, tier: G.tier, chest: chest, x: Math.round(s.x), y: Math.round(s.y) });
       delete this.spireGroups[G.key];
     };
@@ -104,8 +109,25 @@
       for (k in L) { r -= L[k]; if (r <= 0) return k; }
       return k;
     };
-    /* a chest picked up: Bits, a chunk of Hatchery data of one random element, and one rare food (data.js FOOD) */
-    MissionSim.prototype._openChest = function (p, kind) {
+    /* E beside a spire chest: the nearest one in reach (or the one asked for), opened by whoever got there */
+    MissionSim.prototype._chestInReach = function (p, want) {
+      var L = this.spireChests || [], R = ((this.data.TERRAIN && this.data.TERRAIN.useRadius) || 78) + 30, i, c, d, best = null, bd = R * R;
+      for (i = 0; i < L.length; i++) {
+        c = L[i]; if (want != null && c.id !== want) continue;
+        d = dist2(c.x, c.y, p.x || 0, p.y || 0);
+        if (d <= bd) { bd = d; best = c; }
+      }
+      return best;
+    };
+    MissionSim.prototype._takeChest = function (p, want) {
+      var c = this._chestInReach(p, want);
+      if (!c) return null;
+      this.spireChests.splice(this.spireChests.indexOf(c), 1);
+      this._openChest(p, "chest_" + c.tier, c);
+      return c;
+    };
+    /* a chest opened: Bits, a chunk of Hatchery data of one random element, and one rare food (data.js FOOD) */
+    MissionSim.prototype._openChest = function (p, kind, at) {
       var S = cfg(this), tier = kind.slice(6), C = (S.chests || {})[tier] || { bits: [20, 40] }, bits = Math.round(C.bits[0] + this.rng() * (C.bits[1] - C.bits[0]));
       var types = S.dataTypes || ["fire", "ice", "water", "dark", "holy", "machine", "nature", "slime", "wind", "beast"];
       var dataType = C.data ? types[Math.floor(this.rng() * types.length) % types.length] : null;
@@ -114,7 +136,7 @@
       if (food && this.data.FOOD && this.data.FOOD[food]) { p.bag = p.bag || {}; p.bag[food] = (p.bag[food] || 0) + 1; } else food = null;
       if (dataType) { p.chestData = p.chestData || {}; p.chestData[dataType] = (p.chestData[dataType] || 0) + C.data; }
       p.chests = p.chests || {}; p.chests[tier] = (p.chests[tier] || 0) + 1;
-      this.emit({ type: "chest.open", id: p.id, chest: tier, bits: bits, bitsNow: p.bits, food: food, dataType: dataType, data: dataType ? C.data : 0 });
+      this.emit({ type: "chest.open", id: p.id, chest: tier, spot: at ? at.id : null, x: at ? Math.round(at.x) : null, y: at ? Math.round(at.y) : null, bits: bits, bitsNow: p.bits, food: food, dataType: dataType, data: dataType ? C.data : 0 });
     };
   }
   var isNode = typeof module !== "undefined" && module.exports;

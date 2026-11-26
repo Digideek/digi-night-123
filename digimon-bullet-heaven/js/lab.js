@@ -18,7 +18,25 @@
     for (i = 0; i < L.length; i++) { n = level(L[i].id); if (!n) continue; if (L[i].stat === "farm" || L[i].stat === "moveslot") m[L[i].stat] += L[i].per * n; else if (m[L[i].stat] != null) m[L[i].stat] *= 1 + L[i].per * n; }
     return m;
   }
-  function canBuyAny() { var L = cfg().list, i, c, b = bits(); for (i = 0; i < L.length; i++) { c = cost(L[i].id); if (c != null && c <= b) return true; } return false; }
+  /* an upgrade taken out of the Lab (LAB.retired): give back every DigiCoin spent on it, once */
+  var refunded = null;
+  function refundRetired() {
+    var R = cfg().retired || {}, st, id, n, i, sum, out = [];
+    if (!D.cosmetics || !D.cosmetics.ready || !D.cosmetics.ready() || !D.profile || !D.profile.exists || !D.profile.exists()) return null;
+    st = store();
+    for (id in R) {
+      n = Math.max(0, Math.floor(+st[id] || 0));
+      if (!n) continue;
+      sum = 0;
+      for (i = 0; i < n && i < (R[id].costs || cfg().cost).length; i++) sum += (R[id].costs || cfg().cost)[i];
+      delete st[id];
+      if (sum > 0) D.cosmetics.grantBits(sum, "lab-refund");
+      out.push({ id: id, name: R[id].name || id, levels: n, bits: sum });
+    }
+    if (out.length) { D.profile.save(); refunded = out; }
+    return out;
+  }
+  function canBuyAny() { refundRetired(); var L = cfg().list, i, c, b = bits(); for (i = 0; i < L.length; i++) { c = cost(L[i].id); if (c != null && c <= b) return true; } return false; }
   function buy(id) {
     var c = cost(id), s;
     if (c == null) return { ok: false, reason: "max" };
@@ -54,8 +72,10 @@
   }
 
   function render(flashId) {
-    var grid = $("lab-grid"), L = cfg().list, C = cfg().cost, b = bits(), h = "", i, j, u, n, c, cards, can;
+    var grid = $("lab-grid"), L, C, b, h = "", i, j, u, n, c, cards, can;
     if (!grid) return;
+    refundRetired();
+    L = cfg().list; C = cfg().cost; b = bits();
     if ($("lab-bits")) $("lab-bits").textContent = String(b);
     for (i = 0; i < L.length; i++) {
       u = L[i]; n = level(u.id); c = cost(u.id); can = c != null && c <= b;
@@ -72,7 +92,8 @@
       if (D.iconArt) D.iconArt.lab(cards[i].querySelector("canvas"), u, { max: cost(u) == null });   /* js/icon-art.js */
       else icon(cards[i].querySelector("canvas"), u);
     }
-    if ($("lab-foot")) $("lab-foot").textContent = "Every finished run pays DigiCoins, and each new Tamer Rank pays more. Boosts apply from your next run.";
+    if ($("lab-foot")) $("lab-foot").textContent = refunded ? refunded.map(function (r) { return r.name + " is gone (the farm has no time limit now): your " + r.bits + " DigiCoins for it are back."; }).join(" ")
+      : "Every finished run pays DigiCoins, and each new Tamer Rank pays more. Boosts apply from your next run.";
   }
   function onClick(e) {
     var t = e.target.closest ? e.target.closest("[data-buy]") : null, r;
@@ -90,8 +111,10 @@
     if (g) g.addEventListener("click", onClick);
     if (back) back.addEventListener("click", function () { if (D.uiSfx) D.uiSfx("ui"); if (D.menu) D.menu.go("title"); });
     if (D.px && D.px.stamp && $("lab-screen")) D.px.stamp($("lab-screen"));
+    /* give back retired upgrades as soon as the save and the DigiCoins are loaded */
+    var tries = 0, tm = setInterval(function () { var r = refundRetired(); if (r || ++tries > 60) { clearInterval(tm); if (r && r.length && D.hub && D.hub.refresh) D.hub.refresh(); } }, 1000);
     document.addEventListener("keydown", function (e) { if (e.key === "Escape" && D.getState && D.getState() === "lab" && D.menu) { D.menu.go("title"); e.preventDefault(); } });
   }
-  D.lab = { level: level, levels: levels, cost: cost, buy: buy, mods: mods, canBuyAny: canBuyAny, render: render };
+  D.lab = { level: level, levels: levels, cost: cost, buy: buy, mods: mods, canBuyAny: canBuyAny, render: render, refundRetired: refundRetired };
   if (typeof document !== "undefined") { if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init); else init(); }
 })(typeof window !== "undefined" ? window : this);

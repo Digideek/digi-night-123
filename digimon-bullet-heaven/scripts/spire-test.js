@@ -1,6 +1,7 @@
 /* node scripts/spire-test.js : black spires are a gamble (17z33, js/net/spire-sim.js). A hidden roll: mostly a
  * swarm of In-Training ones, sometimes a pack led by a Rookie or two, rarely a rumble and then a mini boss
- * that hunts you. Beat everything a spire let out and a chest drops: bronze, silver or gold. */
+ * that hunts you. Beat everything a spire let out and a chest appears at the spire's foot: bronze, silver or
+ * gold. It stays put until someone walks up and presses E. */
 const path = require("path"), root = path.join(__dirname, "..");
 global.window = global;
 global.document = { createElement: () => ({ getContext: () => ({ fillRect() {}, drawImage() {} }), width: 0, height: 0 }) };
@@ -45,13 +46,32 @@ for (const tier of ["small", "mixed", "big"]) {
   ok(!sim._ev.some(e => e.type === "spire.cleared"), tier + ": no chest while one is still standing");
   sim._killEnemy(left[left.length - 1], p);
   const cl = sim._ev.find(e => e.type === "spire.cleared"), want = { small: "bronze", mixed: "silver", big: "gold" }[tier];
-  ok(cl && cl.chest === want && sim.orbs.some(o => o.kind === "chest_" + want), tier + ": all beaten, a " + want + " chest drops");
-  const o = sim.orbs.find(o => o.kind === "chest_" + want); const b0 = p.bits; sim._eatOrb(p, o);
+  const ch = (sim.spireChests || [])[0];
+  ok(cl && cl.chest === want && ch && ch.tier === want && !sim.orbs.some(o => /^chest_/.test(o.kind)), tier + ": all beaten, a " + want + " chest (not a pickup)");
+  ok(ch && Math.abs(ch.x - 200) < 20 && ch.y > 0 && ch.y < 60, "  it stands at the spire's foot (" + Math.round(ch.x) + ", " + Math.round(ch.y) + "), not where the last one fell");
+  /* it stays put: walking right over it or waiting does nothing */
+  p.x = ch.x; p.y = ch.y; for (let k = 0; k < 40; k++) sim.step ? sim.step(1 / 20) : 0;
+  ok(sim.spireChests.length === 1 && !sim._ev.some(e => e.type === "chest.open"), "  standing on it opens nothing: it waits for E");
+  ok(sim.snapshot().spireChests[0][1] === want, "  it's in the snapshot");
+  p.x = ch.x + 400; let ro = sim._A.act({ type: "chest.open", id: "local" });
+  ok(!ro.ok && /closer/.test(ro.reason), "  too far away: " + ro.reason);
+  p.x = ch.x + 40; p.y = ch.y; const b0 = p.bits;
+  ro = sim._A.act({ type: "chest.open", id: "local", spot: ch.id });
   const op = sim._ev.find(e => e.type === "chest.open");
+  ok(ro.ok && !sim.spireChests.length && op.spot === ch.id && op.x === Math.round(ch.x), "  E beside it: opened, and gone");
   ok(op && p.bits - b0 >= S.chests[want].bits[0] && p.bits - b0 <= S.chests[want].bits[1], "opening it: +" + (p.bits - b0) + " Bits");
   ok(op.food && D.FOOD[op.food].rare && p.bag[op.food] === 1, "  and a rare food: " + D.FOOD[op.food].name);
   ok(op.data === S.chests[want].data && S.dataTypes.indexOf(op.dataType) >= 0, "  and +" + op.data + " " + op.dataType + " Hatchery data");
 }
+/* with a friend: whoever gets there opens it */
+sim = mk(9); sim._spireRoll = () => "small";
+sim.players.push({ id: "g1", form: "gabumon", level: 8, hp: 300, maxHp: 300, x: 600, y: 0, mx: 620, my: 0, hasTamer: true, kind: "client", tamerHp: 50, tamerMaxHp: 50, bits: 0 });
+sim._spireBreak(sim.players[0], "3,3", 200, 0);
+sim.enemies.filter(e => e.spireGroup === "3,3").forEach(e => sim._killEnemy(e, sim.players[0]));
+const fc = sim.spireChests[0], g = sim.players[1]; g.x = fc.x - 30; g.y = fc.y;
+let gr = sim._A.act({ type: "chest.open", id: "g1" });
+ok(gr.ok && g.bits > 0 && !sim.spireChests.length, "a friend who walks up can open it too (+" + g.bits + " Bits)");
+ok(!sim._A.act({ type: "chest.open", id: "local" }).ok, "and then it's gone for everyone");
 /* what the chests hold, over many openings */
 sim = mk(9);
 for (const tier of ["bronze", "silver", "gold"]) {

@@ -14,7 +14,7 @@ let failed = 0;
 function ok(c, m) { if (!c) { failed++; console.log("  FAIL " + m); } else console.log("  ok " + m); }
 W.reset(5); W.setTime(100);
 const sim = new mission.MissionSim({ seed: 5, hz: 30, data: D });
-sim.phase = "playing"; sim.time = 900; sim.runMode = "open";
+sim.phase = "playing"; sim.time = 900; sim.runMode = "story";   /* 17z33: Open World alone is one life now; Story still respawns at once */
 if (!sim.players[0]) { sim.players.push({ id: "local" }); sim.localId = "local"; }
 const p = sim.players[0];
 Object.assign(p, { name: "Isaac", form: "agumon", level: 12, hp: 50, maxHp: 200, x: 3000, y: 0, mx: 3000, my: 0, faint: 0, downed: false, hasTamer: true, kind: "human", tamerHp: 100, tamerMaxHp: 100, bits: 0 });
@@ -31,7 +31,7 @@ ok(e.lv >= lv0 + N.perKill.lv && e.maxHp > hp0 * 1.4 && e.hp === e.maxHp, "it ga
   ok(N.perKill.lv === 4 && (e.lv >= need ? e.type === nx : e.type === type0), "4 levels a win, and it digivolves only if that reaches the next form (Lv " + e.lv + ", " + nx + " needs " + need + "): " + type0 + " → " + e.type); }
 ok(e.nemAway > sim.time, "after beating you it heads out of the low-level area for a while");
 ok(!e.pack && !e.nest, "it left its herd to roam");
-ok(p.respawns === 1 && !sim.runOver, "(your partner respawns as usual in Open World)");
+ok(p.respawns === 1 && !sim.runOver, "(your partner respawns as usual in Story)");
 /* a friend falls to it too */
 const q = { id: "friend", name: "Ren", form: "gabumon", level: 10, hp: 10, maxHp: 100, x: 3000, y: 50, mx: 3000, my: 50, faint: 0, hasTamer: true, kind: "client", tamerHp: 100, tamerMaxHp: 100 };
 sim.players.push(q);

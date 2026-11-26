@@ -58,6 +58,7 @@
     MissionSim.prototype._updateModeRules = function (dt) {
       var m = this._mode(), SN = this.data.seasons;
       if (SN && SN.useMode) SN.useMode(m);                 /* Night Siege's shorter days (seasons.js) */
+      if (m === "open" && !this.runOver) this._tickDown(dt);
       if (m === "story" && this._updateStory) this._updateStory(dt);
       else if (m === "siege" && this._updateSiege) this._updateSiege(dt);
       else if ((m === "versus" || m === "duel") && this._updateVersus) this._updateVersus(dt);
@@ -76,6 +77,36 @@
       return null;
     };
 
+    /* a partner has fallen: what happens now, by mode (mission-sim.js hurtMon / hurtTamer). true = dealt with.
+     *   story  back near the start as a fresh egg at once (it's where new players learn)
+     *   open   alone: nothing here (the run ends); with friends: down, with a timer (DOWN_TIMER)
+     *   other  nothing here (one life) */
+    MissionSim.prototype._fall = function (p) {
+      var m = this._mode(), T = this.data.DOWN_TIMER || { first: 15, more: 20 }, i, q, humans = 0, anyUp = false;
+      if (m === "story") return this._respawn(p);
+      if (m !== "open") return false;
+      for (i = 0; i < this.players.length; i++) if (this.players[i].hasTamer !== false) humans++;
+      if (!this.coop || humans < 2) return false;
+      p.downed = true; p.faint = 999; p.monMoving = false; p.monTarget = null;
+      p.downLeft = T.first + T.more * (p.downs || 0);
+      p.downs = (p.downs || 0) + 1;
+      this.emit({ type: "downed", id: p.id, coop: true, timer: p.downLeft });
+      for (i = 0; i < this.players.length; i++) { q = this.players[i]; if (q.hasTamer !== false && !q.downed && !q.away) anyUp = true; }
+      if (!anyUp) { this.runOver = true; this.emit({ type: "runOver", id: p.id, reason: "party" }); }
+      return true;
+    };
+    /* the down timers tick; one that runs out starts that tamer over as an egg (once a tick, _updateModeRules) */
+    MissionSim.prototype._tickDown = function (dt) {
+      var i, p;
+      for (i = 0; i < this.players.length; i++) {
+        p = this.players[i];
+        if (p.downLeft == null) continue;
+        if (!p.downed) { p.downLeft = null; continue; }           /* picked up by a friend */
+        p.downLeft -= dt;
+        if (p.downLeft <= 0) { p.downLeft = null; this._respawn(p); this.emit({ type: "down.timeout", id: p.id }); }
+      }
+    };
+
     /* fallen in Open World: back near the start with a fresh egg of the same line */
     MissionSim.prototype._respawn = function (p) {
       var R = this.data.RESPAWN || {}, egg = this._eggFor(p), S = this.data.SPECIES || {}, a, r, s, base;
@@ -88,6 +119,9 @@
       p.formSince = this.time;
       p.level = 1; p.xp = 0; p.xpNext = this._xpNeeded ? this._xpNeeded(1) : 10;
       p.skills = {}; p.skillPoints = 0; p.skillOffer = null; p.levelOffers = []; p.pendingLevels = 0;
+      /* 17z33 (Isaac's friend: "after I respawned as an egg my Digimon wouldn't attack until I re-equipped its moves"):
+       * the old partner's equipped list goes with it, so the new one equips its own starting moves */
+      p.equip = null; p.equipKnown = null; p.equipN = 0;
       p.weapons = []; p.evoCount = 0; p.evoOffer = null; p.formHolds = 0; p.evoHoldUntil = 0;
       p.burst = 0; p.burstLeft = 0; p.burstForm = null; p.ultLock = false; p.focusId = null;
       base = (S[egg] && S[egg].base) || {};

@@ -52,6 +52,92 @@
   - Each tab says in a line what it counts. Survival's boards (Level, Fastest Mega, Survival, Lords, PvP) now only count Survival runs, so a long Night Siege run doesn't land on the Survival board.
   - What sends a run in: a Survival run of a minute or more (as before), a finished Story, a Night Siege run with a night held, a won Versus or Duel. The server turns away runs that couldn't be real (9 nights in 5 minutes, a Versus win before the race was over).
 
+**Full test sweep: fixes**
+- **Fixed: ultimate ground marks.** A Mega ultimate that leaves something on the ground (Terra Force's crater, Graceful Cannon's ice, Positron Laser's burnt ring, and the rest) crashed while drawing it, so the mark never showed. It shows now. Two drawing functions shared a name and one replaced the other.
+- **E shows the key only on the thing it will do.** A spire chest, a Digimon to catch and a data cache can all be in reach at once. Before, each showed an E prompt, but E only ever does one of them. Now only that one shows the key. Press E again for the next one.
+- Playing with friends: the gem pull on a friend's screen starts fresh every run.
+- Lag check: with 150 enemies, 120 gems, chests, catch spots and ground attacks all going at once, the new features add no time per frame or per game tick. The few short hitches left happen when a new piece of map is drawn for the first time. That was already the case before these changes.
+
+**Fixed: a partner reborn as an egg wouldn't attack**
+- If you'd swapped your equipped moves, then fell and came back as an egg, the new partner hatched with nothing equipped. It wouldn't attack until you equipped its moves yourself.
+- Now a rebirth clears the old list, and the new partner equips its own starting moves when it hatches.
+- As a safety net, a partner that knows any move is never left with nothing equipped.
+
+**Food is half as common**
+- Wild Digimon drop food half as often. A regular one drops it 11% of the time (was 22%), an elite 30% (was 60%), and a boss 50% (it used to always drop some).
+- Unchanged: Jijimon still sells up to 3 meat a visit, your farm garden still grows vegetables, and spire chests still hold their rare foods.
+
+**Tell your partner to attack a spot on the ground**
+- **Right-click the ground** and your Digimon runs up close and aims all its moves at that spot for 3 seconds. Then it goes back to fighting on its own.
+- Every move that lands there leaves its element on the ground. **Fire sets grass alight**, **Ice freezes water** (a bridge for a while), **Water puts fires out**, Slime leaves goo, and Wind fans flames.
+- An orange target ring marks the spot. The ring empties as the 3 seconds run out.
+- **Touch:** hold your finger on the ground for half a second. **Controller:** aim with the right stick and press RT. If there's an enemy that way, RT still sends your partner after it, as before. If not, it attacks the ground there.
+- Left-clicking an enemy or open ground cancels the order. It reaches up to about 380 px from you, and an egg can't do it.
+- Works with friends online too.
+
+**Spire chests wait at the spire for you to open**
+- Beat everything a spire lets out and the chest now appears at the **foot of the spire**. Before, it dropped wherever the last one fell and you picked it up by walking over it.
+- It stays put like a regular chest. Walk up and press **E** to open it. It won't fly to you or open by accident.
+- The grade still depends on what came out of the spire: a swarm gives bronze, a pack with a Rookie gives silver, and the big one gives gold. What's inside is the same as before.
+- You can tell the grades apart without colour. Each one has its name above it ("Gold chest"). Bronze is a wooden chest with a flat lid, silver is steel with a rounded lid and studs, and gold is bigger with a star on top.
+- Playing with friends: anyone can open it, and whoever opens it gets what's inside. It's gone for everyone after that.
+
+**The mouse wheel scrolls windows**
+- With the skills window open, rolling the wheel over it scrolls the list. You don't have to drag the scroll bar any more.
+- The same goes for any window in the game that has more to show, like the bag, stats and the shop.
+- Over the game itself, the wheel still zooms, and at the farm it still flips through the item slots.
+
+**Jijimon's shop: every item redrawn**
+- Everything Jijimon sells now matches the Digi Meat: smooth rounded shapes, soft shading and a clean outline, nothing blocky.
+- The redrawn items are Sprint Boots, Training Ticket, Gate Key, Lure (now a fishing float), Treasure Map, Care Reset (an eraser), Crest of Courage, and all six Digimentals. Each Digimental has its own colour, and its name is on the card.
+- **Seed packets show their crop on the label:** a carrot, cucumber, tomato, corn cob, cabbage or potato, so you can tell them apart without going by colour. The same packets show in your bag and when seeds drop.
+- The new pictures show in the Bag and at the farm too.
+- Shop icons are drawn at an even size now, so no pixel comes out wider than the one next to it.
+
+**Playing with friends: gems and heals come to everyone now**
+- Before, a friend who joined your game had to stand right on a gem or heal to get it. The pull only worked for the host.
+- Now a friend's gems and heals fly to them from the same distance as yours. They start flying on the friend's own screen straight away, without waiting for the host.
+- A friend's pull reaches a little further, to make up for the delay over the internet. Pull boosts (from the Lab or items) count for friends too.
+- Food doesn't fly to a friend whose bag is full.
+
+**Catching reworked: catch the ones you defeat**
+- You no longer throw at a living Digimon. Defeat enough of one kind in a run, and **the next one of that kind you defeat doesn't vanish**: it lies where it fell, on its side, inside a yellow ring that runs down over **20 seconds**.
+- **Walk up and press E for one try.** Catch it and it joins you. Miss, or take too long, and it fades away. The count for that kind starts over either way.
+- **Only you can catch the ones you defeat.** Online, friends see "Isaac's to catch" and can't take it.
+- **Harder and rarer:** a **6%** chance (was 10%), and half as many defeats again first: 45 Rookies of one kind (was 30), 30 Babies, 38 In-Training, 53 Champions, 60 Ultimates, 68 Megas.
+- Bosses, infected Digimon, nemeses, rival tamers' partners and raiders never stay down to be caught, and there's no catching in Versus.
+
+**Picking a skill: you sit in a shield**
+- When a job level-up brings up the skill cards online, **you and your partner sit inside a shield**:
+  - you **stay in place**
+  - **nothing can hurt you**
+  - your partner **doesn't attack**
+  - you get **40 seconds** to choose (twice the old 20)
+
+  Everyone else can see the bubble round you, labelled "Picking a skill". (Solo was already like this, with the whole world waiting.)
+- **The moment you pick a card or close the window, the shield drops** and everything resumes straight away: moving, attacking, and being hit.
+- **Escape now closes the skill cards** (and drops the shield) instead of opening the pause menu.
+- No warping from inside the shield.
+
+**Survival's Open World: down, not out, on a timer**
+- **Alone:** one death and the run is over. No more coming back forever.
+- **With friends:** when your partner falls, you go **down where you fell** and a timer starts: **15 seconds** the first time, then **20 seconds longer** each time after (35, 55, ...).
+  - **A friend who gets to you in time** holds E by your fallen partner and you're back up where you fell, **Digimon and all**.
+  - **If the timer runs out**, you start over near the start as a **fresh egg** (keeping your tamer, base level and stat points, with bonus XP to catch up, as before).
+  - **Everyone down at once:** the run is over.
+- **What you see:** while you're down, the spectate bar says "Back as a fresh egg in 12 s, unless a friend revives you first". Your friends see a countdown ring over your fallen partner with "Hold E here to revive", and the ring turns red under 5 seconds.
+- Story still brings your partner straight back as an egg, since that's where new players learn.
+- **Fixed: reviving a friend never worked** in a game of two or more. Each tick, whoever wasn't holding E cancelled the revive, and the last one standing wasn't allowed to revive anyway. Both are fixed, here and in One Life.
+
+**Eggs: the full dex grid from the main menu**
+- The **Eggs** tile on the main menu now opens the egg grid, not the old one-at-a-time picker.
+- Like a Digimon dex, **every egg has its own number and its own spot**: No. 001 Agumon Line, No. 002 Gabumon Line, and so on. Opened eggs show in full; ones you haven't opened are silhouettes in their own numbered spots, so there can be gaps between eggs you have. It's five across and scrolls down. Your Hatchery partner and the Random egg come after the numbered ones.
+- **Hover an egg** (tap once on a phone) for its line, how it plays, its signature moves, and every digivolution path you've reached with it. Click (or tap again) to take it.
+
+**The Farm Pass is gone from the Lab, with a full refund**
+- The Farm Pass made farm visits longer, but the farm has no time limit any more, so it did nothing. It's been taken out of the Lab.
+- If you bought any levels, you get back **every DigiCoin you spent on it** (up to 505 for all five) the next time the game loads. It's paid once, and the Lab's note at the bottom says how much came back.
+
 **A simpler farm panel**
 - The panel at the bottom of the farm is now just **your food and a Pet button**. Each food is a tile with its picture, how many you have, and its number key. Click one to pick it, then click it again (or press E) next to your partner to feed it. Pet is the big pink button.
 - One short line under it says what to do ("Berry picked. Click it again, or press E, to feed it." / "Walk up to your partner to feed it.").

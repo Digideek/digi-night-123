@@ -307,6 +307,8 @@
       if (out.length < n && (first || grew || isNew)) out.push(id);
       else if (isNew && !first) left.push(id);
     }
+    /* never nothing on (17z33): if none of the list is left (a new partner, say) its own moves go on */
+    if (!out.length) { for (i = 0; i < ids.length && out.length < n; i++) out.push(ids[i]); left = left.filter(function (x) { return out.indexOf(x) < 0; }); }
     /* a move counts as new unless it simply took over from one that was known */
     function successorOfAny(id2) { for (var j = 0; j < known.length; j++) if (successor(data, known[j], [id2]) === id2) return false; return true; }
     return { list: out.slice(0, n), known: ids, n: n, left: left };

@@ -9,7 +9,8 @@
  *     digivolution path you've reached with that egg: Botamon > Koromon > Agumon > Greymon, ...
  *     (from your save's discoveries, rarity.js noteDiscovery)
  *   - click it (tap again) to take it; arrow keys / Enter / Esc work too
- * D.eggGrid.open({ onPick: fn(id) }) from the run setup (hub.js) and the online lobby (online-ui.js).
+ * D.eggGrid.open({ onPick: fn(id) }) from the main menu's Eggs tile and the run setup (hub.js), and the online lobby
+ * (online-ui.js). Eggs sit in their own numbered spots (No. 001, 002, ...), opened or not (17z33, Isaac).
  */
 (function (global) {
   "use strict";
@@ -181,8 +182,12 @@
     var m = M(), l = m && m.eggs ? m.eggs() : [], cur = m && m.egg ? m.egg() : null, open = 0;
     if (opts && opts.noHatchery) l = l.filter(function (e) { return !e.hatchery; });
     grid.innerHTML = ""; cards = [];
-    /* opened eggs first, then the hatchery partner and random, then the locked ones */
-    l = l.slice().sort(function (a, b) { var ra = a.locked ? 2 : (a.random || a.hatchery ? 1 : 0), rb = b.locked ? 2 : (b.random || b.hatchery ? 1 : 0); return ra - rb; });
+    /* 17z33 (Isaac): like a Digimon dex. Every egg keeps its own number and its own spot (No. 001 Agumon,
+     * No. 002 Gabumon, ...), opened or not, so a silhouette can sit between two you have. Your Hatchery
+     * partner and the random egg come after the numbered ones. */
+    var dexNo = {}; (D.EGGS || []).forEach(function (d, k) { dexNo[d.id] = k + 1; });
+    l = l.filter(function (e) { return dexNo[e.id]; }).sort(function (a, b) { return dexNo[a.id] - dexNo[b.id]; })
+      .concat(l.filter(function (e) { return !dexNo[e.id]; }));
     l.forEach(function (e, i) {
       var info = lineOfEgg(e), el = document.createElement("button"), cv = document.createElement("canvas"), mv = movesOf(info), L = info.L, sub;
       e.info = info; e.moves = mv; e.desc = describe(e, info);
@@ -191,6 +196,7 @@
       el.type = "button"; el.className = "eg-card" + (e.locked ? " is-locked" : "") + (e.id === cur ? " is-on" : "") + (e.random ? " is-random" : "") + (e.hatchery ? " is-hatchery" : "");
       cv.width = 160; cv.height = 96; el.appendChild(cv);
       sub = e.locked ? "Not opened yet" : e.random ? "Any egg, a surprise" : e.hatchery ? "Your Hatchery partner" : (shortStyle(info) || "");
+      if (dexNo[e.id]) el.insertAdjacentHTML("beforeend", "<span class='eg-no'>No. " + ("00" + dexNo[e.id]).slice(-3) + "</span>");
       el.insertAdjacentHTML("beforeend", "<b class='eg-name'>" + esc(e.locked ? "???" : e.random ? "Random egg" : e.name) + "</b><span class='eg-sub'>" + esc(sub) + "</span>" +
         (!e.locked && mv.length ? "<span class='eg-tags'>" + mv.slice(0, 2).map(function (x) { return "<i>" + esc(x.name) + "</i>"; }).join("") + "</span>" : "") +
         (e.locked ? "<span class='eg-lock'>🔒</span>" : ""));

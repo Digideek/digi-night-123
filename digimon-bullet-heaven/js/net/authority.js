@@ -298,6 +298,8 @@
       snap.lifecycle = ms.lifecycle;
       snap.localPause = this.localPause;
       snap.runOver = ms.runOver;
+      snap.catches = ms.catches || [];
+      snap.spireChests = ms.spireChests || [];                       /* spire chests waiting at a spire's foot (17z33) */                               /* defeated Digimon lying there to be caught (17z33) */
       snap.nest = ms.nest;                                           /* Night Siege's Primary Village (17z33) */
       snap.rejected = ms.rejected;
       snap.events = ev.concat(this.sim.consumeEvents());

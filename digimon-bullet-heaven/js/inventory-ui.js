@@ -37,6 +37,7 @@
   }
   function icon(id) {
     var F = D.FOOD && D.FOOD[id];
+    if (D.isSeed && D.isSeed(id) && D.pickupArt && D.pickupArt.ready(id) && D.sprites.getIcon(id)) return D.sprites.getIcon(id);   /* 17z33: the shop's packet */
     if ((F && F.veg) || (D.isSeed && D.isSeed(id))) return D.farmArt && D.farmArt.itemIcon ? D.farmArt.itemIcon(id) : null;
     var si = shopItem(id);
     return D.sprites && D.sprites.getIcon ? D.sprites.getIcon((si && si.icon) || id) : null;

@@ -450,7 +450,7 @@
     delete H.net[id]; delete H.holds[id];
   }
 
-  var ACTS = { "pvp.flag": 1, levelup: 1, "shop.buy": 1, capture: 1, "brawl.bet": 1, "field.feed": 1, evolve: 1, "evolve.hold": 1, "stat.add": 1, "skill.add": 1, "skill.equip": 1, "dna.ask": 1, "dna.answer": 1, burst: 1, "breather.end": 1, "prop.use": 1, "side.pick": 1, "shiny.guard": 1, "bag.discard": 1, "bag.use": 1, "siege.repair": 1, "siege.build": 1 };
+  var ACTS = { "pvp.flag": 1, levelup: 1, "shop.buy": 1, capture: 1, "brawl.bet": 1, "field.feed": 1, evolve: 1, "evolve.hold": 1, "stat.add": 1, "skill.add": 1, "skill.equip": 1, "dna.ask": 1, "dna.answer": 1, burst: 1, "breather.end": 1, "prop.use": 1, "side.pick": 1, "shiny.guard": 1, "bag.discard": 1, "bag.use": 1, "siege.repair": 1, "siege.build": 1, "chest.open": 1 };
   /* What a friend's own farm visit is allowed to change on their record. */
   var FARM_KEYS = ["fullness", "happiness", "bag", "items", "shopBought", "bits", "trainStats", "trainVisits", "bondTrain",
     "careMistakes", "foodEaten", "foodCounts", "garden", "bond", "mood", "ignoredSeconds", "starveCycles",
@@ -466,6 +466,7 @@
       if (d.f !== undefined && d.f !== null) inp.focus = num(d.f) | 0;
       if (d.pv) inp.pvp = String(d.pv).slice(0, 40);
       if (d.g && d.g.length === 2) inp.go = [num(d.g[0]), num(d.g[1])];
+      if (d.s && d.s.length === 2) inp.strike = [num(d.s[0]), num(d.s[1])];   /* attack that spot (17z33) */
       auth.onMessage({ type: "input", id: id, inputs: [inp] });
       var n = H.net[id] || (H.net[id] = {});
       if (d.b) { if (!n.busy) n.busySince = now(); n.busy = true; } else n.busy = false;
@@ -491,10 +492,11 @@
       var intent = { type: d.i.type, id: id };
       if (d.i.type === "levelup") { intent.kind = d.i.kind; intent.choice = d.i.choice; intent.token = d.i.token; }
       else if (d.i.type === "shop.buy") intent.item = d.i.item;
-      else if (d.i.type === "capture") intent.enemyId = d.i.enemyId;
+      else if (d.i.type === "capture") { intent.enemyId = d.i.enemyId; intent.spot = d.i.spot == null ? null : +d.i.spot; }
       else if (d.i.type === "field.feed") intent.food = String(d.i.food || "").slice(0, 24);
       else if (d.i.type === "dna.ask") intent.to = String(d.i.to || "").slice(0, 40);
       else if (d.i.type === "dna.answer") { intent.ok = !!d.i.ok; intent.to = String(d.i.to || "").slice(0, 40); }
+      else if (d.i.type === "chest.open") intent.spot = d.i.spot == null ? null : +d.i.spot;
       else if (d.i.type === "prop.use") { intent.tx = num(d.i.tx) | 0; intent.ty = num(d.i.ty) | 0; }
       else if (d.i.type === "pvp.flag") intent.on = !!d.i.on;
       else if (d.i.type === "siege.build") intent.i = Math.max(0, Math.min(63, num(d.i.i) | 0));   /* which fence spot */
@@ -704,7 +706,7 @@
     }
   }
 
-  var FAST = { wc: 1, id: 1, slot: 1, kind: 1, hasTamer: 1, x: 1, y: 1, vx: 1, vy: 1, facing: 1, tdir: 1, moving: 1, tamerHp: 1, tamerMaxHp: 1, tamerInvuln: 1,
+  var FAST = { wc: 1, dl: 1, ch: 1, id: 1, slot: 1, kind: 1, hasTamer: 1, x: 1, y: 1, vx: 1, vy: 1, facing: 1, tdir: 1, moving: 1, tamerHp: 1, tamerMaxHp: 1, tamerInvuln: 1,
     mx: 1, my: 1, mfacing: 1, monMoving: 1, hp: 1, maxHp: 1, monInvuln: 1, faint: 1, fullness: 1, happiness: 1, bits: 1, xp: 1, xpNext: 1,
     level: 1, kills: 1, aim: 1, ack: 1, desperation: 1, atkBoost: 1, focusId: 1, form: 1, hatchLeft: 1, downed: 1, pendingLevels: 1 };
   var QUIET = { ignoredSeconds: 1, clock: 1, evoLock: 1, peakHappiness: 1, miracleShimmer: 1, proximityClose: 1, mood: 1, bond: 1, windows: 1, ignoredDuringEvent: 1, undamagedKills: 1 };
@@ -720,7 +722,7 @@
         hp: r1(p.hp), maxHp: p.maxHp, monInvuln: r2(p.monInvuln), faint: r2(p.faint), downed: p.downed ? 1 : 0, ack: p.ack, form: p.form, burst: p.burst || 0, burstLeft: p.burstLeft || 0, burstForm: p.burstForm || null, burstStyle: p.burstStyle || null, shiny: p.shiny ? 1 : 0,
         level: p.level, xp: r1(p.xp), xpNext: p.xpNext, bits: p.bits, fullness: r1(p.fullness), happiness: r1(p.happiness), kills: p.kills, trust: p.trust || null, allied: p.allied || null, atFarm: p.atFarm ? 1 : 0, pvpFlag: p.pvpFlag ? 1 : 0, pvpOffAt: p.pvpOffAt || 0, md: p.md || null,
         hatchLeft: p.hatchLeft == null ? null : r1(p.hatchLeft), desperation: p.desperation ? 1 : 0, atkBoost: r1(p.atkBoost), focusId: p.focusId,
-        aim: r2(p.aim), pendingLevels: p.pendingLevels || 0, away: sp && sp.away ? 1 : 0, wc: p.wc || null });
+        aim: r2(p.aim), pendingLevels: p.pendingLevels || 0, away: sp && sp.away ? 1 : 0, wc: p.wc || null, ch: p.choosing > 0 ? 1 : 0, dl: p.downLeft != null ? Math.ceil(p.downLeft) : null });
       /* the rest of a player's record only goes to that player, when it changes */
       if (p.id !== sim.localId && players[p.id] && players[p.id].here) {
         slow = {}; key = {};
@@ -781,7 +783,7 @@
     var a = s.ally, ar = [];
     for (i = 0; i < (s.arcs || []).length; i++) { b = s.arcs[i]; ar.push({ angle: r2(b.angle), range: b.range, arc: b.arc, color: b.color, life: r2(b.life), max: b.max || b.life, wid: b.wid, ownerId: wid(b.ownerId) }); }
     var w = { t: "s", n: H.snapN, ht: Math.round(now()), tm: r2(s.time), ph: sim.phase === "playing" ? 0 : (sim.phase === "brawl" ? 2 : 1), ro: s.runOver ? 1 : 0,
-      P: P, E: E, B: B, C: C, ar: ar, ev: ev, kl: s.kills, mr: s.merchant || null, pv: s.nest || null, wx: s.weather || null, rv: s.rival || null, ck: s.clock || null,
+      P: P, E: E, B: B, C: C, ar: ar, ev: ev, kl: s.kills, mr: s.merchant || null, pv: s.nest || null, cs: (s.catches || []).map(function (c) { return [c[0], c[1], c[2], c[3], wid(c[4]), c[5]]; }), sc: s.spireChests || [], wx: s.weather || null, rv: s.rival || null, ck: s.clock || null,
       ps: s.startingPartySize, pc: s.partyReviveCharge,
       al: a && a.form ? { form: a.form, x: r1(a.x), y: r1(a.y), hp: r1(a.hp), maxHp: a.maxHp, facing: a.facing, invuln: r2(a.invuln), level: a.level || 1, passive: a.passive || null } : null,
       pt: (s.patches || []).map(function (q) { return [q.id, q.kind, Math.round(q.x), Math.round(q.y), Math.round(q.r), r2(q.t), r2(q.max)]; }),
@@ -821,6 +823,7 @@
           if (inp.pvp) G.input.pvp = inp.pvp;
           if (inp.tgt) G.input.pvp = inp.tgt;            /* a brawl click target goes the same way */
           if (inp.go) G.input.go = inp.go;
+          if (inp.strike) G.input.strike = inp.strike;
           if (inp.atk) G.input.atkTap = true;
           if (inp.dash) G.input.dashTap = true;
         }
@@ -836,7 +839,7 @@
   function attachGuest(localAuth, run) {
     G.local = localAuth;
     G.proxy = makeProxy();
-    G.snaps = []; G.offs = []; G.offset = null; G.orbs = []; G.slow = {}; G.ia = 0; G.overrides = []; G.events = [];
+    G.snaps = []; G.offs = []; G.offset = null; G.orbs = []; G.pull = {}; G.slow = {}; G.ia = 0; G.overrides = []; G.events = [];
     G.pred = { x: run.x, y: run.y, px: run.x, py: run.y, ex: 0, ey: 0, acc: 0, seq: 0, pending: [] };
     G.lastFrame = now(); G.inFarm = false; G.farmDone = 0; G.latest = null; G.time = 0;
     G.brawl = null; G.brawlDone = null; G.paidMatch = null; G.myBits = null;
@@ -945,9 +948,8 @@
     } else if (d.t === "res") {
       run = D.getRun && D.getRun();
       if (!run || d.k !== "capture" || !d.res) return;
-      if (d.res.ok) { D.bridge.float(run.x, run.y - 36, "Captured!", "#6ad0ff"); if (D.uiSfx) D.uiSfx("level"); if (run.captureFx) run.captureFx.ok = true; }
-      else if (d.res.reason && d.res.reason !== "rejected") D.bridge.float(run.x, run.y - 28, d.res.reason, "#ff8080");
-      else if (d.res.chance != null) { D.bridge.float(run.x, run.y - 36, "Broke free!", "#ff8080"); if (D.uiSfx) D.uiSfx("hurt"); }
+      /* 17z33: a real try shows from its "capture" event (game.js catchResult); here only why nothing happened */
+      if (!d.res.ok && d.res.chance == null && d.res.reason && d.res.reason !== "rejected") D.bridge.float(run.x, run.y - 28, d.res.reason, "#ff8080");
     }
   }
 
@@ -1007,9 +1009,10 @@
       if (inp.focus != null) { msg.f = inp.focus; inp.focus = null; }
       if (inp.pvp) { msg.pv = inp.pvp; inp.pvp = null; }
       if (inp.go) { msg.g = [Math.round(inp.go[0]), Math.round(inp.go[1])]; inp.go = null; }
+      if (inp.strike) { msg.s = [Math.round(inp.strike[0]), Math.round(inp.strike[1])]; inp.strike = null; }
       if (st === "levelup" || st === "evolution") msg.b = 1;
       /* idle and frozen: a trickle is enough to keep the host informed */
-      if (!frozen || inBrawl || p.seq % 5 === 0 || msg.f != null) toHost(msg);
+      if (!frozen || inBrawl || p.seq % 5 === 0 || msg.f != null || msg.s) toHost(msg);
     }
     p.ex *= 0.86; p.ey *= 0.86;
     if (Math.abs(p.ex) < 0.05) p.ex = 0;
@@ -1086,8 +1089,28 @@
       if (e[6] - age <= 0) continue;
       bl.push({ x: e[0] + e[2] * age, y: e[1] + e[3] * age, vx: e[2], vy: e[3], radius: e[4], color: e[5], life: e[6] - age, wid: e[7] || null, kind: e[8] ? "nova" : "projectile" });
     }
-    var orbs = [];
-    for (i = 0; i < G.orbs.length; i++) { e = G.orbs[i]; orbs.push({ id: e[0], kind: e[1], x: e[2], y: e[3], value: e[4], magnet: !!e[5] }); }
+    /* 17z33: drops near you fly to you on your own screen straight away (the host still decides the pickup a
+     * moment later; it waited for that before, so a guest seemed to have to stand right on them) */
+    var orbs = [], PG = D.PACING || {}, MR = (PG.magnetRadius || 50) * (G.slow.mag || 1) + (PG.remoteMagnet || 0),
+      pull = G.pull || (G.pull = {}), seen = {}, px, py, dd, pp, fx, fy, bagFull = false;
+    if (D.CARE && D.CARE.bagMax && G.slow.bag) { var fc = 0, fk; for (fk in G.slow.bag) if (D.FOOD && D.FOOD[fk] && !D.FOOD[fk].rare) fc += G.slow.bag[fk] || 0; bagFull = fc >= D.CARE.bagMax; }
+    for (i = 0; i < G.orbs.length; i++) {
+      e = G.orbs[i]; px = e[2]; py = e[3]; seen[e[0]] = 1;
+      if (mine && !(bagFull && D.FOOD && D.FOOD[e[1]])) {
+        pp = pull[e[0]];
+        dd = Math.sqrt((px - mine.x) * (px - mine.x) + (py - mine.y) * (py - mine.y));
+        if (!pp && dd < MR) pp = pull[e[0]] = { t: t, x: px, y: py };
+        if (pp) {
+          /* the same flight as on the host: it speeds up and catches you even on the move */
+          var el = (t - pp.t) / 1000, v = (PG.magnetSpeed || 430) * 0.8, run2 = v * el + (PG.magnetSpeed || 430) * 0.8 * el * el;
+          fx = mine.x - pp.x; fy = mine.y - pp.y; dd = Math.sqrt(fx * fx + fy * fy);
+          if (run2 >= dd - 22) continue;                     /* reached you: gone from your screen (the host counts it) */
+          px = pp.x + fx / Math.max(1, dd) * run2; py = pp.y + fy / Math.max(1, dd) * run2;
+        }
+      }
+      orbs.push({ id: e[0], kind: e[1], x: px, y: py, value: e[4], magnet: !!e[5] || !!pull[e[0]] });
+    }
+    for (i in pull) if (!seen[i]) delete pull[i];
     var cp = [], cmap = {};
     for (i = 0; i < a.C.length; i++) cmap[a.C[i].id] = a.C[i];
     for (i = 0; i < b.C.length; i++) {
@@ -1103,7 +1126,7 @@
       cpus: cp, ally: b.al || null, events: ev, kills: L.kl,
       patches: (L.pt || []).map(function (q) { return { id: q[0], kind: q[1], x: q[2], y: q[3], r: q[4], t: q[5], max: q[6] }; }),
       pendingLevels: mine ? (mine.pendingLevels || 0) : 0, levelOffers: mine ? (mine.levelOffers || []) : [],
-      merchant: L.mr || null, nest: L.pv || null, runOver: !!L.ro, phase: "playing", clock: L.ck || null, lifecycle: null,
+      merchant: L.mr || null, nest: L.pv || null, catches: L.cs || [], spireChests: L.sc || [], runOver: !!L.ro, phase: "playing", clock: L.ck || null, lifecycle: null,
       startingPartySize: L.ps, partyReviveCharge: L.pc, reviveHold: null, weather: L.wx || null, rival: L.rv || null,
       soak: L.sk || 0, terr: L.tr || "", fronts: L.fr || null, nests: L.ns || null, nems: L.nm || null
     };

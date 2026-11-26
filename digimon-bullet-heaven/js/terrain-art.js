@@ -180,6 +180,24 @@
     p.rect(4, 22, 6, by, "#22455f"); p.rect(23, 22, 25, by, "#22455f");
     return p.finish();
   }
+  /* 17z33 (Isaac: "a spire's chest should sit at the foot of the spire like a regular chest you open"): the same
+   * crate shape as a data cache, in the grade's metal. Each grade has its own shape too, not only its colour:
+   * bronze is a plain wooden chest, silver adds corner studs and a domed lid, gold is bigger with a star on the lid. */
+  function spireChest(tier) {
+    var gold = tier === "gold", silver = tier === "silver", W = gold ? 36 : 32, p = new Painter(W, gold ? 34 : 30), by = p.h - 4, x0 = 4, x1 = W - 5,
+      band = gold ? "#ffd24a" : (silver ? "#d8e4f4" : "#d0884a"), deep = gold ? "#a87010" : (silver ? "#7a8aa4" : "#7a4a22"),
+      wood = gold ? "#c88a20" : (silver ? "#58627a" : "#6a4422"), lid = gold ? "#e8a82a" : (silver ? "#8a98b0" : "#86562a"), top = by - 16, mid = Math.round((x0 + x1) / 2);
+    p.rect(x0, top + 5, x1, by, wood);                                        /* the box */
+    if (silver || gold) p.poly([[x0 - 1, top + 6], [x0 + 2, top - 1], [x1 - 2, top - 1], [x1 + 1, top + 6]], lid);   /* a domed lid */
+    else p.rect(x0 - 1, top, x1 + 1, top + 6, lid);                           /* a flat one */
+    p.rect(x0, top + 6, x1, top + 7, band);                                   /* the rim */
+    p.rect(x0 + 3, top - (silver || gold ? 0 : 0), x0 + 4, by, band); p.rect(x1 - 4, top, x1 - 3, by, band);   /* its bands */
+    p.rect(mid - 2, top + 5, mid + 2, top + 10, deep); p.dot(mid, top + 7, "#fff6c8");   /* the lock */
+    if (silver || gold) p.dots([[x0 + 1, top + 9], [x1 - 1, top + 9], [x0 + 1, by - 2], [x1 - 1, by - 2]], "#ffffff");   /* corner studs */
+    if (gold) { p.poly([[mid, top - 6], [mid + 2, top - 2], [mid + 5, top - 2], [mid + 3, top + 1], [mid + 4, top + 4], [mid, top + 2], [mid - 4, top + 4], [mid - 3, top + 1], [mid - 5, top - 2], [mid - 2, top - 2]], "#fff0a0"); p.dot(mid - 3, by - 4, "#e0264a"); p.dot(mid + 3, by - 4, "#28c070"); }
+    p.line(x0 + 1, by, x1 - 1, by, deep, 1, true);
+    return p.finish();
+  }
   function pillar(broken) {
     var p = new Painter(34, broken ? 50 : 88), by = p.h - 4, y, k = 0, A = "#b9b6c8", B2 = "#a9a6ba", top = broken ? 16 : 16;
     p.rect(3, by - 5, 30, by, "#8f8ca2"); p.rect(5, by - 9, 28, by - 6, "#a19eb4");
@@ -250,6 +268,9 @@
     spire_used: function () { return spire(true); },
     cache: function () { return cacheBox(false); },
     cache_used: function () { return cacheBox(true); },
+    chest_bronze: function () { return spireChest("bronze"); },
+    chest_silver: function () { return spireChest("silver"); },
+    chest_gold: function () { return spireChest("gold"); },
     monolith: function () {
       var p = new Painter(36, 68), by = 64;
       p.poly([[7, by], [9, 12], [16, 4], [25, 8], [29, by]], "#6e7a80"); p.poly([[9, by - 2], [11, 14], [16, 7], [17, by - 2]], "#87949a");
@@ -323,9 +344,9 @@
   };
 
   var SPREAD = { tree: 1.3, snowtree: 1.3, deadtree: 0.9, rock: 0.75, snowrock: 0.75, boulder: 1.3, pebbles: 0, bush: 0.9, stump: 0.6, log: 1.1, pillar: 0.9, pillar_broken: 0.9, wall: 1.3,
-    spire: 0.9, spire_used: 0.9, cache: 0.75, cache_used: 0.75, monolith: 0.9, shrine: 1.2, tallgrass: 0, meadow0: 0, meadow1: 0, meadow2: 0, meadow_burnt: 0, meadow_sprout: 0, tallgrass_burnt: 0, tallgrass_sprout: 0, flower: 0, flower2: 0,
+    spire: 0.9, spire_used: 0.9, cache: 0.75, cache_used: 0.75, chest_bronze: 0.75, chest_silver: 0.75, chest_gold: 0.8, monolith: 0.9, shrine: 1.2, tallgrass: 0, meadow0: 0, meadow1: 0, meadow2: 0, meadow_burnt: 0, meadow_sprout: 0, tallgrass_burnt: 0, tallgrass_sprout: 0, flower: 0, flower2: 0,
     mushroom: 0.6, cactus: 0.7, pole: 0.5, gear: 1.1, server: 0.9, vent: 1.0, crystal: 0.8, icecrystal: 0.8, shard: 0.7, bits: 0.5, bitsc: 0.5 };
-  var NOSEASON = { snowtree: 1, snowrock: 1, icecrystal: 1, crystal: 1, shard: 1, spire: 1, spire_used: 1, cache: 1, cache_used: 1, bits: 1, bitsc: 1, server: 1, vent: 1, cactus: 1, gear: 1, pole: 1, mushroom: 1, deadtree: 1, meadow_burnt: 1, tallgrass_burnt: 1 };
+  var NOSEASON = { snowtree: 1, snowrock: 1, icecrystal: 1, crystal: 1, shard: 1, spire: 1, spire_used: 1, cache: 1, cache_used: 1, chest_bronze: 1, chest_silver: 1, chest_gold: 1, bits: 1, bitsc: 1, server: 1, vent: 1, cactus: 1, gear: 1, pole: 1, mushroom: 1, deadtree: 1, meadow_burnt: 1, tallgrass_burnt: 1 };
 
   function canvas(kind) {
     if (cache[kind] !== undefined) return cache[kind];

@@ -152,8 +152,17 @@
     var R = partyRules();
     if (!R || !p) return;
     var held = !!(inp && (inp.interact || inp.interactHeld));
-    var reviver = p;
-    R.tickHold(this, { dt: dt, held: held, data: this.data, ctx: this, reviver: reviver });
+    /* each tamer has its own hold (17z33): one shared hold was wiped every tick by whoever wasn't holding,
+     * so with two or more players a revive could never finish */
+    var reviver = p, before = p.reviveHold, out = R.tickHold(p, { dt: dt, held: held, data: this.data, ctx: this, reviver: reviver }), t;
+    if (p.id === this.localId || !this.localId || this.players.length === 1) this.reviveHold = p.reviveHold || null;   /* the host's own bar (snapshot) */
+    /* a friend picked up: back on its feet where it fell, Digimon and all (17z33; it used to stay "downed") */
+    if (out && out.completed && before && before.kind === "team" && (t = this.player(before.targetId)) && t.downed) {
+      t.downed = false; t.downLeft = null; t.faint = 0;
+      t.tamerHp = Math.max(1, Math.round((t.tamerMaxHp || 100) * ((this.data.PARTY_REVIVE && this.data.PARTY_REVIVE.tamerHpRatio) || 0.5)));
+      t.monInvuln = Math.max(t.monInvuln || 0, 2); t.tamerInvuln = Math.max(t.tamerInvuln || 0, 2);
+      this.emit({ type: "revive", id: t.id, by: p.id, team: true });
+    }
   };
 
   MissionSim.prototype.reset = function (seed) {
@@ -193,6 +202,8 @@
     this._partyFrozen = false;
     this.partyReviveCharge = 1;
     this.reviveHold = null;
+    this.catches = [];
+    this.spireChests = [];
     if (weatherApi()) weatherApi().startRunWeather(this, { data: this.data });
     else this.weather = { id: "clear", fromId: null, t: 0, duration: 0, fadeT: 6, fadeMax: 6, nextDelay: 42, locked: false };
     return this;
@@ -299,6 +310,8 @@
       /* Click-to-move: "come over here". The partner walks to the spot and
        * waits a moment before it goes back to picking its own fights. */
       if (inp.go) this._setGo(msg.id, inp.go);
+      /* Right-click the ground (17z33): attack that spot */
+      if (inp.strike) this._setStrike(msg.id, inp.strike);
       if (inp.seq == null) continue;
       seen = false;
       for (j = 0; j < list.length; j++) if (list[j].seq === inp.seq) { seen = true; break; }
@@ -815,6 +828,12 @@
     if (rgSk && rgLv > 0 && rgSk.PASSIVE_BY.rg && p.hp > 0 && p.hp < p.maxHp && !this._isEgg(p.form)) p.hp = Math.min(p.maxHp, p.hp + p.maxHp * rgSk.PASSIVE_BY.rg.per * rgLv * dt);
     var following = false;
     var focus = this._isEgg(p.form) ? null : this._enemyById(p.focusId);
+    /* an order to attack a spot on the ground (17z33): it runs out, or ends if you run too far off */
+    var strike = p.strike, GS = this.data.GROUND_STRIKE || {};
+    if (strike) {
+      strike.left -= dt;
+      if (strike.left <= 0 || this._isEgg(p.form) || dist2(strike.x, strike.y, p.x, p.y) > Math.pow((GS.maxRange || 380) * 1.4, 2)) strike = p.strike = null;
+    }
     var dTamer = Math.sqrt(dist2(p.mx, p.my, p.x, p.y));
     var focusLeash = (L.focusRadius || (L.returnRadius || 310) * 1.6);
     if (focus && Math.sqrt(dist2(focus.x, focus.y, p.x, p.y)) > focusLeash) focus = null;
@@ -832,7 +851,14 @@
       if (go.arrived) go.hold -= dt;
       if (go.hold <= 0 || go.left <= -2 || (!go.arrived && go.left <= 0) || dTamer > (L.returnRadius || 175) * 1.8) go = p.goTo = null;
     }
-    if (go) {
+    if (strike) {
+      /* close enough that every move reaches it, then stand and let fly (it doesn't walk into the water) */
+      var sd = Math.sqrt(dist2(p.mx, p.my, strike.x, strike.y)), sk = GS.stand || 70;
+      if (sd > sk) { desiredX = strike.x + (p.mx - strike.x) / sd * sk; desiredY = strike.y + (p.my - strike.y) / sd * sk; }
+      else { desiredX = p.mx; desiredY = p.my; }
+      p.aim = Math.atan2(strike.y - p.my, strike.x - p.mx);
+      if (strike.x !== p.mx) p.mfacing = strike.x < p.mx ? -1 : 1;
+    } else if (go) {
       /* called over: walk to the spot, then stand there for a moment */
       desiredX = go.arrived ? p.mx : go.x; desiredY = go.arrived ? p.my : go.y;
       if (target) { p.aim = Math.atan2(target.y - p.my, target.x - p.mx); }
@@ -984,9 +1010,31 @@
     if (d > max) { x = p.x + dx / d * max; y = p.y + dy / d * max; }
     var s = this._snap(x, y, this._actorRad(p.form), 120);
     p.goTo = { x: s.x, y: s.y, hold: L.goHold || 0.75, left: 5, arrived: false };
-    p.focusId = null;
+    p.focusId = null; p.strike = null;
     this.emit({ type: "go", id: p.id, x: s.x, y: s.y });
     return true;
+  };
+
+  /* 17z33: attack a spot on the ground (data.js GROUND_STRIKE) */
+  MissionSim.prototype._setStrike = function (pid, pt) {
+    var p = this.player(pid), GS = this.data.GROUND_STRIKE || {}, x, y, dx, dy, d, max = GS.maxRange || 380;
+    if (!p || !pt || this._isEgg(p.form) || p.downed || p.faint > 0) return false;
+    x = +pt[0]; y = +pt[1];
+    if (!isFinite(x) || !isFinite(y)) return false;
+    dx = x - p.x; dy = y - p.y; d = Math.sqrt(dx * dx + dy * dy);
+    if (d > max) { x = p.x + dx / d * max; y = p.y + dy / d * max; }
+    p.strike = { x: x, y: y, left: GS.sec || 3 };
+    p.focusId = null; p.goTo = null; p.pvpFocus = null;
+    this.emit({ type: "strike", id: p.id, x: Math.round(x), y: Math.round(y) });
+    return true;
+  };
+  /* what a move leaves where it lands on the ground: the same patches as on a hit, but every time */
+  MissionSim.prototype._strikeGround = function (g) {
+    var p = this.player(g.owner), w = this.data.world, I = w && w.ICE;
+    if (!p) return;
+    if (g.el === "ice" && w && w.openWaterAt && w.waterNear && w.waterNear(g.x, g.y, 30)) this._freezeWater(g.x, g.y, (I && I.shotR) || 40, this.time + ((I && I.bridgeSec) || 30));
+    this._maybePatch(g.x, g.y, g.el, g.dmg, p, g.wid, true);
+    this.emit({ type: "fx", k: "land", w: g.wid, x: Math.round(g.x), y: Math.round(g.y), el: g.el || null });
   };
 
   /* clicked the other tamer's partner (PvP): an ordinary attack order on its stand-in (pvp-sim.js) */
@@ -1002,6 +1050,7 @@
   MissionSim.prototype._setFocus = function (pid, enemyId) {
     var p = this.player(pid);
     if (!p) return false;
+    p.strike = null;
     if (enemyId != null && enemyId !== -1) p.goTo = null;
     if (enemyId == null || enemyId === -1) { p.focusId = null; return true; }
     var e = this._enemyById(+enemyId);
@@ -1327,6 +1376,22 @@
         rr = reach + (pref.radius || 10);
         if (dist2(p.mx, p.my, pref.x, pref.y) <= rr * rr) target = pref;
       }
+      if (p.strike && !(p.burstLeft > 0)) {
+        /* attacking a spot on the ground (17z33): every move goes there, if it reaches */
+        rr = reach + 30;
+        if (dist2(p.mx, p.my, p.strike.x, p.strike.y) > rr * rr || def.type === "aura" || def.type === "orbit") { w.cd = Math.max(0, (w.cd || 0) - dt); continue; }
+        var cd0 = w.cd || 0, sx = p.strike.x, sy = p.strike.y;
+        if (sx !== p.mx) p.mfacing = sx < p.mx ? -1 : 1;
+        this._fireFrom(p, dt, p.mx, p.my, { x: sx, y: sy, radius: 6, ground: true }, w);
+        if ((w.cd || 0) > cd0) {
+          /* it fired: where it comes down, the ground takes its element (a moment later, as the move gets there) */
+          var lvd = (def.levels && def.levels[Math.min(w.level || 1, def.levels.length) - 1]) || {};
+          this._groundHits = this._groundHits || [];
+          this._groundHits.push({ t: Math.min(0.6, Math.sqrt(dist2(p.mx, p.my, sx, sy)) / 420) + (def.charge || 0), x: sx, y: sy, owner: p.id, wid: w.id,
+            el: this._shotElement({ wid: w.id, ownerId: p.id }), dmg: lvd.damage || 10 });
+        }
+        continue;
+      }
       if (!target) target = this._nearestInReach(p.mx, p.my, reach);
       if (!target && (def.type === "projectile" || def.type === "arc" || !def.type || def.grows || def.type === "beam" || def.type === "march" || def.type === "missile")) {
         w.cd = Math.max(0, (w.cd || 0) - dt);
@@ -1339,6 +1404,13 @@
 
   MissionSim.prototype._updateBullets = function (dt) {
     var i, b, j, e, n, sp, hit, st, bo;
+    /* moves aimed at the ground (17z33) coming down */
+    for (i = (this._groundHits || []).length - 1; i >= 0; i--) {
+      st = this._groundHits[i]; st.t -= dt;
+      if (st.t > 0) continue;
+      this._groundHits.splice(i, 1);
+      this._strikeGround(st);
+    }
     /* strikes on their way down (or up) */
     for (i = (this._strikes || []).length - 1; i >= 0; i--) {
       st = this._strikes[i];
@@ -1749,7 +1821,7 @@
     if (e.hp <= 0 && !e.dead) { this._killEnemy(e, owner); return false; }
     return true;
   };
-  MissionSim.prototype._maybePatch = function (x, y, el, dmg, owner, wid) {
+  MissionSim.prototype._maybePatch = function (x, y, el, dmg, owner, wid, sure) {
     var S = this.data && this.data.STATUS, P = S && S.patch, i, q, kind, tier, M;
     if (!P) return;
     this.patches = this.patches || [];
@@ -1763,12 +1835,12 @@
       return;
     }
     kind = P.kinds[el];
-    if (!kind || (this._patchT || 0) > this.time) return;
+    if (!kind || (!sure && (this._patchT || 0) > this.time)) return;
     M = this.data.MOVE_META; tier = (wid && M && M[wid] && M[wid].tier) || 1;
     var chance = P.chance[Math.min(tier, P.chance.length - 1)], GF = this.data.GRASSFIRE, wld = this.data.world;
     /* fire landing in tall grass nearly always catches */
     if (kind === "fire" && GF && wld && wld.isTallGrass && wld.isTallGrass(x, y)) chance = Math.max(chance, GF.tallIgnite);
-    if (this.rng() >= chance) return;
+    if (!sure && this.rng() >= chance) return;
     this._patchT = this.time + P.gap;
     this._addPatch(kind, x, y, Math.min(P.maxRadius, P.radius + P.perTier * tier), dmg * (kind === "goo" ? P.gooDps : P.fireDps), owner, 0);
   };
@@ -2012,6 +2084,7 @@
       /* per-kind tally for catching: enough of one kind earns a try at that kind */
       p.killsBy = p.killsBy || {};
       p.killsBy[e.type] = (p.killsBy[e.type] || 0) + 1;
+      if (owner && this.player(owner.id) === p) this._catchSpot(p, e);        /* enough of this kind: it lies there to be caught */
       p.killStreak = (p.killStreak || 0) + 1;
       /* 17z33: beating wild Digimon out in the world freshens it up for training */
       var FR0 = this.data.FARM_CFG && this.data.FARM_CFG.fresh;
@@ -3164,6 +3237,34 @@
     }
   };
 
+  /* ---------- catching (17z33, Isaac) ----------
+   * Beat enough of one kind (CAPTURE.koByStage) and the next of it you defeat doesn't vanish: it lies where it
+   * fell for CAPTURE.waitSec, for you alone (online, nobody else can take it). Walk up and press E for one try
+   * (progression.js capture). Fail, or wait too long, and it fades away. Bosses, the infected, nemeses, rival
+   * tamers' partners and raiders never stay down to be caught, and not in Versus. */
+  MissionSim.prototype._catchSpot = function (p, e) {
+    var data = this.data, C = data.CAPTURE || {}, def = (data.ENEMIES && data.ENEMIES[e.type]) || this._enemies()[e.type] || {}, need, m = this._mode ? this._mode() : "";
+    if (!p || p.hasTamer === false || p.kind === "cpu" || m === "versus" || m === "duel") return null;
+    if ((def.boss && !e.mega) || e.virus || e.nem || e.nemesis || e.rival || e.raider || e.lord) return null;
+    need = data.captureKoNeeded ? data.captureKoNeeded(e) : 45;
+    if ((p.killsBy[e.type] || 0) < need) return null;
+    p.killsBy[e.type] = 0;
+    this.catches = this.catches || [];
+    this._catchN = (this._catchN || 0) + 1;
+    var c = { id: this._catchN, type: e.type, x: Math.round(e.x), y: Math.round(e.y), owner: p.id, until: this.time + (C.waitSec || 20) };
+    this.catches.push(c);
+    this.emit({ type: "catch.spot", id: p.id, n: c.id, form: e.type, x: c.x, y: c.y, sec: C.waitSec || 20 });
+    return c;
+  };
+  MissionSim.prototype._tickCatches = function () {
+    var i, c, L = this.catches;
+    if (!L || !L.length) return;
+    for (i = L.length - 1; i >= 0; i--) {
+      c = L[i];
+      if (this.time >= c.until || !this.player(c.owner)) { L.splice(i, 1); this.emit({ type: "catch.gone", id: c.owner, n: c.id, form: c.type, x: c.x, y: c.y }); }
+    }
+  };
+
   MissionSim.prototype.hurtTamer = function (p, dmg) {
     if (this._tamer().invulnerable) return;
     if (p.downed || p.tamerInvuln > 0 || p.tamerHp <= 0) return;
@@ -3172,7 +3273,7 @@
     this.emit({ type: "hurt", who: "tamer", id: p.id, amount: dmg, hp: p.tamerHp });
     if (p.tamerHp <= 0) {
       p.tamerHp = 0;
-      if (this._mode && !this._oneLife() && this._respawn(p)) return;   /* Open World: back near the start */
+      if (this._fall && this._fall(p)) return;   /* Story: back near the start; Open World with friends: down, on a timer (modes-sim.js) */
       var R = partyRules();
       var canSelf = R && !R.isPartyMode(this) && (this.partyReviveCharge || 0) > 0;
       if (canSelf) {
@@ -3250,8 +3351,8 @@
       p.monTarget = null;
       /* whoever landed that blow remembers it (nemesis-sim.js) */
       if (from && from._id != null && this._nemesisKill) this._nemesisKill(from, p);
-      /* Open World (modes-sim.js): nobody is out; the partner starts over as an egg near the start */
-      if (this._mode && !this._oneLife() && this._respawn(p)) return;
+      /* Story: it starts over as an egg near the start; Open World with friends: down, on a timer (modes-sim.js _fall) */
+      if (this._fall && this._fall(p)) return;
       if (this.coop) {
         p.downed = true;
         this.emit({ type: "downed", id: p.id, coop: true });
@@ -3294,7 +3395,7 @@
         tx = pl.hasTamer === false ? pl.mx : pl.x; ty = pl.hasTamer === false ? pl.my : pl.y;
         d = Math.sqrt(dist2(o.x, o.y, tx, ty));
         if (d < rad + 8) { this._eatOrb(pl, o); eaten = true; break; }
-        mag = (PG.magnetRadius || 50) * ((pl.stats && pl.stats.magnetMul) || 1);
+        mag = (PG.magnetRadius || 50) * ((pl.stats && pl.stats.magnetMul) || 1) + (pl.kind === "client" ? (PG.remoteMagnet || 0) : 0);   /* a guest: make up the lag */
         if (d < mag) o.magnet = true;
         if (o.to === pl.id) { best = pl; bd = -1; }
         else if (bd >= 0 && d < bd && (o.magnet || o.to == null)) { best = pl; bd = d; }
@@ -3493,18 +3594,21 @@
       var lpT = LP ? (this.coop ? (LP.coopTime || LP.time) : LP.time) : 0;
       if (LP && lpT > 0) {
         if (this.coop) {
-          /* online the world doesn't stop for one player's level-up, so neither do you (Nov 21):
-           * the cards come up but you keep moving, with a few seconds' cover. Locking the pair in
-           * place for 20 s while everyone else carried on left players stuck mid-fight. */
-          p.monInvuln = Math.max(p.monInvuln || 0, LP.coopCover || 3);
-          p.tamerInvuln = Math.max(p.tamerInvuln || 0, LP.coopCover || 3);
+          /* online the world doesn't stop for one player's level-up (17z33, Isaac): you and your partner sit in a
+           * shield instead. You stay put, nothing can hurt you, your partner doesn't attack, and it all ends the
+           * moment you pick or close the window (breather.end). The others play on around you. */
+          if (!(p.kind === "cpu" || p.away || p.hasTamer === false)) {
+            p.choosing = lpT;
+            p.monInvuln = Math.max(p.monInvuln || 0, lpT);
+            p.tamerInvuln = Math.max(p.tamerInvuln || 0, lpT);
+          }
         } else {
           p.monInvuln = Math.max(p.monInvuln || 0, lpT);
           if (!(p.kind === "cpu" || p.away || p.hasTamer === false)) p.choosing = lpT;
           this.enemyFreeze = Math.max(this.enemyFreeze || 0, lpT);
         }
       }
-      this.emit({ type: "level", id: p.id, level: p.level, pending: 0, skillPoints: p.skillPoints, pause: lpT || 0, hold: !this.coop, lock: !this.coop });
+      this.emit({ type: "level", id: p.id, level: p.level, pending: 0, skillPoints: p.skillPoints, pause: lpT || 0, hold: !this.coop, lock: true });
       if (p.kind === "cpu" || p.away || p.hasTamer === false) this._autoSkill(p);
     }
     while (p.xp >= p.xpNext) {
@@ -3639,6 +3743,7 @@
     this._updateRival(dt);
     this._updateLava(dt);
     this._updateOrbs(dt);
+    this._tickCatches(dt);
     return this.snapshot(false);
   };
 
@@ -3676,9 +3781,9 @@
         hp: p.hp, maxHp: p.maxHp, monInvuln: p.monInvuln, faint: p.faint,
         fullness: p.fullness, happiness: p.happiness,
         bits: p.bits, xp: p.xp, xpNext: p.xpNext, level: p.level, kills: p.kills,
-        aim: p.aim, ack: p.seqAck, desperation: p.desperation, atkBoost: p.atkBoost, hungry: !!p.hungry, starving: !!p.starving, resting: !!p.resting, focusId: p.focusId || null, trust: p.trust || null, allied: p.allied || null, atFarm: !!p.atFarm, pvpFlag: !!p.pvpFlag, pvpOffAt: p.pvpOffAt || 0,
+        aim: p.aim, ack: p.seqAck, desperation: p.desperation, atkBoost: p.atkBoost, hungry: !!p.hungry, starving: !!p.starving, resting: !!p.resting, focusId: p.focusId || null, strike: p.strike ? [Math.round(p.strike.x), Math.round(p.strike.y)] : null, trust: p.trust || null, allied: p.allied || null, atFarm: !!p.atFarm, pvpFlag: !!p.pvpFlag, pvpOffAt: p.pvpOffAt || 0,
         md: { pk: p.peakLevel || 0, rs: p.respawns || 0, bo: p.bounty || 0, st: p.pvpStreak || 0, mg: p.megaAt || 0, pw: p.pvpWins || 0, lo: p.lordsBeaten || 0 },
-        weapons: p.weapons, wc: wcOf(p), equip: p.equip || null, equipN: p.equipN || 0, bag: p.bag, items: p.items, shopBought: p.shopBought, garden: p.garden || [],
+        weapons: p.weapons, wc: wcOf(p), choosing: p.choosing > 0 ? 1 : 0, mag: p.stats && p.stats.magnetMul ? Math.round(p.stats.magnetMul * 100) / 100 : 1, downLeft: p.downLeft != null ? Math.max(0, Math.round(p.downLeft * 10) / 10) : null, equip: p.equip || null, equipN: p.equipN || 0, bag: p.bag, items: p.items, shopBought: p.shopBought, garden: p.garden || [],
         captureKills: p.captureKills, killsBy: p.killsBy || null, trainStats: p.trainStats, trainVisits: p.trainVisits,
         bondTrain: p.bondTrain, careMistakes: p.careMistakes, foodEaten: p.foodEaten,
         foodCounts: p.foodCounts, reserve: p.reserve, partners: p.partners,
@@ -3747,6 +3852,8 @@
       }).call(this),
       merchant: this.merchant || null,
       runOver: this.runOver,
+      catches: (this.catches || []).map(function (c) { return [c.id, c.type, c.x, c.y, c.owner, Math.max(0, Math.round((c.until - this.time) * 10) / 10)]; }, this),
+      spireChests: (this.spireChests || []).map(function (c) { return [c.id, c.tier, Math.round(c.x), Math.round(c.y)]; }),
       nest: this.siege && this.siege.nest ? { x: this.siege.nest.x, y: this.siege.nest.y, eggs: this.siege.nest.eggs.map(function (g) { return [g.x, g.y, Math.round(g.hp), g.max, g.k || 0]; }), cost: this._siegeRepairCost ? this._siegeRepairCost() : 0, night: !!this.siege.inNight,
         fences: (this.siege.nest.fences || []).map(function (f) { return [f.x, f.y, Math.round(f.hp), f.max, f.built ? 1 : 0]; }), wood: this.siege.nest.wood } : null,
       rejected: this.rejected,

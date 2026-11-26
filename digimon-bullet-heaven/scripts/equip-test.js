@@ -96,6 +96,30 @@ for (let i = 0; i < 30; i++) { p.monInvuln = 9; p.tamerInvuln = 9; sim.step(1 / 
 const fired = p.weapons.filter(w => w.cdMax > 0);
 ok(foe && fired.length > 0 && fired.every(w => w.cd <= w.cdMax + 1e-9), "when a move fires, its full recharge time is kept (cdMax) for the sweep: " + fired.map(w => w.id + " " + w.cd.toFixed(2) + "/" + w.cdMax.toFixed(2)).join(", "));
 
+/* 17z33 (Isaac's friend): swapped moves, then fell and came back as an egg: once it hatches it must fire its own
+ * starting move, without having to equip anything */
+{
+  const w = newSim(); w.sim.runMode = "open";
+  const q = w.p; q.skills = { pepperBreath: 7, sharpClaws: 3, spitFire: 2 }; w.sim._syncMoves(q);
+  const known = Object.keys(q.skills).filter(k => !SK.PASSIVE_BY[k]);
+  const other = known.find(k => q.equip.indexOf(k) < 0) || known[0];
+  w.A.act({ type: "skill.equip", id: "local", skill: other, drop: q.equip[0] });
+  ok(q.equip.length > 0, "before: " + q.equip.join(", ") + " equipped");
+  ok(w.sim._respawn(q), "it falls and comes back as an egg (" + q.form + ")");
+  ok(!q.equip, "  the old partner's equipped list goes with it");
+  /* hatch it */
+  const prog = w.A.progression || w.A.prog || w.sim.progression;
+  q.hatchLeft = 0.01; for (let k = 0; k < 10; k++) { w.A.onMessage({ type: "input", id: "local", inputs: [{ seq: k + 1, x: 0, y: 0 }] }); w.A.step(); }
+  if (w.sim._isEgg(q.form) && w.sim._hatch) w.sim._hatch(q);
+  ok(!w.sim._isEgg(q.form), "  it hatched (" + q.form + ")");
+  ok(q.weapons && q.weapons.length > 0 && q.equip && q.equip.length > 0, "  and fires straight away: " + (q.weapons || []).map(x => x.id).join(", ") + " (equipped " + (q.equip || []).join(", ") + ")");
+}
+/* the safety net: a list naming none of the moves it knows never leaves it with nothing on */
+{
+  const r = SK.fixEquip(D, { pepperBreath: 3 }, { list: ["oldMoveA", "oldMoveB"], known: ["pepperBreath", "oldMoveA"], n: 2 }, 2);
+  ok(r.list.length === 1 && r.list[0] === "pepperBreath", "an equipped list from another partner: its own move goes on (" + r.list.join() + ")");
+}
+
 /* the guest side shows a swap at once with the same rule */
 const ids = ["a", "b", "c", "d"];
 ok(SK.applyEquip(["a", "b", "c"], ids, "d", "b", false, 3).list.join() === "a,d,c", "a swap keeps the slot's place");

@@ -2248,4 +2248,88 @@ so real devices are much faster in absolute terms; what matters is the ratio.
 - Farm panel (Isaac): index.html .farm-main (#farm-slots food tiles + #btn-farm-pet) and #farm-mood as a one-line hint;
   farm.js render() paints .farm-food tiles (paintFood, cached by sig; click picks, click again feeds), slotList is food
   only, Pet button calls pet(). Old .farm-slot / .farm-actions CSS removed (both copies and the 2x2 media block).
+- Farm Pass retired (Isaac): removed from LAB.list; LAB.retired { farm } -> lab.js refundRetired() (on load via a 1 s
+  poll until the save and DigiCoins are ready, and on render / canBuyAny): sums the level costs, grantBits, deletes
+  the level, saves; the Lab footer reports it. Coins and levels sync together in the account save, so it can't be
+  paid twice. mods().farm stays 0 (farm.js / progression still read it). lab-test updated (whole Lab 7615).
+- Egg dex (Isaac): hub Eggs tile opens D.eggGrid (was m.go("egg")). egg-grid.js fill() keeps D.EGGS order (dexNo,
+  "No. 001" badges, .eg-no) with Hatchery / Random after; no more opened-first sort.
+- Open World down timer (Isaac): data.js DOWN_TIMER { first 15, more 20 }; modes-sim _fall(p) (story: _respawn; open +
+  coop + 2 humans: downed with p.downLeft = first + more * p.downs; else false -> one life) replaces the old Open World
+  respawn in hurtMon / hurtTamer; _tickDown in _updateModeRules (timeout -> _respawn, down.timeout). Revive fixes:
+  PARTY_REVIVE.minLiving 2 -> 1; holds are per tamer (p.reviveHold; one shared hold was cleared by every other tamer's
+  tick); a completed team revive now clears downed / faint and restores tamer HP (mission-sim _tickRevive).
+  downLeft in the snapshot (online FAST "dl"); game.js drawDownTimers (ring over a friend's fallen partner) and the
+  spectate bar's timer. scripts/down-timer-test.js; nemesis-test moved to Story.
+- Skill-pick shield (Isaac): LEVEL_PAUSE.coopTime 20 -> 40; online level-up now sets p.choosing (pair locked, no
+  weapons, mon + tamer invulnerable for the time) instead of 3 s of cover; breather.end drops both invulns to 0.35;
+  burst refused while choosing; level event lock: true. choosing in the snapshot (online FAST "ch"); game.js
+  drawChoosingShields; Escape closes the skill cards while the level window is up. level-lock-test updated.
+- NOTE (renderer): js/gl/renderer.js blends premultiplied (ONE, ONE_MINUS_SRC_ALPHA) but quad() does not premultiply
+  plain fill / stroke colours, so a light see-through colour comes out far too bright (a 12% pale-blue disc drew nearly
+  white). game.js pmCol() premultiplies for the shield only. A global fix (premultiply in quad() when not additive)
+  would change every translucent shape in the game: worth doing deliberately and checking the look.
+- Catching (Isaac): shop.js CAPTURE.chance 0.06, waitSec 20, koByStage x1.5. mission-sim _catchSpot (from _killEnemy when
+  the killer's count for that kind reaches koByStage: sim.catches {id, type, x, y, owner, until}, count reset, catch.spot)
+  and _tickCatches (catch.gone). progression capture now only takes your own spot within CAPTURE.range (one roll, spot
+  removed either way). snapshot / authority / online "cs" (owner through wid). game.js drawCatchSpot, myCatchInReach,
+  catchResult; E tries it. scripts/catch-test.js; virus-test updated.
 
+
+- 17z33 guest pickup pull (Isaac: "gems and health weren't going to the other player, he had to stand on them"): the host
+  sees a guest's position late, so the 50 px magnet rarely caught them. PACING.remoteMagnet 42 adds reach in
+  mission-sim _updateOrbs for kind "client". Snapshot sends "mag" (magnetMul) to the guest. online.js buildView pulls
+  orbs inside the guest's own range toward the predicted guest position (G.pull {id: {t, x, y}}, accelerating like the
+  host), hides them on arrival, and skips food when the bag is full. Checked online: 140 px stays, 80 px collected.
+
+- 17z33 shop icons (Isaac: "only the Digi Meat looked good, the rest look square, like Paint"): make_items.py gains
+  boots, ticket, gate_key, lure (float, not ball-shaped), treasure_map, eraser, crest, digimental(col) x7 and seed(col, crop)
+  with the crop drawn on the label. pickup-art SHOP_ART maps shop icon names to them (Bag, farm, shop via getIcon);
+  Digimentals use their own id as icon (dm_* falls back to the plain one). paintShopIcon draws at a whole-number
+  scale in a 56 px canvas, CSS eases it into 48 px. Shop and Bag seeds use the packet PNG (farmArt is the fallback).
+
+- 17z33 wheel over windows (Isaac: "the wheel doesn't scroll my skills, I have to drag the bar"): input.js's window
+  wheel handler took every wheel over the canvas rect for zoom (preventDefault). scrollerUnder() now lets it through
+  when the pointer is over a box with overflow-y auto/scroll that has more to show. CSS overscroll-behavior: contain on
+  the panels. Checked: a 200 px window scrolled 480 px with 4 notches, page stayed put.
+
+- 17z33 spire chests (Isaac: "make the chest appear at the bottom of the spire, a regular chest you have to open"):
+  _spireClear puts {id, tier, x, y} in sim.spireChests at the spire's foot (G.x, G.y + 4, snapped) instead of a
+  chest_ orb. Progression "chest.open" (INTENTS + online ACTS, intent.spot) -> _takeChest: nearest in useRadius + 30,
+  anyone, whoever opens it gets it; chest.open now carries spot/x/y. Snapshot spireChests, authority copy, online "sc".
+  game.js chestInReach / tryOpenChest (E, after props) / drawSpireChest (terrain-art chest_bronze/silver/gold, each
+  with its own shape, name label always shown). Old bobbing drawChest removed. spire-test updated (+friend opens).
+  Not decided with Isaac: chests stay for the whole run; anyone may open. Easy to change to "the breaker only".
+
+- 17z33 ground strike (Isaac: "right-click the ground, my Digimon attacks there: Ice freezes water, Fire lights grass"):
+  data.js GROUND_STRIKE {sec 3, maxRange 380, stand 70}. Input `strike: [x, y]` (pushInput -> _setStrike; online
+  msg.s / inp.strike). _movePartner: p.strike walks within `stand`, aims; it ends on time, too far, a left-click
+  (_setFocus / _setGo clear it). _updateWeapons: with p.strike every move fires at a ground dummy {x, y, ground}; when
+  one fires, _groundHits gets a landing (dist / 420 s, + charge) -> _strikeGround: ice by water -> _freezeWater, then
+  _maybePatch(..., sure) (no chance roll, no gap). fx "land". Client: input.js right-click (contextmenu blocked on the
+  canvas), touch hold 480 ms still; game.js consumeEnemyClick c.strike -> lastStrikeClick, drawStrikeMarker; pad RT with
+  no enemy in the cone strikes 170 px along the aim. scripts/ground-strike-test.js. How to Play + tour lines.
+
+- 17z33 food rarer (Isaac: "at least 50% more rare"): CARE meatDropChance 0.22 -> 0.11, elite 0.6 -> 0.3, boss 1 -> 0.5
+  (mission-sim _onKillLoot and the old local path both read these). Shop meat (3 a visit), garden crops, seed drops and
+  spire chest foods untouched; Isaac didn't say about the shop.
+
+- 17z33 rebirth equip fix (Isaac's friend: "after respawning as an egg it wouldn't attack until I re-equipped"):
+  modes-sim _respawn (and versus-sim's duel reset) clear p.equip / equipKnown / equipN. skill-tree fixEquip: if none of
+  the old list survives, the partner's own moves fill the slots (an old list + "known" moves meant nothing went on).
+  equip-test: swap, respawn, hatch, fires; and the fixEquip safety case.
+
+- 17z33 sweep (Isaac: "run a bunch of tests, nothing lags, no bugs in the new stuff, nothing overlapping"):
+  * attack-fx.js had two `function bakeMark` in one scope: the second (mark art, 4 args) replaced the first, so every
+    ult.start with a mark threw (st undefined). Second renamed bakeMarkArt. Checked crater/ice/scorch/glow in Chrome.
+  * game.js interactWhat() mirrors interactNow's order; eTarget per frame; prop / spire chest / catch labels show the
+    key only when E goes to them (chest + catch spot + cache together was three E prompts).
+  * online.js G.pull reset with G.orbs (orb ids restart each run). input.js: dropped my duplicate contextmenu blocker
+    (game.js already blocks it everywhere).
+  * Sim bench (node, 2 players, 150 enemies, 150 orbs): ~13 ms a tick avg, p95 ~18 ms of a 40 ms budget, same with
+    chests/catches/strikes. Profile: world materialAt 30%, _separateEnemies 17%, pointRaised 12%, propAt 9%: none new.
+  * Browser (Chrome/swiftshader, 150 enemies): ~6 ms JS a frame avg either way. Online host+friend 2 min: no errors;
+    long frames are chunk builds (world.stats buildMs: ~900 ms at start, 140-190 ms on new ground). Possible later:
+    build chunks ahead of the camera in idle time.
+  * Online sweep: gem pull, chest E, chest+catch E order, right-click strike, down timer -> egg -> hatch with its own
+    move equipped; Versus online; all modes smoke; 84 node tests.

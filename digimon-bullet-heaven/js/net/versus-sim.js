@@ -167,7 +167,7 @@
       st = { "Baby I": 0, "Baby II": 1, "In-Training": 1, Rookie: 2, Champion: 3, Armor: 3 }[(this.data.SPECIES[d.form] || {}).stage];
       p.evoCount = st != null ? st : 2;
       p.blood = d.blood || null;
-      p.skills = {}; p.weapons = [];
+      p.skills = {}; p.weapons = []; p.equip = null; p.equipKnown = null; p.equipN = 0;   /* a new partner: its own moves on */
       this._seedSkills(p);
       p.skillPoints = Math.max(0, p.level - 1) + (p.blood && B ? B.skill * (p.blood.traits.skill || 0) : 0);
       this._duelSpend(p);

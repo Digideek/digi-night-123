@@ -76,15 +76,19 @@
     /* Catching (Nov 16). Defeat this many of ONE kind of Digimon in a run and
      * you may try to catch that kind: a flat `chance`, no item, no need to
      * weaken it first. Either way the count for that kind starts again. */
-    chance: 0.10,
+    /* 17z33 (Isaac: "make catching even harder, even more rare"): 6% (was 10%), half as many defeats again.
+     * And you no longer throw at a living one: once a kind is ready, the next of it you defeat lies where it
+     * fell for `waitSec`, for you alone. Walk up and press E: one try. Fail and it fades. (progression.js) */
+    chance: 0.06,
+    waitSec: 20,
     koByStage: {
-      BabyI: 20, "Baby I": 20, Baby: 20,
-      BabyII: 25, "Baby II": 25, "In-Training": 25,
-      Rookie: 30,
-      Champion: 35,
-      Armor: 35, Hybrid: 35,
-      Ultimate: 40,
-      Mega: 45, MegaPlus: 50, "Mega+": 50
+      BabyI: 30, "Baby I": 30, Baby: 30,
+      BabyII: 38, "Baby II": 38, "In-Training": 38,
+      Rookie: 45,
+      Champion: 53,
+      Armor: 53, Hybrid: 53,
+      Ultimate: 60,
+      Mega: 68, MegaPlus: 75, "Mega+": 75
     },
     hudSteps: [
       { need: 15, label: "Baby", toast: "Baby captures ready!" },
@@ -122,7 +126,7 @@
   };
   Object.keys(DIGIMENTALS).forEach(function (id) {
     var d = DIGIMENTALS[id];
-    D.SHOP.catalog.push({ id: id, name: d.name, desc: "Opens one armor digivolution for the run: " + d.from + " into " + d.to.map(function (t) { return t.charAt(0).toUpperCase() + t.slice(1); }).join(" / ") + " (it still has to be ready for it).", base: 180, fixed: true, perVisit: 1, kind: "key", item: id, icon: "digimental", category: "evo", pickOf: "digimental" });
+    D.SHOP.catalog.push({ id: id, name: d.name, desc: "Opens one armor digivolution for the run: " + d.from + " into " + d.to.map(function (t) { return t.charAt(0).toUpperCase() + t.slice(1); }).join(" / ") + " (it still has to be ready for it).", base: 180, fixed: true, perVisit: 1, kind: "key", item: id, icon: id, category: "evo", pickOf: "digimental" });
   });
   /* the tree's armor routes all ask for "digimental": give each the one that opens it */
   function applyDigimentals(tree) {

@@ -107,11 +107,11 @@ function spreadRun(type, n) {
 { const { sim, p, a } = world(40, 0);
   const v = foe(sim, "agumon", 0, 0), plainOne = foe(sim, "agumon", 0, 3000);
   sim._infect(v, null);
-  p.killsBy.agumon = 999;
-  const r = a.act({ type: "capture", id: p.id, enemyId: v._id });
-  ok(r && r.ok === false && /Infected/.test(r.reason || ""), "trying to catch it is refused: \"" + (r && r.reason) + "\"");
   sim._killEnemy(plainOne, p); const base = sim.orbs.length; sim.orbs.length = 0;
+  /* 17z33: you catch a Digimon by defeating it once its kind is ready; an infected one never stays down to be caught */
+  p.killsBy.agumon = 999; const spots0 = (sim.catches || []).length;
   sim.hurtEnemy(v, 1e7, 1, 0, 0, p, 1);
+  ok((sim.catches || []).length === spots0, "beaten, it doesn't stay down to be caught (infected)");
   const kev = sim.events.filter(e => e.type === "kill").pop();
   ok(v.dead && kev.virus === 1 && kev.killer === p.id, "killing it yourself is your kill, marked as an infected one");
   ok(sim.orbs.length >= base + V.pay.xpOrbs && sim.orbs.some(o => o.kind === "bits" && o.value === V.pay.bits), "it drops " + V.pay.xpOrbs + " extra XP orbs and " + V.pay.bits + " bits on top of the usual"); }
